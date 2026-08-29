@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<!--
+  VisTest - self-hosted visual regression testing.
+  Copyright (C) 2026 Kirill Kulagin
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of VisTest. See LICENSE for the full terms and NOTICE for
+  the trademark and commercial-licensing terms. Removing this header does not
+  remove those obligations.
+-->
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VisTest — visual regressions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="mark"><i></i><i></i><i></i><i></i></div>
+      <div class="name">VISTEST</div>
+      <div class="ver" id="ver">2.4</div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <!-- Шум стенда внизу сайдбара, а не на отдельной вкладке: это то число,
+         которое обесценивает все остальные, и видеть его надо не тогда, когда
+         за ним пришли, а всегда. -->
+    <div class="rig">
+      <div class="env"><span class="dot" id="rigDot"></span><span id="rigEnv">—</span></div>
+      <div class="noise" id="rigNoise">diagnostics has not run yet</div>
+    </div>
+  </aside>
+
+  <div id="main">
+    <!-- Не <a href="#screen">: адрес экрана здесь — хеш-роут, и такая ссылка
+         увела бы человека на другой экран. Кнопка переводит фокус. -->
+    <button class="skip" id="skipLink">Skip to content</button>
+    <div id="topbar">
+      <div class="proj-pill" id="projPill">
+        <span class="pd"></span><span id="projName">all projects</span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5l4 4 4-4"/></svg>
+      </div>
+      <div class="crumb"><span id="crumb">decisions</span></div>
+      <div class="topbar-right">
+        <div class="cell search">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="search" placeholder="Jump to snapshot, run, test">
+          <span class="kbd">⌘K</span>
+        </div>
+        <div class="cell online" id="onlineChip"></div>
+        <div class="cell"><span class="avatar" id="avatar">?</span></div>
+      </div>
+    </div>
+    <div id="screen"><div class="loading-wrap"><span class="spin"></span> Loading…</div></div>
+  </div>
+</div>
+
+<!-- Тосты — единственный канал ответа на действие. Без aria-live для
+     скринридера их не существует вовсе. -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="false"></div>
+
+<div id="login" class="hidden">
+  <div class="box">
+    <!-- Три состояния одной коробки: вход, заявка на доступ и «занять
+         инсталляцию». Свежая инсталляция по сети иначе показывала бы стену с
+         советом сходить на машину сервиса и выполнить команду. -->
+    <h3 id="lgTitle" style="font-size:17px">Sign in to VisTest</h3>
+    <div class="faint" id="lgSub" style="font-size:12.5px;margin-top:4px">Review access to runs and baselines.</div>
+
+    <div class="lg-tabs" id="lgTabs">
+      <button class="lg-tab on" data-tab="signin" type="button">Sign in</button>
+      <button class="lg-tab" data-tab="register" type="button">Request access</button>
+    </div>
+
+    <form id="loginForm">
+      <div class="field" id="lgNameField" style="display:none">
+        <label class="flabel">NAME</label>
+        <input class="inp" id="lgName" autocomplete="name" placeholder="how colleagues will see you">
+      </div>
+      <div class="field"><label class="flabel">LOGIN</label><input class="inp mono" id="lgLogin" autocomplete="username"></div>
+      <div class="field"><label class="flabel">PASSWORD</label><input class="inp mono" id="lgPass" type="password" autocomplete="current-password"></div>
+      <div class="field" id="lgTokenField" style="display:none">
+        <label class="flabel">SETUP TOKEN</label>
+        <input class="inp mono" id="lgToken" autocomplete="off">
+        <div class="fhint">From <code>VISTEST_SETUP_TOKEN</code> — the value this service was started with.</div>
+      </div>
+      <div class="msg" id="lgMsg"></div>
+      <div class="msg ok" id="lgOk"></div>
+      <button class="btn dark wide" id="lgSubmit" type="submit" style="margin-top:10px">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/screen-decisions.js"></script>
+<script src="js/screen-runs.js"></script>
+<script src="js/screen-rundiff.js"></script>
+<script src="js/screen-compare.js"></script>
+<script src="js/screen-baselines.js"></script>
+<script src="js/screen-snapshot.js"></script>
+<script src="js/screen-dash.js"></script>
+<script src="js/screen-projects.js"></script>
+<script src="js/screen-doctor.js"></script>
+<script src="js/screen-settings.js"></script>
+<script src="js/record.js"></script>
+<script src="js/screen-tests.js"></script>
+<script src="js/team.js"></script>
+<script src="js/collab.js"></script>
+<script src="js/palette.js"></script>
+<script src="js/boot.js"></script>
+</body>
+</html>

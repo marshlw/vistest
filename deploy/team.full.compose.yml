@@ -1,0 +1,52 @@
+# «Толстый» изолированный инстанс команды: сервис ревью + браузер.
+#
+# То же, что deploy/team.compose.yml, но образ с браузером, и включены запись
+# эталонов мышью и прогон/правка тестов прямо в инстансе. Роль всё так же
+# защищает эти операции (reviewer/admin). Браузеру нужны shm и ipc — они здесь.
+#
+# Обычно выбирается флагом: scripts/vistest_team.py create <team> --full
+
+name: vistest-${TEAM:?укажите TEAM}
+
+services:
+  api:
+    image: vistest-full:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.full
+    container_name: vistest-${TEAM}
+
+    ports:
+      - "127.0.0.1:${PORT:?укажите PORT}:8420"
+
+    volumes:
+      - data:/data
+
+    environment:
+      VISTEST_ROOT: /data
+      VISTEST_PROJECT: ${TEAM}
+      VISTEST_AUTH: ${VISTEST_AUTH:-auto}
+      # В «толстом» инстансе есть браузер — включаем запись и тесты. Доступ к
+      # сервису идёт через прокси на этой же машине (127.0.0.1), поэтому
+      # loopback-проверка проходит, а решает роль (reviewer/admin).
+      VISTEST_RECORD_UI: ${VISTEST_RECORD_UI:-local}
+      VISTEST_TESTS_UI: ${VISTEST_TESTS_UI:-local}
+      VISTEST_PROJECTS_UI: ${VISTEST_PROJECTS_UI:-off}
+
+    # Chromium в контейнере падает на нехватке /dev/shm без этого.
+    shm_size: 1gb
+    ipc: host
+
+    cpus: ${CPUS:-2.0}
+    mem_limit: ${MEM:-2g}
+
+    restart: unless-stopped
+    networks:
+      - team
+
+volumes:
+  data:
+
+networks:
+  team:
+    driver: bridge

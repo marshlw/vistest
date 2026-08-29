@@ -1,0 +1,114 @@
+# Конфигурация проекта. Все значения необязательны — берётся из пресета.
+preset: balanced          # strict | balanced | loose
+
+diff:
+  # ΔE00: 1.0 — теоретический порог различимости, 2.3 — общепринятый JND.
+  delta_e_threshold: 2.3
+  ssim_threshold: 0.90
+  require_consensus: true       # пиксель значим, только если И цвет, И структура
+
+  align_enabled: true
+  max_align_shift_px: 8.0       # больше — считаем регрессом лейаута, не шумом
+
+  antialias_filter: true
+  aa_tolerance: 0.10
+
+  min_region_px: 24             # ПИКСЕЛЕЙ МАСКИ, не площади bbox
+  min_region_fill: 0.06
+  morph_close_px: 6
+
+  detect_moved: true
+  move_search_px: 64
+
+  fail_severity: 25.0           # падаем, если хоть один регион серьёзнее
+  max_changed_area_pct: 0.15    # либо суммарно изменено больше этого
+
+  # Площадь считается ДО сегментации и включает пиксели, которые дальше
+  # отброшены как незначимые. Если после фильтрации регионов не осталось —
+  # падать по сумме отброшенного значит спорить с собственным решением.
+  # Так выглядит субпиксельная разница между разными конвейерами захвата:
+  # severity 0.0, регионов ноль, а площади набралось на порог.
+  area_requires_region: true
+  area_hard_fail_pct: 5.0       # ...кроме случая, когда площади очень много
+  above_fold_px: 900            # первый экран важнее
+  above_fold_weight: 1.5
+  moved_severity_scale: 0.35
+  ignore_kinds: [noise, antialias]
+  fail_on_size_change: true
+
+capture:
+  full_page: true
+  stability_shots: 3            # >1 включает авто-детект динамики
+  stability_delay_ms: 120
+  stability_sticky: true
+  scroll_through_page: true     # прогрев lazy-load перед full_page
+  auto_mask_media: true         # video/canvas/iframe/[data-vistest=ignore]
+  auto_mask_animated: true
+  mask_selectors: []            # ручные маски, если авто-детекта мало
+  capture_dom: true
+
+  # Детерминизм времени и случайности. Включён и при записи, и при прогоне —
+  # иначе эталон снимается с сегодняшней датой, а сравнивается с завтрашней.
+  determinism: true
+  frozen_time: "2024-01-01T12:00:00.000Z"   # такую дату увидит страница
+  clock_ticks: true             # часы ИДУТ от этой точки: стоящие ломают анимации
+
+  # Без фиксации одна и та же страница покажет разную дату и формат чисел
+  # у разработчика и в CI.
+  timezone: "Europe/Moscow"
+  locale: "ru-RU"
+  color_scheme: null            # null | light | dark
+
+  # Лимиты: без них тяжёлый сайт вешает захват намертво
+  network_idle_timeout_ms: 5000 # на реальных сайтах не наступает никогда
+  screenshot_timeout_ms: 30000
+  step_timeout_ms: 15000
+  max_full_page_px: 16000       # выше Chromium не снимает — будет только экран
+
+ai:
+  attribution_enabled: true     # регион → CSS-селектор, без моделей и сети
+  perceptual_enabled: false     # нужен onnxruntime + models/perceptual.onnx
+  perceptual_model_path: models/perceptual.onnx
+  perceptual_tolerance: 0.06
+  captioner_enabled: false      # vision-LLM, требует ANTHROPIC_API_KEY
+  captioner_min_severity: 40.0
+
+render:
+  heatmap: true
+  boxes: true
+  side_by_side: true
+  onion_skin: true
+  blink_gif: true
+  max_artifact_width: 2400
+
+paths:
+  root: .vistest
+  platform_scoped_baselines: true   # win/linux/docker эталоны раздельно
+
+service:
+  api_url: null                 # null = офлайн, только файлы
+  project: default
+  fail_open: true               # недоступный сервис не роняет тесты
+
+auth:
+  flow: login                   # какой flow считать авторизацией
+  reuse_state: true             # логиниться один раз на прогон, а не на снимок
+  state_ttl_minutes: 60
+
+# Именованные последовательности действий. Подключаются к снимку шагом
+# {action: flow, name: login} — из UI, из YAML или из записи мышью.
+#
+# Пароли здесь НЕ хранятся: ${VISTEST_PASSWORD} подставляется из переменной
+# окружения при запуске. Положите переменные в .vistest/secrets.env — он в
+# .gitignore и подхватывается автоматически.
+flows: {}
+#  login:
+#    - {action: goto,     url: "${BASE_URL}/login"}
+#    - {action: fill,     selector: "#username", value: "${VISTEST_USER}"}
+#    - {action: fill,     selector: "#password", value: "${VISTEST_PASSWORD}"}
+#    - {action: click,    selector: "button[type=submit]"}
+#    - {action: wait_for, selector: "[data-testid=user-menu]"}
+#
+#  accept_cookies:
+#    - {action: click, selector: "[data-testid=cookie-accept]"}
+#    - {action: wait,  ms: 300}

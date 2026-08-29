@@ -1,0 +1,52 @@
+name: vistest
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8420:8420"
+    volumes:
+      - vistest-data:/data
+      - ../.vistest:/data/local:ro
+    environment:
+      VISTEST_ROOT: /data
+      VISTEST_PROJECT: ${VISTEST_PROJECT:-default}
+    restart: unless-stopped
+
+  runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.runner
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ..:/work
+      # Эталоны, снятые в контейнере, лежат отдельно от локальных:
+      # рендер в Linux и Windows физически разный.
+      - vistest-baselines:/work/.vistest/baselines/docker-chromium-1x
+    environment:
+      VISTEST_IN_DOCKER: "1"
+      VISTEST_API_URL: http://api:8420
+      VISTEST_ROOT: /work/.vistest
+      VISTEST_PROJECT: ${VISTEST_PROJECT:-default}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    # Без этого Chromium в контейнере падает на нехватке /dev/shm
+    shm_size: 1gb
+    ipc: host
+    profiles: ["test"]
+
+  # Опционально: метрики в Grafana
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    profiles: ["metrics"]
+
+volumes:
+  vistest-data:
+  vistest-baselines:

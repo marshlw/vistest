@@ -1,0 +1,84 @@
+name: Visual regression
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    # The same image as the local docker mode - otherwise baselines will not match.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.47.0-jammy
+      options: --shm-size=1gb --ipc=host
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true   # baselines usually live in git-lfs
+
+      - name: Install
+        run: |
+          pip install -e ".[full]"
+          apt-get update && apt-get install -y --no-install-recommends \
+            fonts-liberation2 fonts-dejavu-core fonts-noto-core fonts-noto-color-emoji
+          fc-cache -f
+
+      - name: Run visual tests
+        id: visual
+        env:
+          VISTEST_IN_DOCKER: "1"
+          VISTEST_PROJECT: ${{ github.repository }}
+          VISTEST_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: pytest tests/ -v --vistest-preset balanced
+        continue-on-error: true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: .vistest/runs/
+          retention-days: 14
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const runs = '.vistest/runs';
+            if (!fs.existsSync(runs)) return;
+            const dir = fs.readdirSync(runs).sort().pop();
+            const file = path.join(runs, dir, 'run.json');
+            if (!fs.existsSync(file)) return;
+            const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const failed = data.comparisons.filter(c => c.verdict === 'fail');
+            if (!failed.length) {
+              core.info('No visual differences');
+              return;
+            }
+            const rows = failed.slice(0, 15).map(c => {
+              const top = (c.regions || []).slice(0, 3).map(r =>
+                `${r.kind} sev=${Math.round(r.severity)}` +
+                (r.selector ? ` \`${r.selector}\`` : '') +
+                (r.caption ? ` — ${r.caption}` : '')).join('<br>');
+              return `| ${c.name} | ${c.metrics.max_severity.toFixed(0)} | ` +
+                     `${c.metrics.changed_area_pct.toFixed(3)}% | ${top} |`;
+            }).join('\n');
+            const body = [
+              `### Visual differences: ${failed.length}`, '',
+              '| Snapshot | Severity | Changed | What changed |',
+              '|---|---|---|---|', rows, '',
+              `Annotated screenshots are in the \`visual-diffs\` artifact of this run.`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner, repo: context.repo.repo, body,
+            });
+
+      - name: Fail if regressions
+        if: steps.visual.outcome == 'failure'
+        run: exit 1

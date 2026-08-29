@@ -1,0 +1,65 @@
+# Изолированный инстанс VisTest на одну команду.
+#
+# Модель изоляции — «инстанс на команду» (путь B проектного документа):
+# у каждой команды свой контейнер, свой том с данными и свой порт. Данные,
+# нагрузка и секреты команд физически раздельны — баг или тяжёлый прогон одной
+# команды не заденет другую.
+#
+# Файл параметризуется переменными и запускается на команду со своим
+# project-name, поэтому один шаблон обслуживает все команды:
+#
+#   TEAM=alpha PORT=8481 docker compose \
+#     -p vistest-alpha -f deploy/team.compose.yml --env-file deploy/teams/alpha.env up -d
+#
+# Обычно этим управляет scripts/vistest_team.py — руками трогать не нужно.
+
+name: vistest-${TEAM:?укажите TEAM}
+
+services:
+  api:
+    image: vistest-api:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: vistest-${TEAM}
+
+    # Порт публикуется ТОЛЬКО на localhost: снаружи инстанс виден исключительно
+    # через обратный прокси на этой же машине. Так изнутри сети к «голому» HTTP
+    # команды не подключиться в обход TLS.
+    ports:
+      - "127.0.0.1:${PORT:?укажите PORT}:8420"
+
+    # Именованный том. compose префиксует его project-name'ом, поэтому реально
+    # это `vistest-<team>_data` — у каждой команды свой, ничего чужого рядом.
+    volumes:
+      - data:/data
+
+    environment:
+      VISTEST_ROOT: /data
+      VISTEST_PROJECT: ${TEAM}
+      # auto: пока не заведён админ — вход открыт; после — обязателен.
+      VISTEST_AUTH: ${VISTEST_AUTH:-auto}
+      # Запись мышью, правка/прогон тестов, подключение проектов — с машины
+      # сервиса. В изолированном сервисе это сам контейнер, поэтому по умолчанию
+      # выключено; включать осознанно и только при наличии runner-образа.
+      VISTEST_RECORD_UI: ${VISTEST_RECORD_UI:-off}
+      VISTEST_TESTS_UI: ${VISTEST_TESTS_UI:-off}
+      VISTEST_PROJECTS_UI: ${VISTEST_PROJECTS_UI:-off}
+
+    # Ресурсные лимиты обязательны: без них тяжёлый эндпоинт одной команды
+    # способен занять всю машину. Значения переопределяются в <team>.env.
+    cpus: ${CPUS:-1.0}
+    mem_limit: ${MEM:-1g}
+
+    restart: unless-stopped
+
+    # Отдельная сеть на команду — контейнеры разных команд не видят друг друга.
+    networks:
+      - team
+
+volumes:
+  data:
+
+networks:
+  team:
+    driver: bridge

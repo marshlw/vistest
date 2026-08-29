@@ -1,0 +1,78 @@
+# What NOT to send into the build context. Without this file docker pulls in
+# .venv, .git and especially .vistest (run artifacts are PNGs, easily gigabytes):
+# the build crawls and breaks for no visible reason. The image copies only what
+# it needs anyway (pyproject, README, vistest/, frontend/, docker/entrypoint.sh).
+
+# environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# local service data — the container has its own /data
+.vistest/
+
+# secrets: nothing that resolves credentials belongs in an image layer
+.env
+.env.*
+secrets.env
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+.netrc
+.npmrc
+.pypirc
+.aws/
+.ssh/
+
+# private working material
+_private/
+_to_delete/
+private/
+
+# provisioning and instance backups — not needed in the image
+deploy/teams/
+deploy/backups/
+
+# node client and its dependencies
+node_modules/
+**/node_modules/
+
+# vcs, IDE, OS, AI assistants
+.git/
+.github/
+.gitlab-ci.example.yml
+.idea/
+.vscode/
+.claude/
+.cursor/
+.mcp.json
+.DS_Store
+Thumbs.db
+
+# generated page objects: derived from real captured pages, never in an image
+tests/pages/
+tests/.vistest_codegen.json
+
+# archives and dumps
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.sql
+*.sqlite
+*.sqlite3
+
+# build leftovers and logs
+dist/
+build/
+*.log

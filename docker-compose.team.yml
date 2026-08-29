@@ -1,0 +1,66 @@
+# VisTest для команды: один инстанс в Docker на ВМ, все функции доступны по сети.
+#
+#   docker compose -f docker-compose.team.yml up -d --build
+#
+# Затем один раз заведите администратора (после этого вход обязателен):
+#
+#   docker compose -f docker-compose.team.yml exec vistest \
+#     python -m vistest.cli user add anna --role admin
+#
+# UI:            http://<адрес-ВМ>:8420/ui/
+# Окно записи:   http://<адрес-ВМ>:6080/vnc.html   (открывается из UI кнопкой)
+#
+# Почему так, а не стандартный docker-compose.yml: тот поднимает лёгкий образ
+# без браузера и по умолчанию разрешает запись/тесты/проекты/секреты ТОЛЬКО с
+# localhost — поэтому по сети команда упирается в 403. Здесь образ с браузером,
+# а операции открыты по сети и защищены РОЛЬЮ (reviewer/admin), а не адресом.
+
+name: vistest-team
+
+services:
+  vistest:
+    image: vistest-team:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.full
+      args:
+        # Недоступен реестр? Укажите зеркало базового образа, не трогая файлы:
+        #   VISTEST_BASE_IMAGE=<зеркало>/playwright/python:v1.47.0-jammy docker compose ... build
+        BASE_IMAGE: ${VISTEST_BASE_IMAGE:-mcr.microsoft.com/playwright/python:v1.47.0-jammy}
+    ports:
+      - "8420:8420"     # UI + API
+      - "6080:6080"     # окно записи (noVNC)
+    volumes:
+      - data:/data      # БД, эталоны, артефакты, secrets.env — всё команды
+      # Проекты можно подключать двумя способами:
+      #  1) залить .zip в UI (вкладка «Проекты» → «Загрузить .zip») — распакуется
+      #     в /data/projects и переживёт перезапуск, монтировать ничего не надо;
+      #  2) примонтировать репозиторий с тестами и указать путь при осмотре:
+      # - /srv/team-repo:/work/team-repo:ro   # тогда в «Осмотреть» путь /work/team-repo
+    environment:
+      VISTEST_ROOT: /data
+      VISTEST_PROJECT: ${VISTEST_PROJECT:-default}
+
+      # Вход: пока нет админа — открыто; как только заведён — обязателен.
+      VISTEST_AUTH: auto
+
+      # Разблокировка функций по сети. Защита теперь РОЛЬ, а не localhost:
+      #   viewer — смотреть, reviewer — принимать/запускать, admin — всё.
+      # Поэтому обязательно заведите администратора (см. шапку файла), иначе
+      # при отсутствии пользователей доступ открыт всем, кто дотянется до порта.
+      VISTEST_RECORD_UI: all
+      VISTEST_TESTS_UI: all
+      VISTEST_PROJECTS_UI: all
+      VISTEST_SECRETS_UI: all
+
+      # Окно записи: виртуальный дисплей + noVNC на этом порту.
+      VISTEST_VNC_PORT: "6080"
+      DISPLAY: ":99"
+
+    # Chromium в контейнере падает без этого.
+    shm_size: 1gb
+    ipc: host
+    restart: unless-stopped
+
+volumes:
+  data:

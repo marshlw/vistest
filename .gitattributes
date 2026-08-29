@@ -1,0 +1,43 @@
+# Line-ending normalisation: this project lives on Windows and in a Linux
+# container at the same time.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Binary files — git must not try to merge them or show a diff.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.pdf binary
+*.onnx binary
+*.woff  binary
+*.woff2 binary
+
+# Vendored licence text should not count towards the repository's language
+# statistics.
+LICENSE linguist-vendored=true
+
+# --- Git LFS (for projects that USE VisTest) ---------------------------------
+# This repository does not commit baselines at all (see .gitignore for why).
+# Your project should: without them CI has nothing to compare against.
+#
+# Baselines are PNGs and they grow — a hundred full-page shots is already
+# hundreds of megabytes, and every update adds another copy to the history
+# forever. If your set is large, enable LFS BEFORE the first baseline commit:
+#
+#     git lfs install
+#     git lfs track ".vistest/baselines/**/*.png"
+#
+# and add this line to your own .gitattributes:
+#
+#     .vistest/baselines/**/*.png filter=lfs diff=lfs merge=lfs -text
+#
+# Note that colleagues without git-lfs installed will get text pointers
+# instead of images, so it is a decision for the whole team.
+#
+# Also mark them as generated data rather than source, to keep them out of
+# pull-request diffs and language statistics:
+#
+#     .vistest/baselines/** linguist-generated=true

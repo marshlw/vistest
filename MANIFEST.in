@@ -1,0 +1,24 @@
+# What goes into the sdist on top of the `vistest` package.
+#
+# The review UI, the docker images and the examples live outside the package,
+# so setuptools will not pick them up on its own. Without them the source
+# archive is useless: `vistest serve` starts and `/ui/` returns 404.
+
+include README.md README.ru.md
+include LICENSE NOTICE CONTRIBUTORS.md
+include vistest.yaml
+include run.py run.sh run.ps1
+
+recursive-include frontend *
+recursive-include docker *
+recursive-include clients *
+recursive-include examples *
+recursive-include tests *.py
+
+# Never ship these
+global-exclude __pycache__ *.py[cod] .DS_Store
+prune .vistest
+prune .venv
+prune .idea
+prune _private
+prune tests/pages

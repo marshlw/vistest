@@ -1,0 +1,38 @@
+# Единый вход для всех команд: обратный прокси терминирует TLS и маршрутизирует
+# по поддомену на изолированный инстанс команды (порт на localhost).
+#
+# VisTest сам HTTPS не делает (see the security section of README.md) — пароль и сессия защищены
+# ровно этим слоем. В проде он обязателен.
+#
+# Этот файл — пример. scripts/vistest_team.py proxy пересобирает рабочий
+# deploy/Caddyfile из списка команд автоматически.
+#
+# Запуск:
+#   caddy run --config deploy/Caddyfile
+# (Caddy сам получит и продлит сертификаты Let's Encrypt для реальных доменов.)
+
+{
+	# email для Let's Encrypt; для локальных проверок можно закомментировать
+	email admin@example.com
+}
+
+# --- команды (host → localhost:port инстанса) -------------------------------
+
+alpha.vistest.example.com {
+	reverse_proxy 127.0.0.1:8481
+}
+
+beta.vistest.example.com {
+	reverse_proxy 127.0.0.1:8482
+}
+
+# Локальная проверка без доменов и TLS — через путь, а не поддомен:
+#
+# http://localhost {
+#     handle_path /alpha/* { reverse_proxy 127.0.0.1:8481 }
+#     handle_path /beta/*  { reverse_proxy 127.0.0.1:8482 }
+# }
+#
+# Учтите: UI VisTest живёт на /ui/ и обращается к /api/* от корня, поэтому
+# маршрутизация по пути требует, чтобы префикс срезался (handle_path) —
+# надёжнее давать каждой команде свой поддомен.

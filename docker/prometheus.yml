@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: vistest
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8420"]
+
+    # У скрейпера нет сессионной куки, а /metrics отдаёт имена снимков, список
+    # проектов и долю падений по каждому снимку — это не публичные данные.
+    # Задайте сервису VISTEST_METRICS_TOKEN и положите тот же токен в файл
+    # ниже. Без него Prometheus получит 401 — и это правильно.
+    #
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/vistest.token

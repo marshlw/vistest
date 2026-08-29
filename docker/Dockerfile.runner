@@ -1,0 +1,37 @@
+# Раннер: браузер + движок сравнения.
+#
+# Смысл образа — детерминированный рендер. Скриншот зависит от версии
+# браузера, набора шрифтов, hinting'а и субпиксельного сглаживания. Пока эти
+# четыре вещи не зафиксированы, «одинаковые» эталоны между машинами
+# невозможны в принципе — поэтому версия базового образа прибита гвоздями.
+ARG BASE_IMAGE=mcr.microsoft.com/playwright/python:v1.47.0-jammy
+FROM ${BASE_IMAGE}
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    VISTEST_IN_DOCKER=1 \
+    VISTEST_ROOT=/work/.vistest
+
+# Фиксированный набор шрифтов: любой лишний/недостающий шрифт меняет
+# метрики текста и ломает эталоны.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        --no-install-recommends \
+        fonts-liberation2 fonts-dejavu-core fonts-noto-core \
+        fonts-noto-cjk fonts-noto-color-emoji \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY vistest ./vistest
+RUN pip install -e ".[full]"
+
+WORKDIR /work
+COPY . /work
+
+# --font-render-hinting=none и --disable-lcd-text убирают субпиксельное
+# сглаживание: без них один и тот же текст рендерится по-разному в
+# зависимости от GPU и настроек дисплея.
+ENV VISTEST_CHROMIUM_ARGS="--font-render-hinting=none --disable-lcd-text --disable-gpu --force-color-profile=srgb --disable-skia-runtime-opts --deterministic-mode --hide-scrollbars"
+
+CMD ["python", "-m", "pytest", "tests/", "-v"]
