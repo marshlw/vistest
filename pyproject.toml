@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vistest"
+version = "0.1.0"
+description = "Precise visual regression testing: ΔE00 + SSIM + alignment + automatic noise suppression"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Kirill Kulagin" }]
+keywords = ["visual-regression", "screenshot-testing", "playwright", "pytest", "qa"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+# Ядро сравнения работает на трёх зависимостях. Всё остальное — опционально.
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+# playwright прибит ровно к версии браузера в Docker-образе
+# (mcr.microsoft.com/playwright/python:v1.47.0-jammy). Если поставить новее —
+# pip-пакет ждёт браузер /ms-playwright/chromium-<новее>, которого в образе нет,
+# и запуск падает: "Executable doesn't exist ... Please update docker image".
+# Меняете версию — меняйте её ОДНОВРЕМЕННО здесь, в full и в BASE_IMAGE образов.
+browser = ["playwright==1.47.0", "pytest>=7.4"]
+service = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
+           "requests>=2.31", "pyyaml>=6.0"]
+ai      = ["onnxruntime>=1.17"]
+llm     = ["anthropic>=0.40"]
+report  = ["allure-pytest>=2.13"]
+dev     = ["pytest>=7.4", "pytest-cov", "ruff", "httpx>=0.27"]
+full    = [
+    "playwright==1.47.0", "pytest>=7.4",   # см. комментарий у browser: версия = версии образа
+    "fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
+    "requests>=2.31", "pyyaml>=6.0",
+    "onnxruntime>=1.17", "allure-pytest>=2.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/marshlw/visual-testing"
+Source = "https://github.com/marshlw/visual-testing"
+Issues = "https://github.com/marshlw/visual-testing/issues"
+
+[project.scripts]
+vistest = "vistest.cli:main"
+
+[project.entry-points.pytest11]
+vistest = "vistest.pytest_plugin"
+
+[tool.setuptools.packages.find]
+include = ["vistest*"]
+
+# Модель гейта регионов уезжает вместе с пакетом: полтора килобайта
+# коэффициентов, читаемых глазами. Без неё гейт молча выключается, и `pip
+# install vistest` дал бы движок слабее, чем из исходников.
+[tool.setuptools.package-data]
+vistest = ["ai/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["visual: visual checks",
+           "e2e: run of our own interface in a browser"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]

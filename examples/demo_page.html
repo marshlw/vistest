@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!--
+  VisTest - self-hosted visual regression testing.
+  Copyright (C) 2026 Kirill Kulagin
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of VisTest. See LICENSE for the full terms and NOTICE for
+  the trademark and commercial-licensing terms. Removing this header does not
+  remove those obligations.
+-->
+
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>VisTest demo</title>
+<style>
+  :root{--bg:#fff;--fg:#16181d;--muted:#6b7280;--line:#e5e7eb;--accent:#3478f6}
+  [data-theme="dark"]{--bg:#12141a;--fg:#e9ecf2;--muted:#98a0b0;--line:#262a33;--accent:#5b8dff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.6 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:24px;padding:18px 40px;
+         border-bottom:1px solid var(--line)}
+  header b{font-size:18px;letter-spacing:.5px}
+  nav{display:flex;gap:22px;color:var(--muted);font-size:14px}
+  header button{margin-left:auto;background:none;border:1px solid var(--line);
+                color:var(--fg);padding:6px 14px;border-radius:8px;cursor:pointer}
+  main{max-width:960px;margin:0 auto;padding:48px 40px}
+  h1{font-size:40px;line-height:1.2;margin:0 0 12px}
+  p.lead{color:var(--muted);font-size:18px;margin:0 0 32px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+  .card{border:1px solid var(--line);border-radius:14px;padding:22px}
+  .card h3{margin:0 0 6px;font-size:17px}
+  .card p{margin:0;color:var(--muted);font-size:14px}
+  .price{font-size:34px;font-weight:700;margin:10px 0}
+  .cta{display:inline-block;background:var(--accent);color:#fff;padding:11px 26px;
+       border-radius:10px;text-decoration:none;font-weight:600;margin-top:14px}
+  /* Живые элементы — именно их должна поймать stability-маска, */
+  /* без единого mask_selector в тесте. */
+  #live-counter{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
+  .spinner{width:22px;height:22px;border:3px solid var(--line);
+           border-top-color:var(--accent);border-radius:50%;
+           animation:spin 1s linear infinite;display:inline-block;vertical-align:-5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  footer{border-top:1px solid var(--line);padding:24px 40px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <b>ACME</b>
+  <nav><span>Продукт</span><span>Цены</span><span>Документация</span><span>Блог</span></nav>
+  <button id="theme-toggle">Тема</button>
+</header>
+
+<main>
+  <h1>Визуальные регрессии, которым можно верить</h1>
+  <p class="lead">
+    Онлайн уже <span id="live-counter">0</span> человек <span class="spinner"></span>
+  </p>
+
+  <div class="cards" id="pricing">
+    <div class="card">
+      <h3>Старт</h3>
+      <div class="price">0 ₽</div>
+      <p>До 100 снимков в месяц, один браузер.</p>
+      <a class="cta" href="#" data-testid="cta-free">Попробовать</a>
+    </div>
+    <div class="card">
+      <h3>Команда</h3>
+      <div class="price">4 900 ₽</div>
+      <p>Безлимит снимков, три браузера, история эталонов.</p>
+      <a class="cta" href="#" data-testid="cta-team">Выбрать</a>
+    </div>
+    <div class="card">
+      <h3>Enterprise</h3>
+      <div class="price">По запросу</div>
+      <p>On-premise, SSO, выделенные раннеры.</p>
+      <a class="cta" href="#" data-testid="cta-ent">Связаться</a>
+    </div>
+  </div>
+</main>
+
+<footer>© 2026 ACME · <span data-vistest="ignore">build 8f2a91c</span></footer>
+
+<script>
+  // Счётчик тикает каждые 200 мс — идеальный источник ложных диффов.
+  let n = 0;
+  setInterval(() => { document.getElementById('live-counter').textContent = ++n; }, 200);
+  document.getElementById('theme-toggle').onclick = () => {
+    const r = document.documentElement;
+    r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark';
+  };
+</script>
+</body>
+</html>

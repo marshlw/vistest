@@ -1,0 +1,112 @@
+VisTest
+Copyright (C) 2026 Kirill Kulagin
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
+-------------------------------------------------------------------------------
+What the AGPL means here
+-------------------------------------------------------------------------------
+
+VisTest is network server software. Section 13 of the AGPL applies:
+
+    If you modify VisTest and let anyone interact with it over a network --
+    inside your company, as a hosted product, or as part of a larger platform --
+    you must offer those users the complete corresponding source code of your
+    modified version, under the AGPL, at no charge.
+
+"Complete corresponding source" includes any code you link into the service:
+your changes to the engine, your API additions, your frontend, and the scripts
+used to build and install it.
+
+Running unmodified VisTest for your own testing triggers no obligation. Neither
+does keeping private modifications you never expose to anyone else over a
+network.
+
+
+-------------------------------------------------------------------------------
+Commercial license
+-------------------------------------------------------------------------------
+
+If you want to build a product on VisTest without publishing your own source,
+a commercial license is available. It grants the same code under different
+terms, with no copyleft obligation.
+
+Ask through the repository's issue tracker or discussions, and the maintainer
+will follow up privately.
+
+Contributions are accepted under the same dual-licensing model: by opening a
+pull request you agree that your contribution may be distributed both under the
+AGPL and under the commercial license.
+
+
+-------------------------------------------------------------------------------
+Trademarks
+-------------------------------------------------------------------------------
+
+"VisTest", the VisTest name, logo and visual identity are trademarks of the
+copyright holder. They are NOT licensed under the AGPL.
+
+The AGPL gives you the right to copy, modify and redistribute the code. It does
+not give you the right to call the result "VisTest", to present it as an
+official build, or to use the project's name and branding to promote your own
+product or platform.
+
+If you distribute a modified version, you must:
+
+  * rename it, and remove the VisTest name and logo from the UI, the package
+    metadata, the documentation and the reports it generates;
+  * state clearly that it is derived from VisTest and is not endorsed by or
+    affiliated with the VisTest project;
+  * keep this NOTICE file, the LICENSE file and the copyright headers intact,
+    as the AGPL requires.
+
+Referring to VisTest by name to describe the origin of your fork, to compare
+products, or to write about it is normal nominative use and is fine.
+
+
+-------------------------------------------------------------------------------
+Provenance
+-------------------------------------------------------------------------------
+
+The source carries author and provenance markers, including build-time
+identifiers embedded in generated reports and artifacts. Removing them does not
+remove the license obligations above.
+
+Authorship of the codebase is established by this repository's published
+history. See CONTRIBUTORS.md for the list of contributors.
+
+
+-------------------------------------------------------------------------------
+Third-party components
+-------------------------------------------------------------------------------
+
+VisTest depends on third-party packages that carry their own licenses,
+including but not limited to:
+
+  numpy                     BSD-3-Clause
+  opencv-python-headless    Apache-2.0 (OpenCV), MIT (packaging)
+  pillow                    MIT-CMU
+  playwright                Apache-2.0
+  fastapi / starlette       MIT
+  uvicorn                   BSD-3-Clause
+  pydantic                  MIT
+  pyyaml                    MIT
+  requests                  Apache-2.0
+  onnxruntime               MIT
+  allure-pytest             Apache-2.0
+  pytest                    MIT
+
+Their licenses apply to those components, not to VisTest itself. Run
+`pip-licenses` in your environment for the exact list and versions you have
+installed.
