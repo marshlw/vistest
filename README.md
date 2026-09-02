@@ -15,11 +15,41 @@ failed instead of printing a percentage.
 | **Stays inside your network** | No cloud, no telemetry, no required outbound traffic. Installs on a machine without internet access. |
 | **No code required to start** | Mouse recorder, `--suite pages.yaml`, a pytest fixture, or `POST /api/check` from any stack — four entry points. |
 | **Explains failures** | Not "3.2% different", but `button[data-testid=submit] moved 14px down, severity 82, threshold 50`. The engine is open and inspectable. |
+| **Ignore zones bind to elements** | A zone follows the element it was drawn on instead of staying at its coordinates — so it survives the redesign that moved the block. When the element disappears the zone falls back to coordinates and *says so*, because a mask that quietly stopped working looks exactly like one that works. |
+| **CI tokens per project** | A token belongs to a project, not to the installation: it cannot write another project's runs, it signs the audit log with its own name, and it carries a last-used stamp — the one thing that answers «is it safe to revoke the old one yet». |
+| **Three shapes of a run** | Run as the tests decide, in one named browser, one run per browser (in parallel — different browsers keep different baseline sets), or all browsers in a single run with a single verdict. For your own tests and for connected suites alike. |
+| **One snapshot, many variants** | A matrix of browsers × window sizes runs in a single run and asks a single question. Each variant keeps its own baseline — a firefox frame at 390 has nothing to compare against in a chromium set at 1440. |
 
 The comparison engine combines **ΔE00** (perceptual colour distance), **SSIM**
 (structural similarity), sub-pixel **alignment**, and automatic noise
 suppression. A pixel counts as changed only when both colour *and* structure
 agree that it changed.
+
+### Browsers and window sizes
+
+```yaml
+# vistest.yaml
+matrix:
+  browsers: [chromium, firefox]
+  viewports: ["1440x900", "768x1024", "390x844"]
+  base_viewport: "1440x900"   # its baselines stay exactly where they are
+```
+
+```bash
+python run.py matrix        # what this expands to, before you run it
+```
+
+Six variants, one run, one verdict. Each variant stores its baselines under its
+own key (`linux-chromium-1x-390x844`); the **base** size keeps the plain key it
+always had, so enabling the matrix does not invalidate a single baseline you
+have already captured. That is the whole reason `base_viewport` exists — set it
+explicitly, because otherwise reordering the list moves baselines on disk while
+looking like a formatting change.
+
+A variant's size overrides the size pinned in a snapshot's own passport: the
+matrix is a statement about the whole set. Snapshots whose pinned size differs
+from the base one are named out loud in the run log rather than silently
+re-captured.
 
 ---
 
@@ -295,6 +325,7 @@ python run.py test [pytest args]    run the tests
 python run.py update                overwrite the baselines
 python run.py list | rm | prune     manage baselines and old runs
 python run.py codegen [--pom]       rebuild tests from baseline passports
+python run.py matrix                what the browser × size matrix expands to
 python run.py project add|list|run|rm    connected test suites
 python run.py report RUN            offline HTML report
 python run.py evidence              accumulated quality statistics

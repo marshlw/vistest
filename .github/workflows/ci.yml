@@ -1,0 +1,89 @@
+# Проверки самого VisTest — линтер, тесты, запуск интерфейса.
+#
+# `visual.yml` рядом гоняет визуальные проверки продукта на самом себе, и это
+# другой вопрос. Здесь — то, без чего нельзя мержить: сходится ли код, проходят
+# ли тесты и поднимается ли интерфейс.
+#
+# Запуск интерфейса стоит отдельным шагом не для симметрии. Его поломки не
+# ловятся чтением файлов: страница загружается, навигация рисуется, а первого
+# экрана нет — и выглядит это как повисший сервис. Пятнадцать секунд в jsdom
+# закрывают этот класс целиком.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Нижняя граница из pyproject (requires-python >= 3.10) и текущая.
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        # Без браузерных зависимостей: e2e исключены ниже, а всё остальное
+        # обходится ядром и сервисом.
+        run: pip install -e ".[service,dev]" numpy opencv-python-headless pillow
+
+      - name: Lint
+        run: ruff check vistest/ tests/
+
+      - name: Tests
+        # e2e поднимают настоящий браузер и живут в отдельной работе ниже;
+        # benchmark меряет скорость и в проверке мержа не участвует.
+        run: >
+          pytest tests/ -q
+          --ignore=tests/e2e
+          --ignore=tests/test_benchmark.py
+
+  interface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install
+        run: |
+          pip install -e ".[dev]"
+          npm install --no-save jsdom
+
+      - name: Файлы интерфейса сходятся
+        run: pytest tests/test_frontend_modules.py tests/test_frontend_defaults.py -q
+
+      - name: Интерфейс доходит до первого экрана
+        run: node tests/ui/boot_smoke.mjs frontend
+
+      - name: Матрица показана как один снимок с вариантами
+        run: node tests/ui/matrix_view.mjs frontend
+
+      - name: Редактор зон показывает, чем зона держится
+        run: node tests/ui/zones_view.mjs frontend
+
+      - name: Меню запуска различает три вида прогона
+        run: node tests/ui/run_menu_view.mjs frontend
+
+      - name: Токен CI показывается один раз и не остаётся на странице
+        run: node tests/ui/ci_tokens_view.mjs frontend
+
+      - name: Карточка проекта — меню, кнопки и выбор набора
+        run: node tests/ui/project_card_menu.mjs frontend

@@ -154,6 +154,27 @@ class CaptureConfig:
 
 
 # --------------------------------------------------------------------------- #
+#  Матрица браузеров и разрешений
+# --------------------------------------------------------------------------- #
+@dataclass
+class MatrixConfig:
+    """«Эта страница на chromium/firefox/webkit при 1440, 768 и 390» — одной строкой.
+
+    Пусто — поведение ровно как раньше: один браузер, размер из `capture`.
+    Раскрытие в варианты и правила хранения — в `vistest.matrix`, там же
+    объяснено, почему базовый размер обязан быть один и почему его лучше
+    задать явно.
+    """
+
+    browsers: tuple[str, ...] = ()
+    viewports: tuple[str, ...] = ()
+    # Чьи эталоны остаются под ключом без суффикса. Пусто — первый из списка.
+    # Задавайте явно: иначе перестановка строк в `viewports` переносит набор
+    # эталонов на диске, а выглядит это как правка форматирования.
+    base_viewport: str | None = None
+
+
+# --------------------------------------------------------------------------- #
 #  AI
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -236,6 +257,7 @@ class ServiceConfig:
 class VisTestConfig:
     diff: DiffConfig = field(default_factory=DiffConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
+    matrix: MatrixConfig = field(default_factory=MatrixConfig)
     ai: AIConfig = field(default_factory=AIConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
@@ -293,9 +315,9 @@ class VisTestConfig:
         cfg = cls.preset_of(raw.get("preset", "balanced"))
 
         sections = {
-            "diff": DiffConfig, "capture": CaptureConfig, "ai": AIConfig,
-            "render": RenderConfig, "paths": PathsConfig, "service": ServiceConfig,
-            "auth": AuthConfig,
+            "diff": DiffConfig, "capture": CaptureConfig, "matrix": MatrixConfig,
+            "ai": AIConfig, "render": RenderConfig, "paths": PathsConfig,
+            "service": ServiceConfig, "auth": AuthConfig,
         }
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
@@ -312,6 +334,18 @@ class VisTestConfig:
 
         if "update_baselines" in raw:
             cfg.update_baselines = bool(raw["update_baselines"])
+
+        # Матрица проверяется здесь, а не при первом прогоне. Опечатка в
+        # размере окна («1440*900») иначе всплывёт через минуту ожидания
+        # браузера и невнятной ошибкой драйвера — то есть максимально далеко
+        # от строки, которую надо исправить.
+        if cfg.matrix.browsers or cfg.matrix.viewports:
+            from .matrix import from_config
+
+            try:
+                from_config(cfg)
+            except Exception as e:
+                raise ValueError(f"vistest.yaml: matrix: {e}") from None
 
         if raw.get("flows"):
             from .scenario import normalize
@@ -392,8 +426,15 @@ def _find_config() -> Path | None:
     return None
 
 
-def platform_key(browser: str = "chromium", scale: float = 1.0) -> str:
-    """Environment key. Baselines captured on Windows are not compared with Linux ones."""
+def platform_key(browser: str = "chromium", scale: float = 1.0,
+                 viewport: str | None = None) -> str:
+    """Environment key. Baselines captured on Windows are not compared with Linux ones.
+
+    `viewport` — размер окна в ключе, для матрицы разрешений. Пусто — ключ
+    ровно такой же, каким был всегда, и это не забота о красоте: под ним лежат
+    все уже снятые эталоны. Подробности и правило базового размера — в
+    `vistest.matrix`.
+    """
     import platform as _p
 
     if os.getenv("VISTEST_IN_DOCKER") == "1":
@@ -402,4 +443,9 @@ def platform_key(browser: str = "chromium", scale: float = 1.0) -> str:
         system = {"Windows": "win", "Linux": "linux", "Darwin": "mac"}.get(
             _p.system(), _p.system().lower()
         )
-    return f"{system}-{browser}-{scale:g}x"
+    key = f"{system}-{browser}-{scale:g}x"
+    if viewport:
+        from .matrix import normalize_viewport
+
+        key += "-" + normalize_viewport(viewport)
+    return key
