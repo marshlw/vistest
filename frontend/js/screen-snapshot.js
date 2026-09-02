@@ -1,32 +1,4 @@
-/* VisTest - self-hosted visual regression testing.
- * Copyright (C) 2026 Kirill Kulagin
- * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * This file is part of VisTest. See LICENSE for the full terms and NOTICE for
- * the trademark and commercial-licensing terms. Removing this header does not
- * remove those obligations.
- */
-
 /* Страница одного снимка: эталон, ignore-зоны мышью, спека целиком, история. */
-/* ============================================================== SNAPSHOT ==
-   Снимок как объект первого класса.
-
-   До сих пор снимок был строкой-ключом, размазанной по трём экранам: спека —
-   в карточке на вкладке «Baselines», история — только если повезёт наткнуться
-   на нужное сравнение, версии эталона — в модалке из меню «⋯», ignore-зоны
-   видны одним числом на чипе. Ответить на вопрос «что это за снимок и что с
-   ним происходило» было негде, а править из интерфейса можно было ровно один
-   URL — через `prompt()`.
-
-   Здесь всё в одном месте: эталон, спека целиком, зоны игнорирования (мышью
-   по картинке), история проверок и кнопки «прогнать только его» и
-   «переснять».
-   ========================================================================= */
-function snapshotHash(scope,platform,name){
-  return '#/snapshot/'+encodeURIComponent(scope||'global')
-    +'/'+encodeURIComponent(platform||'')
-    +'/'+encodeURIComponent(name||'');
-}
 function parseSnapshotArg(arg){
   const parts=String(arg||'').split('/');
   if(parts.length<3)return null;
@@ -40,6 +12,7 @@ SCREENS.snapshot=async function(arg){
   if(!ref)return errScreen(new Error('No snapshot specified'));
   state.snapRef=ref;
   loadingScreen();
+  const here=pageGuard();
   const q='platform='+encodeURIComponent(ref.platform)
     +'&name='+encodeURIComponent(ref.name)
     +(ref.scope&&ref.scope!=='global'?'&scope='+encodeURIComponent(ref.scope):'');
@@ -49,9 +22,11 @@ SCREENS.snapshot=async function(arg){
     /* Эталона под этим именем в этом хранилище нет — это состояние, а не сбой:
        снимок могли удалить, или прогон был первым и записал `new_baseline` в
        другой набор. Голая «Could not load» тут ничего не объясняет. */
+    if(!here())return;
     if(/not found/i.test(String(e.message||e)))return snapshotMissing(ref);
     return errScreen(e);
   }
+  if(!here())return;
   state.snap=d;
   renderSnapshot(d);
 };
@@ -74,6 +49,13 @@ function snapshotMissing(ref){
 }
 
 function renderSnapshot(d){
+  /* Карточка без `baseline` роняла экран на `d.baseline.version` — тем же
+     способом, что и `applyTeam()` роняла весь интерфейс на узле, которого нет
+     в разметке: обращение к полю ответа, про которое считается, что оно есть
+     всегда. Ответ приходит из сети, «всегда» тут не бывает, а цена — пустой
+     экран вместо снимка. */
+  d=Object.assign({spec:{},baseline:{},source:{}},d||{});
+  d.baseline=d.baseline||{};d.spec=d.spec||{};
   const screen=$('#screen');screen.innerHTML='';
   const s=el('div','page');screen.append(s);
   const ref=state.snapRef;
@@ -184,7 +166,10 @@ function buildZoneEditor(d){
   hint.style.cssText='font-size:12.5px;line-height:1.5;margin-bottom:12px';
   hint.innerHTML='Drag on the picture to mark an area the engine must never '
     +'compare — a clock, a carousel, a random avatar. Zones live with the '
-    +'snapshot, so they apply to every run, not just the one you were looking at.';
+    +'snapshot, so they apply to every run, not just the one you were looking at.'
+    +'<br>VisTest looks up what you circled and offers to hold the zone by the '
+    +'<b>element</b> instead of the rectangle: then it moves with the layout '
+    +'rather than staying where the element used to be.';
   card.append(hint);
 
   const wrap=el('div');
@@ -210,11 +195,29 @@ function buildZoneEditor(d){
     overlay.innerHTML='';
     const k=scale();
     boxes.forEach((b,i)=>{
+      /* Зона по элементу и зона по координатам выглядят по-разному, и это не
+         украшение. Разница между ними — переживёт ли маска ближайший
+         редизайн; узнать это, глядя на два одинаковых прямоугольника,
+         нельзя. Потерявшая цель — третий вид: она ещё держит координаты, но
+         уже не то, ради чего ставилась. */
+      const kind=zoneKind(b);
       const r=el('div');
       r.style.cssText=`position:absolute;left:${b.x*k}px;top:${b.y*k}px;`
-        +`width:${b.w*k}px;height:${b.h*k}px;`
-        +'background:rgba(216,63,38,.22);border:1.5px solid var(--fail-bright);'
-        +'border-radius:2px';
+        +`width:${b.w*k}px;height:${b.h*k}px;border-radius:2px;`
+        +(kind==='lost'
+          ? 'background:rgba(184,118,11,.20);border:1.5px dashed var(--warn)'
+          : kind==='element'
+          ? 'background:rgba(216,63,38,.22);border:1.5px solid var(--fail-bright)'
+          : 'background:rgba(216,63,38,.14);border:1.5px dashed var(--fail-bright)');
+      r.title=zoneTitle(b);
+      const tag=el('div','mono');
+      tag.style.cssText='position:absolute;left:0;top:-17px;font-size:10px;'
+        +'white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;'
+        +'color:'+(kind==='lost'?'var(--warn)':'var(--muted)');
+      tag.textContent=kind==='lost'?'⚠ lost its element'
+        :kind==='element'?(b.selector||'element')
+        :'by coordinates';
+      r.append(tag);
       const x=el('button','btn sm','×');
       x.title='Remove this zone';
       x.style.cssText='position:absolute;right:-9px;top:-9px;padding:0;width:20px;'
@@ -223,8 +226,14 @@ function buildZoneEditor(d){
       r.append(x);
       overlay.append(r);
     });
-    count.textContent=boxes.length?`${boxes.length} zone${boxes.length===1?'':'s'}`
-                                  :'no zones';
+    const held=boxes.filter(b=>zoneKind(b)==='element').length;
+    const lost=boxes.filter(b=>zoneKind(b)==='lost').length;
+    count.textContent=boxes.length
+      ? `${boxes.length} zone${boxes.length===1?'':'s'}`
+        +(held?` · ${held} by element`:'')
+        +(lost?` · ${lost} lost`:'')
+      : 'no zones';
+    count.style.color=lost?'var(--warn)':'';
   }
 
   let drawing=null;
@@ -262,6 +271,14 @@ function buildZoneEditor(d){
     // Клик без протяжки — это не зона нулевого размера, это промах.
     if(box.w<4||box.h<4)return;
     boxes.push(box);paint();markDirty();
+    /* Спрашиваем элемент СРАЗУ после протяжки, а не отдельной кнопкой.
+       Кнопка «а теперь привяжите к элементу» — это шаг, который делают один
+       раз из десяти и забывают в девяти; а зона без элемента и есть та самая
+       зона, которая через месяц глушит не то. */
+    offerElement(box,d,patch=>{
+      Object.assign(boxes[boxes.length-1]||{},patch);
+      paint();markDirty();
+    });
   };
   wrap.addEventListener('pointerup',finish);
   wrap.addEventListener('pointercancel',()=>{drawing=null;ghost.style.display='none';});
@@ -303,8 +320,136 @@ function buildZoneEditor(d){
   card.append(size);
 
   if(img.complete)setTimeout(paint,0);else img.onload=paint;
-  window.addEventListener('resize',paint);
+  /* Слушатель `resize` один на всё приложение, а не по одному на отрисовку.
+
+     Здесь стояло `window.addEventListener('resize',paint)` — и снималось это
+     никогда. Экран снимка перерисовывается на каждое сохранение спеки, на
+     каждую пересъёмку и на каждый заход из списка, и каждый раз к окну
+     добавлялся ещё один обработчик, держащий за собой выброшенную из
+     документа картинку со всеми зонами. К концу дня разбора их набирались
+     десятки: память не отдаётся, а любое перетаскивание края окна прогоняет
+     весь этот хвост заново.
+
+     Перерисовывать нужно ровно тот редактор, который сейчас на экране, — его
+     и держим в одной переменной. Ушёл из документа — забыли. */
+  zonePaint={node:wrap,paint};
+  installZoneResize();
   return card;
+}
+
+/* Чем зона держится — тремя словами, потому что от этого зависит, доживёт ли
+   она до следующего редизайна.
+
+   `lost` приезжает с сервера: находит ли селектор свою цель в DOM эталона,
+   считается там же, где и при сравнении. Считать это на клиенте значило бы
+   завести второе место, где живёт ответ «маска работает или уже нет». */
+function zoneKind(b){
+  if(b.lost)return 'lost';
+  return (b.selector||b.match)?'element':'coordinates';
+}
+function zoneTitle(b){
+  if(zoneKind(b)==='coordinates')
+    return 'Held by coordinates. It stays where it is even when the layout moves — '
+      +'draw it again to bind it to an element.';
+  const where=b.match&&b.match.testid?'data-testid="'+b.match.testid+'"'
+    :b.match&&b.match.id?'#'+b.match.id
+    :(b.selector||'element');
+  if(b.lost)
+    return 'This zone no longer finds '+where+' in the baseline DOM. It is still '
+      +'holding by coordinates — that is, by where the element used to be.';
+  return 'Held by '+where
+    +(b.matches>1?` · ${b.matches} elements match`:'')
+    +'. It moves with the layout.';
+}
+
+/* «Что я обвёл» — сразу после протяжки.
+
+   Сам элемент попасть мышью почти невозможно: промахнулся на два пикселя и
+   выделил <span> внутри кнопки. Поэтому сервер возвращает лесенку — узел и
+   его родители, — а человек выбирает уровень осмысленно, глядя на подписи. */
+async function offerElement(box,d,apply){
+  const q={platform:d.platform,name:d.name,
+           scope:d.scope==='global'?undefined:d.scope,...box};
+  let data;
+  try{data=await api('/api/baselines/element-at',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});}
+  catch{return;}
+  const nodes=(data&&data.nodes)||[];
+  if(!nodes.length){
+    /* Снимок снят без DOM — зацепиться не за что, и врать про это нельзя.
+       Зона остаётся координатной, а человек узнаёт почему. */
+    toast(data&&data.reason
+      ? 'Zone held by coordinates: '+data.reason
+      : 'Nothing to bind to here — the zone stays by coordinates');
+    return;
+  }
+
+  const wrap=el('div');
+  wrap.innerHTML=`<div class="mhead"><div><h3>Bind the zone to an element?</h3>
+    <div class="msub">A zone bound to an element moves with the layout. A zone
+      bound to coordinates stays where it is — and after the next redesign it
+      hides whatever moved into that rectangle instead.</div></div>
+    <button class="mclose" aria-label="Close">×</button></div>`;
+  const body=el('div','pf-body');wrap.append(body);
+
+  nodes.forEach((n,i)=>{
+    const row=el('label','pick'+(i===0?' on':''));
+    const strength=n.holds_by==='data-testid'?'green'
+      :n.holds_by==='id'?'':'amber';
+    row.innerHTML=`<b class="mono" style="overflow:hidden;text-overflow:ellipsis">${
+        esc(n.selector||n.tag||'?')}</b>
+      <span class="tag ${strength}">${esc(n.holds_by)}</span>
+      <span class="mono faint">${n.w}×${n.h}</span>`
+      +(n.text?`<span class="faint" style="flex-basis:100%;font-size:11.5px">${
+        esc(n.text)}</span>`:'');
+    row.title=n.holds_by==='css path'
+      ? 'A path through the tree: it breaks on any restructuring. Works, but '
+        +'is the least durable of the three.'
+      : 'Survives restructuring — this is what data-testid and id are for.';
+    row.onclick=()=>{
+      $$('.pick',body).forEach(x=>x.classList.remove('on'));
+      row.classList.add('on');
+      body.dataset.pick=String(i);
+    };
+    body.append(row);
+  });
+  body.dataset.pick='0';
+
+  const foot=el('div','macts');
+  const keep=el('button','btn','Keep it by coordinates');
+  keep.title='The zone stays exactly where you drew it.';
+  keep.onclick=closeModal;
+  const bind=el('button','btn accent','Bind to the element');
+  bind.onclick=()=>{
+    const n=nodes[Number(body.dataset.pick)||0];
+    const patch={selector:n.selector||undefined,match:{},
+      /* Прямоугольник подтягивается к элементу: человек обводил его на глаз, а
+         точные границы знает DOM. Заодно это и есть запасные координаты — те,
+         по которым зона будет работать, если элемент однажды исчезнет. */
+      x:n.x,y:n.y,w:n.w,h:n.h,matches:1,lost:false};
+    if(n.testid)patch.match.testid=n.testid;
+    if(n.id)patch.match.id=n.id;
+    if(n.tag)patch.match.tag=n.tag;
+    if(n.cls)patch.match.cls=n.cls;
+    closeModal();
+    /* Зона правится через переданное действие, а не напрямую: список зон и
+       перерисовка живут внутри редактора, и тянуть их сюда через замыкание
+       значило бы, что эта функция может существовать только рядом с ним. */
+    apply(patch);
+  };
+  foot.append(keep,bind);wrap.append(foot);
+  openModal(wrap,{wide:true});$('.mclose',wrap).onclick=closeModal;
+}
+
+let zonePaint=null,zoneResizeOn=false;
+function installZoneResize(){
+  if(zoneResizeOn)return;
+  zoneResizeOn=true;
+  window.addEventListener('resize',()=>{
+    if(!zonePaint)return;
+    if(!document.body.contains(zonePaint.node)){zonePaint=null;return;}
+    zonePaint.paint();
+  });
 }
 
 /* ------- спека целиком -------

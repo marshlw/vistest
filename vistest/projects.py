@@ -98,6 +98,9 @@ class Adapter:
         return bool(self.target)
 
 
+BROWSER_OPTIONS = ("auto", "flag", "env", "none")
+
+
 @dataclass
 class Project:
     key: str
@@ -129,6 +132,25 @@ class Project:
     # `python -m pytest` in the command builder.
     runner: str = "pytest"
     command: list[str] = field(default_factory=list)
+
+    # Чем до их тестов доходит имя браузера.
+    #
+    # Прогнать чужой набор в firefox можно только одним способом: попросить об
+    # этом их же код. Своего браузера у нас в этом пути нет — его поднимает их
+    # conftest, и как именно он выбирает движок, знают только они.
+    #
+    #   "auto"  — по умолчанию: переменная окружения ВСЕГДА, плюс `--browser`,
+    #             если у них стоит pytest-playwright (он этот флаг и вводит).
+    #   "flag"  — только `--browser <name>`: у проекта свой разбор аргументов.
+    #   "env"   — только `VISTEST_BROWSER`: их conftest читает переменную сам.
+    #   "none"  — управлять нельзя.
+    #
+    # Последнее значение существует ради честности, и это здесь главное.
+    # Прогон в трёх браузерах, из которых все три на самом деле chromium, —
+    # худший исход из возможных: он пишет три набора эталонов, показывает
+    # зелёное по всем трём и создаёт уверенность в покрытии, которого нет.
+    # Лучше отказаться и назвать причину.
+    browser_option: str = "auto"
 
     # ---------------- paths ----------------
     @property
@@ -304,6 +326,7 @@ class Project:
             note=raw.get("note", ""),
             runner=(raw.get("runner") or "pytest").lower(),
             command=list(raw.get("command") or []),
+            browser_option=(raw.get("browser_option") or "auto").lower(),
         )
 
     def validate(self) -> list[str]:
@@ -337,7 +360,42 @@ class Project:
         if self.runner == "command" and not self.command:
             problems.append(
                 "runner=command, but the command itself is not specified")
+        if self.browser_option not in BROWSER_OPTIONS:
+            problems.append(
+                f"unknown browser_option: {self.browser_option!r} "
+                f"({' | '.join(BROWSER_OPTIONS)})")
         return problems
+
+    # ---------------- многобраузерность ----------------
+    def browser_control(self) -> str:
+        """Каким способом этому проекту можно назвать браузер.
+
+        `auto` разрешается не здесь: чтобы узнать, стоит ли у них
+        pytest-playwright, нужен их интерпретатор — то есть подпроцесс. Здесь
+        только то, что видно из описания проекта.
+        """
+        if not self.uses_pytest():
+            # Своя команда: `npx playwright test`, `mvn`, `dotnet test`. Куда
+            # там вписывать браузер — знают только они, и угадывать нельзя:
+            # неверный аргумент уронит прогон, верный по случайности — соврёт.
+            return "none"
+        return self.browser_option or "auto"
+
+    def browser_refusal(self) -> str:
+        """Почему многобраузерный прогон невозможен — словами. Пусто = возможен."""
+        if self.browser_control() != "none":
+            return ""
+        if not self.uses_pytest():
+            return (
+                f"Проект «{self.name or self.key}» запускается своей командой "
+                f"({' '.join(self.command[:3]) or '—'}…), и куда в ней вписать "
+                "браузер, знаем не мы. Добавьте выбор браузера в саму команду — "
+                "например через переменную окружения VISTEST_BROWSER, которую "
+                "VisTest всегда выставляет, — и поставьте browser_option=env.")
+        return (
+            f"У проекта «{self.name or self.key}» отключено управление браузером "
+            "(browser_option=none). Прогон во всех браузерах при этом трижды "
+            "запустил бы один и тот же — и показал бы покрытие, которого нет.")
 
 
 # --------------------------------------------------------------------------- #

@@ -400,13 +400,14 @@ def collect(url: str, *, runs: int = 3, browser: str = "chromium",
 
     from .capture.stabilize import context_options, install
     from .integrations.driver import PlaywrightDriver
+    from .matrix import launch
 
     cfg = cfg or VisTestConfig.load()
     w, h = _viewport(viewport)
     frames: list[SimpleFrame] = []
 
     with sync_playwright() as p:
-        br = getattr(p, browser).launch(headless=True)
+        br = launch(p, browser, headless=True)
         try:
             for i in range(runs):
                 log(f"  load {i + 1} of {runs}…")

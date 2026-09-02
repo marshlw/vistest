@@ -39,10 +39,12 @@ SCREENS.runs=async function(arg){
   if(arg&&/^\d+$/.test(arg))return renderRunPage(Number(arg));
 
   loadingScreen();
+  const here=pageGuard();
   state.runFilter=state.runFilter||'all';
   let runs;
   try{runs=await api('/api/runs?limit='+(state.runLimit||60)+'&project='+encodeURIComponent(state.project));}
   catch(e){return errScreen(e);}
+  if(!here())return;
   state.runs=runs;
 
   const s=$('#screen');s.innerHTML='';
@@ -81,7 +83,10 @@ SCREENS.runs=async function(arg){
      здесь по массиву `runs` — то есть по одной странице в шестьдесят записей.
      «С падениями 3» при трёхстах в истории читается как факт, и это тот
      случай, когда неверное число хуже отсутствующего. */
-  const bar=el('div','bar');
+  /* Полоса фильтров липнет к верху: триста прогонов проходятся колесом за
+     секунду, и на третьем экране уже не видно, какой фильтр включён — то есть
+     не видно, что список неполный. */
+  const bar=el('div','bar sticky');
   RUN_FILTERS.forEach(([k,label])=>{
     const n=total?(total[k]||0):runs.filter(r=>matchRunFilter(r,k)).length;
     const b=el('button',state.runFilter===k?'on':'');
@@ -93,12 +98,22 @@ SCREENS.runs=async function(arg){
   page.append(bar);
 
   const shown=runs.filter(r=>matchRunFilter(r,state.runFilter));
-  const cols='170px 116px 1fr 110px 90px 80px 34px';
+  /* Колонка возраста была 80 px, и «20 minutes ago» ложилось в неё в две
+     строки — а строка таблицы от этого становилась вдвое выше соседних.
+     Шестьдесят таких строк перестают читаться колонками, ради которых
+     таблица и существует. */
+  const cols='170px 116px 1fr 110px 90px 104px 34px';
   const rows=el('div','rows flush');
   const th=el('div','th');th.style.display='grid';
   th.style.gridTemplateColumns=cols;th.style.gap='12px';
-  th.innerHTML='<div>RUN</div><div>VERDICT</div><div>BRANCH · COMMIT</div>'
-    +'<div class="r">FAIL / TOTAL</div><div class="r">DURATION</div>'
+  /* Заголовки колонок объясняют себя: «FAIL / TOTAL» — это не «сколько
+     упало», а «сколько упало из скольких проверенных», и разница между этими
+     двумя чтениями решает, паниковать человеку или нет. */
+  th.innerHTML='<div>RUN</div>'
+    +'<div data-tip="What the run amounts to as a whole. «To decide» means nobody has answered its failures yet.">VERDICT</div>'
+    +'<div>BRANCH · COMMIT</div>'
+    +'<div class="r" data-tip="Failed comparisons out of everything the run checked. The denominator is the point: three failures out of five is not three out of three hundred.">FAIL / TOTAL</div>'
+    +'<div class="r" data-tip="Wall-clock time of the whole run, capture included.">DURATION</div>'
     +'<div class="r">AGE</div><div></div>';
   rows.append(th);
 
@@ -110,21 +125,22 @@ SCREENS.runs=async function(arg){
     const nm=(r.run_key||r.project||('#'+r.id));
     tr.innerHTML=`<div class="mono" style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</div>
       <div>${runStatus(r).html}</div>
-      <div class="mono" style="font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.branch||'—')} · ${esc((r.git_sha||'—').slice(0,7))}</div>
+      <div class="mono" style="font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.branch||'—')} · ${esc((r.git_sha||'—').slice(0,7))}${variantChip(r)}</div>
       <div class="m r"${(r.failed||0)?' style="color:var(--fail)"':''}>${fmtInt(r.failed||0)} / ${fmtInt(r.total||0)}</div>
       <div class="m r">${esc(fmtDur(r.started_at,r.finished_at))}</div>
-      <div class="mono r" style="font-size:11.5px;color:var(--faint)">${esc(timeAgo(r.started_at))}</div>`;
+      <div class="mono r age" style="font-size:11.5px;color:var(--faint)">${esc(timeAgo(r.started_at))}</div>`;
     hit(tr,()=>{location.hash='#/runs/'+r.id;},`Run ${nm}, open it`);
 
     /* Удаление одного прогона. Роут `DELETE /api/runs/{id}` существовал с
        самого начала и не был подключён ни к одной кнопке: почистить историю
        можно было только массово, «всё старше N дней». */
-    const del=el('button','btn sm','×');
-    del.title='Delete this run';
+    /* Кнопка была нарисована прозрачностью через два обработчика мыши: она
+       не проявлялась для того, кто ходит клавиатурой, и была неотличима от
+       артефакта отрисовки для того, кто ходит мышью. Вид теперь в CSS
+       (`.btn.row-x`), а состояния — обычные `:hover` и `:focus-visible`. */
+    const del=el('button','btn sm row-x','×');
+    tip(del,'Deletes this run with its images. Baselines are not touched.');
     del.setAttribute('aria-label',`Delete run ${nm}`);
-    del.style.cssText='padding:2px 7px;opacity:.4';
-    del.onmouseenter=()=>del.style.opacity='1';
-    del.onmouseleave=()=>del.style.opacity='.4';
     del.onclick=e=>{e.stopPropagation();deleteRun(r);};
     tr.append(del);
     rows.append(tr);
@@ -153,6 +169,19 @@ function runStatus(r){
   return {cls,text,html:`<span class="${cls}">${esc(text)}</span>`};
 }
 
+/* «×6 вариантов» рядом с веткой.
+
+   Прогон по матрице — это один прогон и шесть наборов «браузер × размер». В
+   колонке FAIL/TOTAL у него вшестеро больше сравнений, и «5 to decide»
+   читается как пять сломанных страниц, хотя это одна страница, сломанная на
+   пяти вариантах. Число вариантов здесь — единственное, что отличает одно от
+   другого, не открывая прогон. */
+function variantChip(r){
+  const n=r.variants||0;
+  if(n<2)return '';
+  return ` <span class="tag" title="Browsers × window sizes in this run">×${n} variants</span>`;
+}
+
 function matchRunFilter(r,kind){
   if(kind==='fail')return (r.failed||0)>0;
   if(kind==='error')return (r.errored||0)>0;
@@ -175,9 +204,11 @@ async function deleteRun(r){
 /* --------------------------------------------------------------- прогон -- */
 async function renderRunPage(id){
   loadingScreen();
+  const here=pageGuard();
   let r;
   try{r=await api('/api/runs/'+id);}
   catch(e){
+    if(!here())return;
     /* Пустая панель вместо прогона — единственное, что видел человек,
        пришедший по ссылке на удалённый прогон: ни ошибки, ни объяснения. */
     $('#screen').innerHTML=`<div class="page narrow"><div class="panel pad">
@@ -187,6 +218,7 @@ async function renderRunPage(id){
       </div></div>`;
     return;
   }
+  if(!here())return;
   state.run=r;
 
   const s=$('#screen');s.innerHTML='';
@@ -241,7 +273,8 @@ async function renderRunPage(id){
          открыть. Ошибочная отличается тем, что смотреть в ней нечего. */
       const row=el('div','tr click snap-row is-err');
       row.style.cssText='display:grid;grid-template-columns:260px 1fr;gap:14px;padding:9px 15px;cursor:pointer';
-      row.innerHTML=`<div class="mono" style="font-size:12px">${esc(c.snapshot_name||'?')}</div>
+      row.innerHTML=`<div class="mono" style="font-size:12px">${esc(c.snapshot_name||'?')}${
+          c.variant?`<span class="faint" style="font-weight:400"> · ${esc(c.variant)}</span>`:''}</div>
         <div class="mono" style="font-size:11.5px;color:var(--warn)">${esc(c.error||'unknown error')}</div>`;
       hit(row,()=>{location.hash='#/compare/'+c.id;},`${c.snapshot_name}, open it`);
       eb.append(row);
@@ -260,7 +293,11 @@ async function renderRunPage(id){
 
   const comps=(r.comparisons||[]).filter(c=>c.verdict!=='error');
   if(comps.length){
-    page.append(sectionHead('Snapshots',String(comps.length)));
+    const groups=groupBySnapshot(comps);
+    const matrix=(r.variants||[]).length>1;
+    page.append(sectionHead('Snapshots',
+      matrix?`${groups.length} × ${r.variants.length} variants`
+            :String(comps.length)));
     const rows=el('div','rows');
     const cols='1fr 120px 90px 100px 110px';
     const th=el('div','th');th.style.display='grid';
@@ -268,20 +305,65 @@ async function renderRunPage(id){
     th.innerHTML='<div>SNAPSHOT</div><div>VERDICT</div><div class="r">SEV</div>'
       +'<div class="r">AREA</div><div class="r">SSIM</div>';
     rows.append(th);
-    comps.forEach(cp=>{
-      const tr=el('div','tr click snap-row');
-      tr.style.display='grid';tr.style.gridTemplateColumns=cols;tr.style.gap='12px';
-      tr.innerHTML=`<div class="mono sn" style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cp.snapshot_name)}</div>
-        <div>${verdictTag(cp)}</div>
-        <div class="m r">${fmt(cp.max_severity,1)}</div>
-        <div class="m r">${pct(cp.changed_area_pct,3)}</div>
-        <div class="m r">${fmt(cp.ssim,4)}</div>`;
-      hit(tr,()=>{location.hash='#/compare/'+cp.id;},
-          `${cp.snapshot_name||'snapshot'}, open the review`);
-      rows.append(tr);
+    groups.forEach(g=>{
+      /* Один вариант — строка ровно такая же, какой была. Матрица — заголовок
+         снимка и варианты под ним: снимок остаётся ОДНИМ, а варианты это его
+         разрезы. Плоский список из тридцати строк, где `checkout` встречается
+         шесть раз подряд, отвечает на вопрос «что упало» словом «всё». */
+      if(matrix&&g.items.length>1)rows.append(groupHead(g));
+      g.items.forEach(cp=>rows.append(
+        snapshotRow(cp,cols,matrix&&g.items.length>1)));
     });
     page.append(rows);
   }
+}
+
+/* Сравнения → снимки со списком вариантов. Порядок снимков — по худшему
+   варианту: экран прогона отвечает на «что чинить», а чинят по самому
+   плохому, а не по среднему. */
+function groupBySnapshot(comps){
+  const by=new Map();
+  comps.forEach(c=>{
+    const key=c.snapshot_name||'?';
+    if(!by.has(key))by.set(key,{name:key,items:[]});
+    by.get(key).items.push(c);
+  });
+  const worst=g=>Math.max(...g.items.map(c=>c.max_severity||0));
+  const bad=g=>g.items.some(c=>c.verdict==='fail'&&!c.review);
+  return [...by.values()].sort((a,b)=>
+    (bad(b)-bad(a))||(worst(b)-worst(a))||a.name.localeCompare(b.name));
+}
+
+function groupHead(g){
+  const bad=g.items.filter(c=>c.verdict==='fail').length;
+  const d=el('div','tr');
+  d.style.cssText='display:flex;align-items:center;gap:10px;padding:9px 15px;'
+    +'background:var(--panel);border-bottom:1px solid var(--line3)';
+  d.innerHTML=`<span class="mono" style="font-size:12px;font-weight:600">${esc(g.name)}</span>
+    <span class="faint mono" style="font-size:11px">${g.items.length} variants</span>`
+    +(bad?`<span class="tag accent" style="margin-left:auto">${bad} of ${g.items.length} failed</span>`
+         :'<span class="tag green" style="margin-left:auto">all clean</span>');
+  return d;
+}
+
+function snapshotRow(cp,cols,nested){
+  const tr=el('div','tr click snap-row');
+  tr.style.display='grid';tr.style.gridTemplateColumns=cols;tr.style.gap='12px';
+  /* В сгруппированном виде первой колонкой стоит ВАРИАНТ, а не имя: имя уже
+     написано в заголовке группы, и повторять его шесть раз значит прятать за
+     ним единственное, чем строки отличаются. */
+  const first=nested
+    ? `<div class="mono" style="font-size:11.5px;color:var(--muted);padding-left:16px">${esc(cp.variant||cp.platform||'—')}</div>`
+    : `<div class="mono sn" style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cp.snapshot_name)}${
+        cp.variant?`<span class="faint" style="font-weight:400"> · ${esc(cp.variant)}</span>`:''}</div>`;
+  tr.innerHTML=first
+    +`<div>${verdictTag(cp)}</div>
+      <div class="m r">${fmt(cp.max_severity,1)}</div>
+      <div class="m r">${pct(cp.changed_area_pct,3)}</div>
+      <div class="m r">${fmt(cp.ssim,4)}</div>`;
+  hit(tr,()=>{location.hash='#/compare/'+cp.id;},
+      `${cp.snapshot_name||'snapshot'}${cp.variant?', '+cp.variant:''}, open the review`);
+  return tr;
 }
 
 function verdictTag(cp){

@@ -1,11 +1,3 @@
-# VisTest - self-hosted visual regression testing.
-# Copyright (C) 2026 Kirill Kulagin
-# SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
-# the trademark and commercial-licensing terms. Removing this header does not
-# remove those obligations.
-
 """Интерфейс собран из файлов — и они обязаны сойтись.
 
 Пока весь фронт был одним `index.html` на четыре тысячи строк, поломки такого
@@ -174,6 +166,146 @@ def test_no_two_modules_define_the_same_top_level_constant(present):
     assert not clashes, "одно имя в двух файлах: " + "; ".join(clashes)
 
 
+def test_a_helper_used_by_two_screens_lives_in_a_shared_file(present):
+    """Функция, которую зовут с двух экранов, не должна жить на одном из них.
+
+    Дело не в чистоте. Сборщика нет, файлы делят одну область видимости, и
+    вызов через границу экрана держится ровно на одном допущении: оба файла
+    доехали до браузера. Достаточно, чтобы один приехал из кэша старым, — и
+    кнопка на СОСЕДНЕМ экране перестаёт делать что бы то ни было. Молча: экран
+    цел, кнопка нажимается, а обработчик падает на функции, которой в старом
+    файле ещё нет.
+
+    Так и вышло с `nonEmptyScope`: объявлена на «Baselines», позвана из
+    «Tests», и «Assemble» не открывал ничего. Общее место для общего кода —
+    `shared.js`, и здесь это правило.
+    """
+    home: dict[str, str] = {}
+    for name in sorted(present):
+        text = (JS_DIR / name).read_text(encoding="utf-8")
+        for m in re.finditer(r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)",
+                             text, re.M):
+            home.setdefault(m.group(1), name)
+
+    strays = []
+    for fn, where in sorted(home.items()):
+        if not where.startswith("screen-"):
+            continue
+        used_by = [n for n in sorted(present)
+                   if n != where and n.startswith("screen-")
+                   and re.search(r"\b" + re.escape(fn) + r"\s*\(",
+                                 (JS_DIR / n).read_text(encoding="utf-8"))]
+        if used_by:
+            strays.append(
+                f"{fn} объявлена в {where}, зовётся из {', '.join(used_by)}")
+    assert not strays, ("общее место для общего кода — shared.js: "
+                        + "; ".join(strays))
+
+
 def test_the_page_itself_stays_small(listed):
     """Ради этого всё и делалось: `index.html` — разметка, а не приложение."""
     assert len(INDEX.read_text(encoding="utf-8").splitlines()) < 200
+
+
+# --------------------------------------------------------------------------- #
+#  Разметка и код обязаны сходиться так же, как файлы между собой
+# --------------------------------------------------------------------------- #
+def test_every_markup_selector_the_code_uses_exists_in_the_page(present):
+    """Селектор, которому в разметке ничего не соответствует, — это `null`.
+
+    Так уже было, и стоило это дорого. `applyTeam()` писал имя команды в
+    `$('.brand .sub')`, а узла с классом `sub` в `index.html` не было ни
+    одного. Пока имя команды пустое, ветка не выполнялась — и полгода всё
+    выглядело исправным. В тот день, когда администратор заполнил «Team
+    profile», функция упала на `null`; зовут её из запуска ДО навигации, и
+    исключение унесло с собой первую отрисовку целиком. Интерфейс остался на
+    «Loading…» — у всей команды сразу, и по виду это была поломка сервиса, а
+    не одна строка во фронте.
+
+    Проверяются селекторы по КЛАССАМ из разметки: `#id` в этом коде сплошь
+    создаются на лету, а классы, начинающиеся с элемента страницы, — нет.
+    """
+    markup = INDEX.read_text(encoding="utf-8")
+    in_page = set(re.findall(r'class="([^"]+)"', markup))
+    page_classes: set[str] = set()
+    for chunk in in_page:
+        page_classes.update(chunk.split())
+
+    # Классы, которые код создаёт сам: `el('div','card pad')`, `className=`,
+    # `classList.add(...)` и классы внутри шаблонных строк.
+    made: set[str] = set()
+    for name in sorted(present):
+        text = (JS_DIR / name).read_text(encoding="utf-8")
+        for m in re.finditer(r"el\(\s*['\"][\w-]+['\"]\s*,\s*['\"]([^'\"]+)['\"]", text):
+            made.update(m.group(1).split())
+        for m in re.finditer(r"classList\.(?:add|toggle)\(\s*['\"]([\w-]+)['\"]", text):
+            made.add(m.group(1))
+        for m in re.finditer(r'class="([^"${]+)"', text):
+            made.update(m.group(1).split())
+        for m in re.finditer(r"className\s*=\s*['\"]([^'\"]+)['\"]", text):
+            made.update(m.group(1).split())
+
+    known = page_classes | made
+    missing = []
+    for name in sorted(present):
+        text = (JS_DIR / name).read_text(encoding="utf-8")
+        # Только `$('...')` с одним аргументом: с корнем вторым аргументом ищут
+        # внутри только что собранного узла, и там разметка своя.
+        for m in re.finditer(r"\$\(\s*'(\.[^']+)'\s*\)", text):
+            for token in re.findall(r"\.([\w-]+)", m.group(1)):
+                if token not in known:
+                    missing.append(f"{name}: $('{m.group(1)}') — нет `.{token}`")
+    assert not missing, "селектор без узла: " + "; ".join(missing)
+
+
+def test_the_interface_asks_nothing_from_the_outside(present):
+    """Ни одного исходящего запроса из страницы — это продаваемое обещание.
+
+    README первой же строкой обещает «No cloud, no telemetry, no required
+    outbound traffic. Installs on a machine without internet access», а в
+    `<head>` стоял `<link>` на fonts.googleapis.com. В закрытом контуре он не
+    проходит вовсе, и браузер придерживает отрисовку текста, пока ждёт ответа:
+    на таймаут это секунды белого экрана ровно там, где человек ещё ничего не
+    сделал. Плюс запрос к третьей стороне на каждый заход — в продукте,
+    который продаётся тем, что его не делает.
+
+    Свои шрифты возможны — но файлами, лежащими рядом, а не ссылкой наружу.
+    """
+    files = {"index.html": INDEX.read_text(encoding="utf-8"),
+             "ui.css": (FRONTEND / "ui.css").read_text(encoding="utf-8")}
+    for name in sorted(present):
+        files[name] = (JS_DIR / name).read_text(encoding="utf-8")
+
+    outside = []
+    for name, text in files.items():
+        for m in re.finditer(r"""(?:src|href)\s*=\s*["'](https?://[^"']+)""", text):
+            outside.append(f"{name}: {m.group(1)}")
+        for m in re.finditer(r"""@import\s+url\(\s*["']?(https?://[^"')]+)""", text):
+            outside.append(f"{name}: {m.group(1)}")
+    assert not outside, "интерфейс ходит наружу: " + "; ".join(outside)
+
+
+def test_every_screen_checks_the_address_did_not_change_while_it_loaded(present):
+    """Экран — это `await`, а адрес за время ожидания меняется.
+
+    Человек листает очередь разбора клавишами J/K: три адреса за секунду и три
+    запроса в полёте. Рисует тот, кто ответил последним, — а это не тот, кого
+    ждут. Приносят это словами «нажал ещё раз — открылся предыдущий снимок» и
+    «список прогонов лёг поверх открытого прогона», а воспроизводится оно
+    только на медленной сети, то есть у заказчика и никогда у нас.
+
+    `pageGuard()` из `core.js` запоминает адрес, под которым экран пошёл в
+    сеть. Правило: сходил за данными — проверь, что ты всё ещё тот экран.
+    """
+    without = []
+    for name in sorted(present):
+        if not name.startswith("screen-"):
+            continue
+        text = (JS_DIR / name).read_text(encoding="utf-8")
+        for m in re.finditer(r"SCREENS\.(\w+)\s*=\s*async function", text):
+            body = text[m.end():]
+            end = body.find("\n};")
+            body = body[:end if end > 0 else len(body)]
+            if "await" in body and "pageGuard()" not in body:
+                without.append(f"{name}: SCREENS.{m.group(1)}")
+    assert not without, "рисует без проверки адреса: " + "; ".join(without)

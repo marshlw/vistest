@@ -11,12 +11,15 @@
    навигация, переключатель проектов, счётчики в боковой панели.
 
    То, что живёт вокруг экранов и не принадлежит ни одному из них. */
-window.addEventListener('unhandledrejection',e=>{
-  const m=e&&e.reason&&(e.reason.message||e.reason);
-  console.warn('[vistest] unhandled promise rejection:',m);
-  e.preventDefault();
-});
-window.addEventListener('error',e=>{if(e&&e.error)console.warn('[vistest] error:',e.error.message||e.error);});
+/* Глобальных обработчиков ошибок здесь больше нет — они в `core.js`,
+   в `installErrorSurface()`, и это единственное место.
+
+   Здесь стояла вторая пара, и вреда от неё было больше, чем пользы: её
+   `preventDefault()` на `unhandledrejection` гасил штатный вывод браузера
+   «Uncaught (in promise)» — то есть ровно ту строчку со стеком, за которой
+   человек и открывает консоль. Оставалось `console.warn` без стека и тост из
+   `core.js` — и поиск причины начинался с восстановления того, что браузер
+   уже написал бы сам. */
 
 /* ------- modal windows ------- */
 function openModal(node,opts={}){
@@ -94,6 +97,7 @@ async function runJobLog(starter,opts={}){
 const ICONS={
   decisions:'<path d="M2 8.5h3l1.5 2.5h3L14 8.5M2 8.5l2-5h8l2 5v4H2z"/>',
   runs:'<path d="M2.5 4h11M2.5 8h11M2.5 12h7"/>',
+  diff:'<path d="M5.5 3.5v9M10.5 3.5v9M2.5 6h6M7.5 10h6"/>',
   baselines:'<rect x="2.5" y="3" width="11" height="10"/><path d="M2.5 10l3-2.5 2.5 2 2.5-1.5 3 2"/>',
   tests:'<path d="M5.5 4.5L2.5 8l3 3.5M10.5 4.5l3 3.5-3 3.5M9 3l-2 10"/>',
   dash:'<path d="M2.5 13V7M6.5 13V3M10.5 13V9M14.5 13V5"/>',
@@ -101,19 +105,36 @@ const ICONS={
   projects:'<path d="M2.5 5.5h4L8 7h5.5v6h-11z"/>',
   settings:'<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v2.2M8 12v2.2M1.8 8h2.2M12 8h2.2M3.6 3.6l1.5 1.5M11 11l1.5 1.5M12.4 3.6L10.9 5.1M5.1 11l-1.5 1.5"/>'
 };
+/* Подсказка у пункта объясняет, на какой вопрос он отвечает, а не пересказывает
+   его название. «Runs — список прогонов» не стоит того, чтобы всплывать; «чем
+   очередь решений отличается от списка прогонов» — стоит, потому что именно
+   об этом спрашивают в первый день. */
 const NAV=[
   {grp:'REVIEW'},
-  {v:'decisions',label:'Decisions',count:'failed'},
-  {v:'runs',label:'Runs',count:'runs'},
+  {v:'decisions',label:'Decisions',count:'failed',
+   tip:'Distinct causes, not snapshots. One answer here closes every snapshot behind that cause.'},
+  {v:'runs',label:'Runs',count:'runs',
+   tip:'Everything the engine has checked, newest first. Open one to see what it found.'},
+  /* «Что сломала эта ветка» — вопрос, который задают перед мержем, и до сих
+     пор экран с ответом можно было найти только изнутри прогона. В навигации
+     его не было, значит для большинства его не было вовсе. */
+  {v:'diff',label:'What changed',count:'broke',
+   tip:'Two runs side by side, split by how each snapshot’s verdict moved. Answers «what did this branch break», which a single run cannot.'},
   {grp:'LIBRARY'},
-  {v:'baselines',label:'Baselines',count:'baselines'},
-  {v:'tests',label:'Tests',count:'tests'},
+  {v:'baselines',label:'Baselines',count:'baselines',
+   tip:'The pictures every run is compared against. Accepting a failure rewrites one of these.'},
+  {v:'tests',label:'Tests',count:'tests',
+   tip:'Plain pytest files — ours are editable here, files from connected projects are read-only.'},
   {grp:'HEALTH'},
-  {v:'dash',label:'Trust',count:'trust'},
-  {v:'doctor',label:'Environment',count:'noise'},
+  {v:'dash',label:'Trust',count:'trust',
+   tip:'How often a red run turns out to be nothing. Above 20 % people start accepting without looking.'},
+  {v:'doctor',label:'Environment',count:'noise',
+   tip:'How many failures an unchanged page produces on this stand. Everything else is only as good as this number.'},
   {grp:'SETUP'},
-  {v:'projects',label:'Projects',count:'projects'},
-  {v:'settings',label:'Settings',count:'requests'},
+  {v:'projects',label:'Projects',count:'projects',
+   tip:'Suites connected from your own repositories. Their code is never edited.'},
+  {v:'settings',label:'Settings',count:'requests',
+   tip:'Threshold, retention, notifications, and who has access.'},
 ];
 /* Пропустить навигацию: восемь пунктов, одинаковых на каждом экране. */
 $('#skipLink').onclick=()=>{
@@ -128,7 +149,12 @@ function buildNav(){
   NAV.forEach(n=>{
     if(n.grp){nav.append(el('div','grp',esc(n.grp)));return;}
     const a=el('a');a.dataset.v=n.v;a.href='#/'+n.v;
-    a.innerHTML=`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${ICONS[n.v]}</svg><span class="lbl">${esc(n.label)}</span><span class="count" data-count="${n.count||''}"></span>`;
+    if(n.tip)a.setAttribute('data-tip',n.tip);
+    a.innerHTML=`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n.v]}</svg><span class="lbl">${esc(n.label)}</span><span class="count" data-count="${n.count||''}"></span>`;
+    /* Схлопнутый сайдбар прячет подпись — тогда название пункта живёт только
+       в подсказке и в имени для скринридера, иначе от пункта остаётся
+       безымянная иконка. */
+    a.setAttribute('aria-label',n.label);
     a.onclick=()=>{location.hash='#/'+n.v;};
     nav.append(a);
   });
@@ -141,27 +167,44 @@ function paintCounts(){
     /* Оранжевый бейдж = «требует вашего ответа». Он стоит ровно на двух
        пунктах, и это не украшение: если им пометить ещё и число эталонов,
        словарь цвета сломается и человек перестанет замечать оба. */
+    /* Число рядом с пунктом объясняется подсказкой, а не заголовком браузера:
+       «23» без единицы измерения — это не сообщение, а загадка, и ответ на неё
+       должен приходить сразу, а не через секундную паузу. Подсказка уточняет
+       смысл пункта, поэтому она собирается из объяснения самого пункта и того,
+       что означает конкретное число. */
+    const base=NAV.find(n=>n.v===a.dataset.v);
+    const say=extra=>a.setAttribute('data-tip',
+      extra?extra+(base&&base.tip?' — '+base.tip:''):(base&&base.tip)||'');
     if(key==='failed'){
       const v=c.failed||0;badge.textContent=v||'';
       if(v)badge.classList.add('alert');
-      a.title=v?`${v} snapshot${v===1?'':'s'} nobody has answered yet`
-               :'Nothing is waiting for a decision';
+      say(v?`${v} snapshot${v===1?'':'s'} nobody has answered yet.`
+           :'Nothing is waiting for a decision.');
     }else if(key==='requests'){
       const v=c.requests||0;badge.textContent=v||'';
       if(v)badge.classList.add('alert');
-      a.title=v?`${v} access request${v===1?'':'s'} waiting for you`:'Settings';
+      say(v?`${v} access request${v===1?'':'s'} waiting for you.`:'');
+    }else if(key==='broke'){
+      /* Счётчик у «What changed» — сколько снимков позеленело→покраснело в
+         последнем прогоне относительно предыдущего. Пусто, пока сравнивать
+         не с чем: ноль здесь означал бы «проверили, всё цело». */
+      const v=c.broke;
+      if(v==null)return;
+      badge.textContent=v||'';
+      if(v)badge.classList.add('bad');
+      say(v?`${v} snapshot${v===1?'':'s'} went from green to red in the newest run.`:'');
     }else if(key==='trust'){
       /* Доля ложных падений — единственное число, которое стоит показывать
          прямо в навигации: оно отвечает, стоит ли верить всему остальному. */
       if(c.trust==null)return;
       badge.textContent=Math.round(c.trust*100)+'%';
       badge.classList.add(c.trust>0.2?'warn':'ok');
-      a.title=`${Math.round(c.trust*100)}% of reviewed failures turned out to be false`;
+      say(`${Math.round(c.trust*100)}% of reviewed failures turned out to be false.`);
     }else if(key==='noise'){
       if(c.noise==null)return;
       badge.textContent=(c.noise*100).toFixed(1)+'%';
       badge.classList.add(c.noise>=0.05?'warn':'ok');
-      a.title='Failures an unchanged page produces on this stand';
+      say(`An unchanged page produces ${(c.noise*100).toFixed(1)}% failures on this stand.`);
     }else if(key){
       badge.textContent=c[key]!=null?c[key]:'';
     }
@@ -174,7 +217,10 @@ const VIEW_TITLES={decisions:'decisions',runs:'runs',baselines:'baselines',
   settings:'settings',compare:'decisions / triage',snapshot:'baselines / snapshot',
   diff:'runs / what changed'};
 /* Какой пункт подсвечивается, когда экран — продолжение другого. */
-const NAV_OF={compare:'decisions',snapshot:'baselines',diff:'runs'};
+/* `diff` отсюда убран: у него теперь свой пункт в навигации, и подсвечивать
+   вместо него «Runs» значило бы показывать человеку, что он находится не там,
+   где находится. */
+const NAV_OF={compare:'decisions',snapshot:'baselines'};
 function setActiveNav(v){
   /* `aria-current` рядом с классом: подсветка говорит «вы здесь» глазами, а
      скринридеру до этого не говорил никто. */
@@ -231,48 +277,63 @@ function mkProj(val,label,runs){
 }
 
 /* --------- sidebar counts + rig --------- */
+/* Счётчики боковой панели — ОДНОЙ пачкой, а не семью запросами подряд.
+
+   Здесь стояла цепочка из семи `await` друг за другом: каждый ждал предыдущий,
+   хотя ни один не зависит от его ответа. На локальной машине это незаметно, а
+   через VPN до сервера в другом городе — семь round-trip по 150 мс, то есть
+   секунда на каждое обновление. И обновление это не разовое: `liveTick` зовёт
+   `refreshCounts()` раз в двенадцать секунд, пока вкладка открыта, —
+   получалось около тридцати пяти запросов в минуту на человека, который просто
+   оставил VisTest открытым.
+
+   Ответы независимы, значит и запросы независимы. Каждый по-прежнему падает
+   сам за себя: недоступный роут гасит свой бейдж, а не всю панель. */
+const quiet=p=>p.catch(()=>null);
 async function refreshCounts(){
   const scope=state.project;
-  /* Бейдж у «Runs» читается как «сколько ждёт меня». Стояло же там поле
-     `failed` САМОГО СВЕЖЕГО прогона: последний прогон зелёный — бейдж пуст,
-     сколько бы падений ни лежало неразобранными позади. Теперь это число
-     считает бэкенд по всей истории, вместе со счётчиками фильтров: считать их
-     на клиенте по загруженной странице значило показывать «3» там, где триста. */
-  try{
-    const c=await api('/api/runs/counts?project='+encodeURIComponent(scope));
-    state.runCounts=c;
-    state.counts.failed=c.unreviewed||0;
-    state.counts.runs=c.all||0;
-  }catch{}
-  // Доля ложных падений в навигации. Метрика по одному проекту; при «всех
-  // проектах» смешивать её нельзя — доверие к красному у каждого набора своё.
-  if(scope!=='*'){
-    try{const m=await api('/api/metrics/summary?project='+encodeURIComponent(scope));
-        state.counts.trust=(m.totals||{}).false_fail_rate;}catch{}
-  }else{state.counts.trust=null;}
-  // Ключи проектов, у которых есть прогоны: по ним настраивается порог на
-  // проект. Берём отсюда, а не из /api/projects — тот требует роль admin и,
-  // по умолчанию, запроса с машины сервиса.
-  try{state.projectKeys=(await api('/api/run-projects')).map(p=>p.name).filter(Boolean);}catch{}
-  /* Счётчик в навигации — по ВСЕЙ установке, а не по текущему набору.
-     `/api/baselines/detail` без параметров отвечает про собственный набор
-     сервиса, и рядом с подключённым проектом на одиннадцать эталонов в меню
-     стоял ноль. Число в навигации отвечает на «есть ли у меня эталоны
-     вообще», а не на «что сейчас открыто». */
-  try{const sc=await api('/api/baselines/scopes');
-    state.counts.baselines=(sc.scopes||[]).reduce((s,x)=>s
-      +(x.platforms||[]).reduce((a,p)=>a+(p.count||0),0),0);}catch{}
-  try{const pj=await api('/api/projects');state.counts.projects=(pj.projects||[]).length;}catch{}
-  /* Тесты — свои И подключённых проектов: в меню стоял ноль у человека,
-     у которого одиннадцать тестов лежат в подключённом репозитории. */
-  try{const t=await api('/api/tests');
-    state.counts.tests=(t.tests||[]).length+(t.project_tests||[]).length;}catch{}
-  // Только администратору: остальным этот роут ответит 403, и ловить его молча
-  // здесь правильнее, чем показывать бейдж, которого для них не существует.
-  if(can('admin')){
-    try{const r=await api('/api/users/pending');
-        state.counts.requests=(r.pending||[]).length;}catch{}
-  }
+  const [c,m,rp,sc,pj,t,pend]=await Promise.all([
+    /* Бейдж у «Runs» читается как «сколько ждёт меня». Стояло же там поле
+       `failed` САМОГО СВЕЖЕГО прогона: последний прогон зелёный — бейдж пуст,
+       сколько бы падений ни лежало неразобранными позади. Теперь это число
+       считает бэкенд по всей истории, вместе со счётчиками фильтров: считать
+       их на клиенте по загруженной странице значило показывать «3» там, где
+       триста. */
+    quiet(api('/api/runs/counts?project='+encodeURIComponent(scope))),
+    // Доля ложных падений в навигации. Метрика по одному проекту; при «всех
+    // проектах» смешивать её нельзя — доверие к красному у каждого набора своё.
+    scope!=='*'
+      ? quiet(api('/api/metrics/summary?project='+encodeURIComponent(scope)))
+      : Promise.resolve(null),
+    // Ключи проектов, у которых есть прогоны: по ним настраивается порог на
+    // проект. Берём отсюда, а не из /api/projects — тот требует роль admin и,
+    // по умолчанию, запроса с машины сервиса.
+    quiet(api('/api/run-projects')),
+    /* Счётчик в навигации — по ВСЕЙ установке, а не по текущему набору.
+       `/api/baselines/detail` без параметров отвечает про собственный набор
+       сервиса, и рядом с подключённым проектом на одиннадцать эталонов в меню
+       стоял ноль. Число в навигации отвечает на «есть ли у меня эталоны
+       вообще», а не на «что сейчас открыто». */
+    quiet(api('/api/baselines/scopes')),
+    quiet(api('/api/projects')),
+    /* Тесты — свои И подключённых проектов: в меню стоял ноль у человека,
+       у которого одиннадцать тестов лежат в подключённом репозитории. */
+    quiet(api('/api/tests')),
+    // Только администратору: остальным этот роут ответит 403, и поймать его
+    // молча здесь правильнее, чем показывать бейдж, которого для них нет.
+    can('admin') ? quiet(api('/api/users/pending')) : Promise.resolve(null),
+  ]);
+
+  if(c){state.runCounts=c;
+        state.counts.failed=c.unreviewed||0;
+        state.counts.runs=c.all||0;}
+  state.counts.trust=m?(m.totals||{}).false_fail_rate:null;
+  if(rp)state.projectKeys=rp.map(p=>p.name).filter(Boolean);
+  if(sc)state.counts.baselines=(sc.scopes||[]).reduce((a,x)=>a
+    +(x.platforms||[]).reduce((n,p)=>n+(p.count||0),0),0);
+  if(pj)state.counts.projects=(pj.projects||[]).length;
+  if(t)state.counts.tests=(t.tests||[]).length+(t.project_tests||[]).length;
+  if(pend)state.counts.requests=(pend.pending||[]).length;
   paintCounts();
 }
 async function loadRig(){

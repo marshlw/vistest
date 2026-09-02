@@ -12,6 +12,7 @@
    Чужие — только для чтения: это чужой репозиторий, у него свой git и своё ревью. */
 SCREENS.tests=async function(arg){
   loadingScreen();
+  const here=pageGuard();
   let data;try{data=await api('/api/tests');}catch(e){return errScreen(e);}
   const tests=data.tests||[];
   /* Тесты подключённых проектов — только чтение. Вкладка показывала ровно то,
@@ -19,6 +20,7 @@ SCREENS.tests=async function(arg){
      одиннадцати снимках: человек видел, что снимки чем-то сняты, но чем — в
      интерфейсе не было нигде. */
   const theirs=data.project_tests||[];
+  if(!here())return;
   const s=$('#screen');s.innerHTML='';
   const page=el('div','page');s.append(page);
   const head=el('div','head');
@@ -293,8 +295,14 @@ function renderEditor(d){
   const dirty=el('span');dirty.style.cssText='display:none;align-items:center;gap:6px;color:var(--warn);font-size:12.5px';
   dirty.innerHTML='<span class="dirty-dot"></span>not saved';
   const runb=el('button','btn sm','▷ Run');
+  /* Отдельная кнопка выбора, а не меню на самом «Run».
+     «Прогнать» — действие, которое делают десять раз за час, и превращать его
+     в два щелчка ради выбора, который меняют раз в день, значит наказать
+     частое ради редкого. */
+  const runpick=el('button','btn sm','▾');
+  runpick.title='Choose a browser — one, each separately, or all in one run';
   const saveb=el('button','btn dark sm','Save');
-  sp.append(dirty,runb);
+  sp.append(dirty,runb,runpick);
   /* Чужой файл не редактируется, и кнопка «Save» у него не появляется вовсе.
      Показать её отключённой значило бы предложить действие, которого нет. */
   if(!readonly)sp.append(saveb);
@@ -356,6 +364,22 @@ function renderEditor(d){
   /* Чужой тест запускается ЧЕРЕЗ СВОЙ ПРОЕКТ: чужим интерпретатором, из чужого
      корня и с их conftest. Запустить его нашим pytest значило бы упереться в
      первый же их импорт. */
+  /* Чужой тест запускается ЧЕРЕЗ СВОЙ ПРОЕКТ — чужим интерпретатором, из
+     чужого корня и с их conftest. Браузер туда доходит тем же способом, что и
+     при прогоне всего проекта, и может не дойти вовсе: об этом честно скажет
+     сам роут, а меню покажет причину в подсказке. */
+  const fire=(how={})=>d.project
+    ? followRun(api(`/api/projects/${encodeURIComponent(d.project)}/run`,
+        {method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({only:d.name,...how})}),
+        {title:'pytest '+(d.short||d.name)})
+    : followRun(api('/api/tests/run',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({path:d.path||('tests/'+d.name),...how})}),
+        {title:'pytest '+d.name});
+  /* Один прогон — с живым логом: разница между «тесты не запустились» и «тесты
+     не дошли до сравнения» видна только в выводе. Несколько прогонов сразу —
+     тостами: шесть модалок с логами друг поверх друга не читает никто. */
   runb.onclick=()=>d.project
     ? runJobLog(api(`/api/projects/${encodeURIComponent(d.project)}/run`,
         {method:'POST',headers:{'Content-Type':'application/json'},
@@ -364,5 +388,9 @@ function renderEditor(d){
          sub:'Runs in the project '+d.project+', with its own interpreter and conftest.'})
     : runJobLog(api('/api/tests/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:d.path||('tests/'+d.name)})}),
         {title:'pytest '+d.name,sub:'Runs on the service machine.'});
+  runpick.onclick=e=>runBrowserMenu(e,{
+    run:how=>fire(how),
+    refusal:d.browser_refusal||'',
+    label:'Run '+(d.short||d.name)});
 }
 

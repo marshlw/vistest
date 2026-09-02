@@ -17,9 +17,11 @@
    ним пришли. */
 SCREENS.doctor=async function(){
   loadingScreen();
+  const here=pageGuard();
   let env,last;
   try{env=await api('/api/doctor/env');}catch(e){return errScreen(e);}
   last=await api('/api/doctor/last').catch(()=>null);
+  if(!here())return;
 
   const s=$('#screen');s.innerHTML='';
   const page=el('div','page narrow');s.append(page);

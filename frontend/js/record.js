@@ -21,7 +21,27 @@ async function recordFlow(){
   }
   openRecordModal(st);
 }
-function labeled(lbl,node){const d=el('div');d.append(el('label','field-lbl',lbl));if(node.classList&&node.classList.contains('inp'))node.style.marginTop='6px';d.append(node);return d;}
+/* Подпись + поле. Подпись — настоящий <label> с `for`: щелчок по слову ставит
+   курсор в поле, скринридер называет поле этим словом, а менеджер паролей
+   понимает, что перед ним. Без `for` соседство в разметке видит только глаз, а
+   на нём одном интерфейс не держится.
+
+   Полю без `id` он выдаётся здесь: помнить про уникальный `id` в каждом из
+   двадцати мест, откуда зовут `labeled()`, — это условие, которое рано или
+   поздно не выполнят. */
+let labeledN=0;
+function labeled(lbl,node){
+  const d=el('div','field');
+  const l=el('label','field-lbl',esc(lbl));
+  if(node&&node.tagName&&/^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName)){
+    if(!node.id)node.id='fld-'+(++labeledN);
+    l.setAttribute('for',node.id);
+  }
+  d.append(l);
+  if(node.classList&&node.classList.contains('inp'))node.style.marginTop='6px';
+  d.append(node);
+  return d;
+}
 function chk(lbl){const w=el('label');w.style.cssText='display:flex;align-items:center;gap:7px;cursor:pointer';const i=el('input');i.type='checkbox';w.append(i,document.createTextNode(' '+lbl));return {wrap:w,input:i};}
 function vncUrl(port){return location.protocol+'//'+location.hostname+':'+port+'/vnc.html?autoconnect=1&resize=remote&reconnect=1';}
 function openRecordModal(st){

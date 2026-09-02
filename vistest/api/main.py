@@ -1,17 +1,10 @@
-# VisTest - self-hosted visual regression testing.
-# Copyright (C) 2026 Kirill Kulagin
-# SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
-# the trademark and commercial-licensing terms. Removing this header does not
-# remove those obligations.
-
 """FastAPI service: run intake, review flow, metrics, UI serving."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -29,6 +22,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
@@ -330,7 +324,21 @@ def _require(request: Request, role: str, project: str | None = None) -> dict:
     return rights.check(db, user, role, project)
 
 
-def _require_ingest(request: Request) -> str:
+def _supplied_token(request: Request) -> str:
+    """Токен из заголовка. Две записи, потому что обе встречаются в дикой природе.
+
+    `X-VisTest-Token` — наш собственный заголовок; `Authorization: Bearer` —
+    то, что умеет любой HTTP-клиент и любая CI-система без дополнительной
+    настройки.
+    """
+    supplied = (request.headers.get("x-vistest-token") or "").strip()
+    if supplied:
+        return supplied
+    header = request.headers.get("authorization") or ""
+    return header[7:].strip() if header.lower().startswith("bearer ") else ""
+
+
+def _require_ingest(request: Request, project: str = "") -> str:
     """Who may write a run into the history.
 
     Run intake is the one place a session cannot be required: the runner in CI
@@ -352,24 +360,44 @@ def _require_ingest(request: Request) -> str:
     mean «open». `VISTEST_INGEST_OPEN=1` restores the old behaviour for whoever
     deliberately wants it.
     """
+    import hmac as _hmac
+
+    from . import citokens
+
+    supplied = _supplied_token(request)
+
+    # ---- токен проекта ----
+    #
+    # Проверяется ПЕРВЫМ и независимо от того, задана ли общая переменная: это
+    # и есть путь, ради которого всё затевалось. Токен знает свой проект, и
+    # прогон чужого проекта им не залить — прежняя общая переменная давала
+    # доступ ко всему сразу, а по журналу нельзя было ответить, чей пайплайн
+    # писал.
+    if supplied:
+        token = citokens.resolve(db, supplied)
+        if token:
+            if not citokens.allows(token, "reviewer", project):
+                raise HTTPException(
+                    403, f"This CI token is issued for project "
+                         f"«{token['project']}» and cannot write runs of "
+                         f"«{project or 'default'}».")
+            return citokens.who(token)
+
+    # ---- общая переменная окружения ----
     expected = (os.getenv("VISTEST_INGEST_TOKEN") or "").strip()
+    if expected and supplied and _hmac.compare_digest(supplied, expected):
+        return "ci-token"
+
     if not expected:
         if (os.getenv("VISTEST_INGEST_OPEN") or "").strip().lower() in (
                 "1", "true", "yes"):
             return "anonymous-runner"
+        # Ни переменной, ни подошедшего токена проекта. Если токены проекта в
+        # базе всё же есть, приём закрыт ими: «не настроил переменную» больше
+        # не означает «открыто» ровно так же, как и раньше.
         from .auth import require
         return require(db, request.cookies.get("vistest_session"),
                        "reviewer")["login"]
-
-    import hmac as _hmac
-
-    supplied = (request.headers.get("x-vistest-token") or "").strip()
-    if not supplied:
-        auth_header = request.headers.get("authorization") or ""
-        if auth_header.lower().startswith("bearer "):
-            supplied = auth_header[7:].strip()
-    if supplied and _hmac.compare_digest(supplied, expected):
-        return "ci-token"
 
     # No token — maybe it is a person with a session. Do not leak which of the
     # two failed: the answer is the same either way.
@@ -380,7 +408,8 @@ def _require_ingest(request: Request) -> str:
     except HTTPException:
         raise HTTPException(
             401, "Run intake requires the X-VisTest-Token header "
-                 "(VISTEST_INGEST_TOKEN) or a reviewer session") from None
+                 "(a project CI token or VISTEST_INGEST_TOKEN) or a reviewer "
+                 "session") from None
 
 
 # --------------------------------------------------------------------------- #
@@ -391,8 +420,11 @@ MAX_ARTIFACT_BYTES = int(os.getenv("VISTEST_MAX_ARTIFACT_MB", "40")) * 1024 * 10
 
 @app.post("/api/runs")
 def create_run(request: Request, payload: dict = Body(...)):
-    who = _require_ingest(request)
+    # Проект вычисляется ДО проверки доступа: токен выдан на проект, и без его
+    # имени проверять нечего. Раньше порядок был обратный, потому что проверять
+    # было нечего в принципе — общая переменная пускала всюду.
     project = payload.get("project") or cfg.service.project
+    who = _require_ingest(request, project)
     run_id = db.ingest_run(payload, project)
 
     # Re-sending a run under the same key replaces the row and gives it a new
@@ -416,8 +448,15 @@ async def upload_artifact(
     kind: str = Form(...),
     file: UploadFile = File(...),
 ):
-    _require_ingest(request)
-    if not db.one("SELECT id FROM run WHERE id=?", (run_id,)):
+    # Проект берётся у самого прогона: токен выдан на проект, и заливать
+    # картинки в чужой прогон он не должен. Строка читается ДО проверки, но
+    # 404 отдаётся ПОСЛЕ неё — иначе роут отвечал бы на вопрос «а есть ли у вас
+    # прогон номер 42» тому, кто не имеет права спрашивать вовсе.
+    row = db.one(
+        "SELECT p.name AS project FROM run r JOIN project p ON p.id=r.project_id"
+        " WHERE r.id=?", (run_id,))
+    _require_ingest(request, (row or {}).get("project") or "")
+    if not row:
         raise HTTPException(404, "run not found")
 
     suffix = Path(file.filename or "").suffix.lower() or ".png"
@@ -556,9 +595,17 @@ def list_runs(project: str | None = Query(default=None),
     # errored — how many snapshots in the run failed with an error (capture/engine).
     # We count it right in the list so the run card shows not «clean» but the
     # number of errors, without a separate column in the run table.
+    # variants — сколько наборов «браузер × размер» участвовало в прогоне.
+    # Без этого числа список не отличает «упало на одном браузере» от «упало
+    # везде»: у прогона по матрице колонка `platform` одна на всех, а сравнений
+    # в нём вшестеро больше, и «5 to decide» читается как пять сломанных
+    # страниц вместо одной, сломанной на пяти вариантах.
     sql = ("SELECT r.*, p.name AS project,"
            " (SELECT COUNT(*) FROM comparison c"
-           "    WHERE c.run_id=r.id AND c.verdict='error') AS errored"
+           "    WHERE c.run_id=r.id AND c.verdict='error') AS errored,"
+           " (SELECT COUNT(DISTINCT s.platform) FROM comparison c"
+           "    JOIN snapshot s ON s.id=c.snapshot_id"
+           "   WHERE c.run_id=r.id) AS variants"
            " FROM run r"
            " JOIN project p ON p.id=r.project_id")
     params: tuple = ()
@@ -790,6 +837,32 @@ def run_report(run_id: int):
             f'attachment; filename="vistest-run-{run_id}.html"'})
 
 
+def _variant_label(platform: str, meta: dict | None = None) -> str:
+    """Подпись варианта: сперва то, что сказал сам прогон, потом ключ.
+
+    Ключ базового варианта намеренно не содержит размера окна — под ним лежат
+    все эталоны, снятые до появления матрицы, и трогать его нельзя (см.
+    `vistest/matrix.py`). Но из-за этого один и тот же прогон подписывал бы
+    базовый вариант «chromium», а соседний — «chromium · 390×844»: человек
+    видит два разреза одного снимка и не может сказать, чем отличается первый.
+
+    Прогон при этом ЗНАЛ размер: он сам его и задавал. Поэтому подпись берётся
+    из того, что записало сравнение, а разбор ключа остаётся запасным путём —
+    для прогонов, снятых до этой версии.
+    """
+    from ..matrix import variant_of_platform
+
+    info = variant_of_platform(platform or "")
+    meta = meta or {}
+    said = meta.get("variant")
+    if said:
+        return str(said)
+    viewport = meta.get("viewport")
+    if viewport and info.get("browser"):
+        return f"{info['browser']} · {str(viewport).replace('x', '×')}"
+    return info["label"]
+
+
 @app.get("/api/runs/{run_id}")
 def get_run(run_id: int):
     run = db.one("SELECT * FROM run WHERE id=?", (run_id,))
@@ -799,6 +872,7 @@ def get_run(run_id: int):
         "SELECT c.*, s.name AS snapshot_name, s.platform FROM comparison c"
         " JOIN snapshot s ON s.id=c.snapshot_id WHERE c.run_id=?"
         " ORDER BY c.max_severity DESC", (run_id,))
+    labels: dict[str, str] = {}
     for c in comps:
         # The error text is in meta (the engine/capture failed on this snapshot) —
         # we pull it out before dropping meta so the UI shows the cause.
@@ -809,8 +883,16 @@ def get_run(run_id: int):
         c["regions"] = db.query(
             "SELECT * FROM region WHERE comparison_id=? ORDER BY severity DESC",
             (c["id"],))
+        # Подпись варианта считается здесь, а не в интерфейсе. Ключ платформы —
+        # это адрес каталога (`linux-chromium-1x-390x844`), а человеку нужен
+        # ответ на «какой это браузер и какой размер»; разбирать ключ на
+        # клиенте значило бы завести второе место, где это правило живёт, и
+        # разойтись с этим при первой же правке формата ключа.
+        c["variant"] = _variant_label(c.get("platform") or "", meta)
+        labels.setdefault(c.get("platform") or "", c["variant"])
         c.pop("meta", None)
     run["errored"] = sum(1 for c in comps if c.get("verdict") == "error")
+    run["variants"] = [label for key, label in labels.items() if key]
     run["comparisons"] = comps
     return run
 
@@ -825,6 +907,14 @@ def get_comparison(comp_id: int):
         raise HTTPException(404, "comparison not found")
     c["artifacts"] = _servable(json.loads(c["artifacts"] or "{}"))
     c["meta"] = json.loads(c["meta"] or "{}")
+    # Какой это вариант матрицы. В разборе это первое, что надо знать: один и
+    # тот же снимок лежит в очереди шесть раз, и «сдвинулось на 14px» на
+    # мобильном размере и на десктопном — разные новости.
+    from ..matrix import variant_of_platform
+
+    c["variant"] = _variant_label(c.get("platform") or "", c["meta"])
+    c["viewport"] = (c["meta"].get("viewport")
+                     or variant_of_platform(c.get("platform") or "")["viewport"])
     c["regions"] = db.query(
         "SELECT * FROM region WHERE comparison_id=? ORDER BY severity DESC", (comp_id,))
     c["history"] = db.query(
@@ -1351,21 +1441,39 @@ def ignore_region(comp_id: int, request: Request, body: dict = Body(...)):
     t = _comparison_target(comp_id)
     c = t["comparison"]
 
-    try:
-        box = {k: int(body[k]) for k in ("x", "y", "w", "h")}
-    except (KeyError, TypeError, ValueError):
-        raise HTTPException(400, "x, y, w and h are required, as integers") from None
-    if box["w"] <= 0 or box["h"] <= 0:
-        raise HTTPException(400, "the zone must have a non-zero size")
+    from ..zones import held_by, normalize
 
-    t["store"].add_ignore_box(c["snapshot_name"], box)
+    # Селектор региона доезжает до зоны, а не теряется по дороге.
+    #
+    # Кнопка «Ignore area» стоит на карточке региона, а движок этот регион уже
+    # назвал: `button[data-testid=submit]`. Записывать после этого голый
+    # прямоугольник — значит выбросить единственное, что делает маску
+    # переносимой, и заново поставить её на то место, где элемент БЫЛ. Ровно
+    # эта потеря и превращала маски в мусор при первом же редизайне.
+    payload = dict(body)
+    if not payload.get("selector"):
+        region = db.one(
+            "SELECT selector FROM region WHERE comparison_id=?"
+            "   AND x=? AND y=? AND w=? AND h=? LIMIT 1",
+            (comp_id, body.get("x"), body.get("y"), body.get("w"), body.get("h")))
+        if region and region.get("selector"):
+            payload["selector"] = region["selector"]
+
+    try:
+        zone = normalize(payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+    t["store"].add_ignore_box(c["snapshot_name"], zone)
 
     from .auth import audit, current_user
     who = current_user(db, request.cookies.get("vistest_session"))["login"]
     audit(db, who, "baseline.ignore_box", c["snapshot_name"],
-          comparison=comp_id, scope=t["scope"]["scope"], box=box,
+          comparison=comp_id, scope=t["scope"]["scope"], box=zone,
+          held_by=held_by(zone),
           reason=str(body.get("reason", "ui"))[:120])
-    return {"ok": True, "box": box, "scope": t["scope"]["scope"],
+    return {"ok": True, "box": zone, "held_by": held_by(zone),
+            "scope": t["scope"]["scope"],
             "directory": str(t["directory"])}
 
 
@@ -1650,8 +1758,75 @@ def _artifact_uri(value) -> str:
     return value
 
 
+def frontend_stamp(directory: Path) -> str:
+    """Отпечаток интерфейса, лежащего на диске.
+
+    Нужен ровно для одного: чтобы обновление доходило до браузера. Файлы
+    подключены обычными `<script src="js/x.js">`, без сборщика и без хэша в
+    имени, а отдавались они без `Cache-Control`. Chrome в этом случае считает
+    свежесть эвристикой по `Last-Modified` и держит файл часами, не спрашивая
+    сервер вовсе.
+
+    Ломается это молча и на редкость убедительно: часть файлов свежая, часть
+    из кэша. Экран рисуется, кнопка на месте, а её обработчик зовёт функцию,
+    которой в старом файле ещё нет, — и не происходит НИЧЕГО. Ни ошибки, ни
+    намёка, что смотришь на позавчерашний интерфейс.
+
+    Считается по именам, размерам и временам файлов, а не по содержимому:
+    читать два десятка файлов на каждый заход на страницу незачем, а сборка,
+    не изменившая ни одного размера и ни одной секунды, ничего и не изменила.
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    for p in sorted(directory.rglob("*")):
+        if not p.is_file() or p.suffix.lower() not in (".js", ".css", ".html"):
+            continue
+        try:
+            st = p.stat()
+        except OSError:                                     # pragma: no cover
+            continue
+        h.update(p.name.encode("utf-8"))
+        h.update(f"{st.st_size}:{int(st.st_mtime)}".encode())
+    return h.hexdigest()[:12]
+
+
+_ASSET_REF = re.compile(r'(src|href)="((?:js/[\w.\-]+\.js|ui\.css))"')
+
+
+def stamp_assets(html: str, stamp: str) -> str:
+    """Дописать отпечаток к ссылкам на скрипты и стили.
+
+    Версия в адресе — единственное, что действует через любой кэш по дороге, а
+    не только через тот, который согласился нас переспросить.
+    """
+    return _ASSET_REF.sub(rf'\1="\2?v={stamp}"', html)
+
+
+class FreshStatic(StaticFiles):
+    """StaticFiles, который обязан переспросить.
+
+    `no-cache` — это не «не кэшируй», а «кэшируй, но каждый раз спрашивай».
+    Вместе с ETag это стоит один 304 на файл и закрывает целый класс поломок,
+    где правка есть на диске, а в браузере её нет.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if (FRONTEND / "index.html").exists():
-    app.mount("/ui", StaticFiles(directory=str(FRONTEND), html=True), name="ui")
+
+    @app.get("/ui/", include_in_schema=False)
+    @app.get("/ui/index.html", include_in_schema=False)
+    def ui_index():
+        html = (FRONTEND / "index.html").read_text("utf-8")
+        return HTMLResponse(stamp_assets(html, frontend_stamp(FRONTEND)),
+                            headers={"Cache-Control": "no-store"})
+
+    app.mount("/ui", FreshStatic(directory=str(FRONTEND), html=True), name="ui")
 
     @app.get("/")
     def index():

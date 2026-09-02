@@ -58,6 +58,22 @@ def main(argv: list[str] | None = None) -> int:
     sn.add_argument("--browser", default="chromium",
                     choices=["chromium", "firefox", "webkit"])
     sn.add_argument("--update", action="store_true", help="overwrite existing ones")
+    # Матрица. `--viewport` остаётся тем, чем был — размером ЭТОГО кадра, — а
+    # матрица описывает набор целиком. Смешивать их в одном флаге нельзя:
+    # повторный `--viewport` годами приклеивал размер к ИМЕНИ снимка, и люди на
+    # это опираются. Здесь другой механизм и другое хранение, поэтому и флаг
+    # другой; что важнее — старые эталоны остаются на месте.
+    sn.add_argument("--matrix", action="store_true",
+                    help="снять во всех вариантах матрицы из vistest.yaml")
+    sn.add_argument("--browsers",
+                    help="матрица браузеров через запятую: chromium,firefox")
+    sn.add_argument("--viewports",
+                    help="матрица размеров через запятую: 1440x900,390x844")
+
+    mx = sub.add_parser(
+        "matrix", help="во что раскрывается матрица браузеров и разрешений")
+    mx.add_argument("--browsers", help="переопределить список браузеров")
+    mx.add_argument("--viewports", help="переопределить список размеров")
 
     rec = sub.add_parser(
         "record", help="open a browser with a panel and capture baselines by hand")
@@ -280,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
         return _check(args)
     if args.cmd == "snap":
         return _snap(args)
+    if args.cmd == "matrix":
+        return _matrix(args)
     if args.cmd == "record":
         from .record.session import run_recorder
 
@@ -448,7 +466,86 @@ def _snap(args) -> int:
     if not targets:
         print("Nothing to capture: give a URL or --suite", file=sys.stderr)
         return 2
-    return snap_urls(targets, browser=args.browser, update=args.update)
+
+    variants = _variants_from_args(args)
+    if variants and len(variants) > 1 and len(args.viewport) > 1:
+        # Оба механизма сразу — это почти наверняка недоразумение, и молча
+        # выбрать один значило бы снять половину набора не в тех размерах.
+        print("--viewport и матрица заданы одновременно: размеры берутся из "
+              "матрицы, повторный --viewport игнорируется.", file=sys.stderr)
+    return snap_urls(targets, browser=args.browser, update=args.update,
+                     variants=variants)
+
+
+def _split_list(text: str | None) -> list[str] | None:
+    if text is None:
+        return None
+    return [x.strip() for x in str(text).split(",") if x.strip()]
+
+
+def _variants_from_args(args):
+    """Матрица для этого запуска, или `None`, если её не просили.
+
+    `None`, а не «один вариант по умолчанию»: `snap_urls` умеет обходиться без
+    матрицы и делает это ровно как раньше. Возвращать сюда всегда список
+    значило бы прогонять старый путь через новый код без всякой на то причины.
+    """
+    from .matrix import MatrixError, from_config
+
+    browsers = _split_list(getattr(args, "browsers", None))
+    viewports = _split_list(getattr(args, "viewports", None))
+    if not (getattr(args, "matrix", False) or browsers or viewports):
+        return None
+    cfg = VisTestConfig.load()
+    if browsers is None and getattr(args, "browser", None):
+        # `--browser` без списка означает «этот браузер», и при матрице
+        # размеров он остаётся единственным. Иначе включение `--viewports`
+        # молча приводило бы ещё и firefox с webkit из конфига.
+        browsers = list(cfg.matrix.browsers or ()) or [args.browser]
+    try:
+        return from_config(cfg, browsers=browsers, viewports=viewports)
+    except MatrixError as e:
+        raise SystemExit(f"matrix: {e}") from None
+
+
+def _matrix(args) -> int:
+    """Показать, во что раскрывается матрица, — до того, как её запустят.
+
+    Шесть строк в конфиге превращаются в восемнадцать прогонов и восемнадцать
+    наборов эталонов. Узнать это заранее дешевле, чем из времени ожидания;
+    заодно видно, где именно лежит эталон каждого варианта — вопрос, который
+    задают первым.
+    """
+    from .matrix import MatrixError, from_config
+
+    cfg = VisTestConfig.load()
+    try:
+        variants = from_config(cfg,
+                               browsers=_split_list(args.browsers),
+                               viewports=_split_list(args.viewports))
+    except MatrixError as e:
+        print(f"matrix: {e}", file=sys.stderr)
+        return 2
+
+    declared = bool(cfg.matrix.browsers or cfg.matrix.viewports
+                    or args.browsers or args.viewports)
+    if not declared:
+        print("Матрица не объявлена — один вариант, как и было.\n"
+              "Опишите её в vistest.yaml:\n\n"
+              "  matrix:\n"
+              "    browsers: [chromium, firefox]\n"
+              "    viewports: [\"1440x900\", \"390x844\"]\n"
+              "    base_viewport: \"1440x900\"   # его эталоны остаются на месте\n")
+
+    width = max((len(v.label) for v in variants), default=0)
+    print(f"{len(variants)} "
+          f"{'вариант' if len(variants) == 1 else 'варианта(ов)'}:\n")
+    for v in variants:
+        mark = "  ← базовый, эталоны остаются на месте" if v.base and v.viewport else ""
+        print(f"  {v.label:<{width}}   {v.platform}{mark}")
+    root = cfg.baselines_path()
+    print(f"\nЭталоны: {root}{os.sep}<ключ варианта>{os.sep}<снимок>{os.sep}baseline.png")
+    return 0
 
 
 def _snap_targets(args) -> list[dict]:

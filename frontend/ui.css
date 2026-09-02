@@ -79,12 +79,33 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
 
 #sidebar{background:var(--panel);border-right:1px solid var(--line);
   display:flex;flex-direction:column;overflow:hidden}
+/* Шапка сайдбара.
+
+   Метка — четыре клетки в сетке 2×2, а не картинка: она красится переменными,
+   значит переживает и цвет команды, и увеличенный шрифт. Раскраска ровно одна
+   — по диагонали, и менять её нельзя ни здесь, ни из кода: метка узнаётся
+   именно шахматкой, а сплошной квадрат читается как «иконка не загрузилась».
+   Ровно это и происходило: `applyTeam()` красил фон всего блока в цвет
+   команды, обе тёмные клетки исчезали под ним, и от логотипа оставалось
+   оранжевое пятно. Цвет команды теперь меняет `--accent`, то есть красит две
+   клетки из четырёх — как и задумано. */
 .brand{display:flex;align-items:center;gap:9px;padding:14px 16px;
-  border-bottom:1px solid var(--line);flex:none}
+  border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap;row-gap:2px;
+  color:var(--ink);text-decoration:none}
+.brand:hover{text-decoration:none;background:#FBFAF8}
 .brand .mark{width:22px;height:22px;flex:none;display:grid;
   grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;background:var(--ink)}
+.brand .mark i{background:var(--ink)}
 .brand .mark i:nth-child(2),.brand .mark i:nth-child(3){background:var(--accent)}
 .brand .name{font-family:var(--mono);font-weight:600;font-size:14px;letter-spacing:-.2px}
+/* `--muted2` не существует ни здесь, ни где-либо ещё. Неизвестная переменная
+   в `color` — это не «цвет по умолчанию», а недействительное объявление:
+   строка отбрасывалась целиком, и имя команды наследовало основной цвет
+   текста, то есть спорило по весу с самим названием продукта. */
+.brand .sub{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  color:var(--muted);text-transform:uppercase;width:100%;order:9;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand .sub:empty{display:none}
 .brand .ver{margin-left:auto;font-family:var(--mono);font-size:10px;
   color:var(--faint);letter-spacing:.06em}
 
@@ -103,9 +124,18 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
 .nav .count.alert{font-weight:600;background:var(--accent);color:#fff;padding:0 5px}
 .nav .count.warn{color:var(--warn)}
 .nav .count.ok{color:var(--pass)}
+/* Красный, а не оранжевый: «что сломала ветка» — это вердикт, а не вопрос к
+   человеку, и путать эти два цвета здесь нельзя. */
+.nav .count.bad{color:var(--fail);font-weight:600}
 
+/* Подвал сайдбара. Строки не переносятся: «measured 9 h ago» ломалось на три
+   строки и уезжало под нижний край окна — число, ради постоянного присутствия
+   которого этот блок и existsует, оказывалось не видно. Не поместилось —
+   обрезается многоточием, а целиком его показывает подсказка. */
 .rig{border-top:1px solid var(--line);padding:10px 16px;flex:none;
-  font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.7}
+  font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.7;
+  cursor:help}
+.rig .env,.rig .noise{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rig .env{display:flex;align-items:center;gap:7px}
 .rig .dot{width:6px;height:6px;background:var(--pass);flex:none}
 .rig .dot.warn{background:var(--warn)}
@@ -117,10 +147,16 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
   border-bottom:1px solid var(--line);flex:none}
 #topbar .cell{display:flex;align-items:center;gap:8px;padding:0 14px;height:100%;
   border-left:1px solid var(--line2)}
+/* Переключатель набора и аватар стали <button> ради клавиатуры, поэтому им
+   нужен сброс: браузер иначе приносит свою рамку, свой шрифт и свой фон. */
 .proj-pill{display:flex;align-items:center;gap:7px;padding:0 14px;height:100%;
-  border-right:1px solid var(--line2);cursor:pointer;font-weight:500}
+  border:0;border-right:1px solid var(--line2);background:none;color:inherit;
+  font:inherit;cursor:pointer;font-weight:500;white-space:nowrap}
+.proj-pill:hover{background:#FAF9F6}
+.proj-pill[aria-expanded="true"]{background:var(--accent-on)}
 .proj-pill .pd{width:6px;height:6px;background:var(--accent);flex:none}
-.proj-pill svg{width:12px;height:12px;color:var(--faint)}
+.proj-pill svg{width:12px;height:12px;color:var(--faint);transition:transform .12s}
+.proj-pill[aria-expanded="true"] svg{transform:rotate(180deg)}
 .crumb{display:flex;align-items:center;gap:8px;padding:0 14px;
   font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .topbar-right{margin-left:auto;display:flex;align-items:center;height:100%}
@@ -132,7 +168,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
 .online .dot{width:6px;height:6px;background:var(--pass);flex:none}
 .avatar{width:22px;height:22px;background:var(--ink);color:#fff;display:flex;
   align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;
-  font-weight:600;cursor:pointer}
+  font-weight:600;cursor:pointer;border:0;padding:0}
+.avatar:hover{background:#000}
 #screen{flex:1;overflow:auto}
 .skip{position:absolute;left:-9999px;top:0;z-index:50;background:var(--ink);
   color:#fff;border:0;padding:8px 14px;font-size:12.5px;cursor:pointer}
@@ -162,6 +199,9 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
   padding:8px 13px;font-size:12.5px;font-weight:500;cursor:pointer;
   border-radius:3px;white-space:nowrap}
 .btn:hover{border-color:#C6C4BC}
+/* Кнопка выбора браузера: узкая по горизонтали, той же высоты, что соседи.
+   Вертикальный отступ НЕ трогается — он и держит строку действий ровной. */
+.btn.pick{padding-left:8px;padding-right:8px}
 .btn.dark{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
 .btn.dark:hover{background:#000;border-color:#000}
 .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
@@ -254,15 +294,141 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;out
   border-radius:50%;animation:sp .7s linear infinite;display:inline-block;vertical-align:-2px}
 @keyframes sp{to{transform:rotate(360deg)}}
 
-/* ---------- поля ---------- */
+/* ---------- поля ----------
+
+   Форма здесь — это подпись, поле и объяснение под ним, в этом порядке и с
+   постоянными расстояниями. Объяснение не украшение: почти каждое поле в
+   VisTest задаёт число, у которого есть последствие («порог 50» решает, что
+   вообще попадёт в очередь), и место сказать об этом — под полем, а не в
+   документации.
+
+   Всё, что браузер рисует сам — `select`, флажок, выбор файла, цвет, — здесь
+   переодето. Не ради красоты: системный контрол приносит своё скругление, свою
+   тень и свою высоту, и посреди сетки на одном пикселе границы читается как
+   чужой элемент, случайно попавший на страницу. */
 .inp{width:100%;border:1px solid var(--line);background:var(--soft);padding:7px 10px;
-  font-size:12.5px;color:var(--ink);border-radius:3px;outline:none}
+  font-size:12.5px;color:var(--ink);border-radius:3px;outline:none;
+  transition:border-color .12s,box-shadow .12s,background-color .12s}
 .inp.mono{font-family:var(--mono)}
+.inp:hover:not(:disabled):not([readonly]){border-color:#C6C4BC}
+.inp::placeholder{color:var(--faint)}
+/* Кольцо фокуса, а не только цвет границы: на плотной сетке смена одного
+   пикселя с серого на оранжевый почти не видна, и «куда я сейчас печатаю»
+   приходилось искать глазами. */
+.inp:focus,textarea.inp:focus,select.inp:focus,.joined input:focus{
+  border-color:var(--accent)!important;background:var(--panel);
+  box-shadow:0 0 0 3px rgba(194,65,12,.11)}
+.inp:disabled,.inp[readonly]{background:#F2F1EE;color:var(--muted);cursor:not-allowed}
+.inp[readonly]{cursor:default}
 textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-height:1.6}
 .flabel{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--faint);
-  display:block;margin-bottom:4px}
-.fhint{font-size:11px;color:var(--faint);margin-top:3px}
+  display:block;margin-bottom:4px;text-transform:uppercase}
+.fhint{font-size:11px;color:var(--faint);margin-top:4px;line-height:1.5;max-width:62ch}
+.fhint code{font-size:10.5px;background:var(--soft);border:1px solid var(--line2);
+  padding:0 3px}
 .field{margin-top:12px}
+.field:first-child{margin-top:0}
+/* Обязательность отмечается один раз и словом, а не звёздочкой: звёздочка
+   означает «обязательно» только для тех, кто уже знает, что она означает. */
+.flabel .opt{color:var(--faint);letter-spacing:0;text-transform:none;
+  font-size:10px;margin-left:6px;opacity:.85}
+
+/* Ошибка поля живёт под полем, а не в тосте: тост уезжает через три секунды,
+   а исправлять надо здесь. Красная граница без текста — это «что-то не так»,
+   то есть ровно тот ответ, за которым некуда пойти. */
+.field.bad .inp,.inp.bad,.inp[aria-invalid="true"]{border-color:var(--fail);
+  background:#FDF6F5}
+.field.bad .inp:focus,.inp.bad:focus{box-shadow:0 0 0 3px rgba(180,36,26,.12)}
+.ferr{font-size:11.5px;color:var(--fail);margin-top:4px;line-height:1.45}
+.ferr:empty{display:none}
+
+/* Строка полей. `form-grid` уже был, но без выравнивания по низу: подпись из
+   двух строк сдвигала своё поле вниз относительно соседнего. */
+.form-grid{align-items:start}
+.field-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px}
+/* Поля тянутся, кнопки нет. `tight` — для поля, у которого ширина своя
+   (выбор цвета, число): растянутый на пол-строки квадратик цвета выглядит как
+   ошибка вёрстки, а кнопка рядом уезжает к правому краю карточки. */
+.field-row .field{margin-top:0;flex:1 1 200px;min-width:160px;max-width:420px}
+.field-row .field.tight{flex:none;min-width:0;max-width:none}
+.field-row .btn{flex:none}
+
+/* --- select --- */
+/* Родная стрелка убрана вместе с родным оформлением, своя нарисована фоном:
+   ни один браузер не даёт покрасить `select` иначе. */
+select.inp{appearance:none;-webkit-appearance:none;padding-right:28px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2377797F' stroke-width='1.6'%3E%3Cpath d='M4 6.5l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;background-size:12px}
+select.inp:disabled{background-image:none}
+/* Голый `<select>` без класса всё равно встречается в собранной из кода
+   разметке — пусть и он выглядит как поле, а не как контрол системы. */
+select:not(.inp):not([multiple]){font-family:inherit;font-size:12.5px;
+  border:1px solid var(--line);background:var(--soft);color:var(--ink);
+  padding:6px 26px 6px 9px;border-radius:3px;appearance:none;-webkit-appearance:none;
+  cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2377797F' stroke-width='1.6'%3E%3Cpath d='M4 6.5l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;background-size:12px}
+
+/* --- флажки и переключатели --- */
+input[type=checkbox],input[type=radio]{accent-color:var(--accent);
+  width:14px;height:14px;margin:0;flex:none;cursor:pointer}
+input[type=checkbox]:disabled,input[type=radio]:disabled{cursor:not-allowed;opacity:.5}
+/* Подпись флажка кликается целиком: попасть в четырнадцать пикселей — это
+   задача, которую незачем ставить перед человеком, когда рядом лежит слово. */
+label.check,.check{display:flex;align-items:flex-start;gap:8px;margin-top:9px;
+  font-size:12.5px;color:var(--ink2);cursor:pointer;line-height:1.45}
+.check input{margin-top:2px}
+.check .sub{display:block;font-size:11px;color:var(--faint);margin-top:2px}
+.check.off{color:var(--faint);cursor:not-allowed}
+
+/* --- выбор файла --- */
+/* «Choose File / No file chosen» — надпись операционной системы, на её языке
+   и её шрифтом. Кнопку внутри поля можно покрасить, и этого достаточно. */
+input[type=file]{font-size:12.5px;color:var(--muted);max-width:100%}
+input[type=file]::file-selector-button{font-family:inherit;font-size:12.5px;
+  font-weight:500;border:1px solid var(--line);background:var(--panel);
+  color:var(--ink);padding:7px 12px;border-radius:3px;cursor:pointer;
+  margin-right:10px}
+input[type=file]::file-selector-button:hover{border-color:#C6C4BC}
+
+/* --- цвет --- */
+input[type=color]{width:34px;height:32px;padding:2px;border:1px solid var(--line);
+  background:var(--panel);border-radius:3px;cursor:pointer;flex:none}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+input[type=color]::-webkit-color-swatch{border:0;border-radius:1px}
+
+/* --- ползунок --- */
+/* Один вид на обоих движках. Дорожка серая, пройденная часть оранжевая —
+   тот же словарь, что у полосок в остальном интерфейсе. */
+input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:6px;
+  background:var(--line3);border-radius:0;cursor:pointer;outline:none}
+input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;
+  width:14px;height:18px;background:var(--ink);border:0;cursor:grab}
+input[type=range]::-moz-range-thumb{width:14px;height:18px;background:var(--ink);
+  border:0;border-radius:0;cursor:grab}
+input[type=range]::-moz-range-progress{background:var(--accent);height:6px}
+input[type=range]:focus-visible{box-shadow:0 0 0 3px rgba(194,65,12,.11)}
+
+/* --- сегментированный выбор --- */
+/* Три-четыре взаимоисключающих значения (срок хранения, режим сравнения).
+   Радиокнопки на это — четыре мишени по четырнадцать пикселей и четыре
+   подписи, которые надо связать глазами; здесь кликается вся ячейка.
+
+   Класс называется `choice`, а не `seg`: `.seg` уже занят подписью «что
+   сейчас показано» внутри `.bar`, и два разных элемента под одним именем —
+   это правка, которая однажды сломает не тот из них. */
+.choice{display:inline-flex;border:1px solid var(--line);background:var(--panel);
+  border-radius:3px;overflow:hidden;max-width:100%;flex-wrap:wrap}
+.choice button,.choice label{border:0;border-right:1px solid var(--line2);
+  background:var(--panel);color:var(--ink2);padding:7px 14px;font-size:12.5px;
+  font-family:inherit;cursor:pointer;white-space:nowrap;display:flex;
+  align-items:center;gap:7px}
+.choice>:last-child{border-right:0}
+.choice button:hover,.choice label:hover{background:#FAF9F6}
+.choice .on,.choice button[aria-pressed="true"],
+.choice input:checked+span{background:var(--accent-on);color:var(--ink);font-weight:600}
+.choice input{position:absolute;opacity:0;pointer-events:none}
+.choice label:focus-within{outline:2px solid var(--accent);outline-offset:-2px}
 /* склеенный ряд полей: адрес + число + кнопка одной линией */
 .joined{display:flex;align-items:stretch;border:1px solid var(--line);
   background:var(--panel);margin-top:18px}
@@ -400,9 +566,13 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 .menu{position:fixed;background:var(--panel);border:1px solid var(--line);
   min-width:220px;z-index:160;padding:4px 0}
 .menu .mi{padding:7px 14px;font-size:12.5px;cursor:pointer;display:flex;
-  align-items:center;gap:8px}
+  align-items:center;gap:8px;width:100%;text-align:left;border:0;
+  background:none;color:inherit}
 .menu .mi:hover{background:var(--accent-on)}
 .menu .mi.off{color:var(--faint);cursor:default}
+/* Движок есть в списке, но в окружении его нет: выбрать можно (проект гоняется
+   своим playwright'ом), но сказать об этом надо до нажатия, а не после. */
+.menu .mi.warn{color:var(--warn)}
 .menu .mi.off:hover{background:none}
 .menu .mi-head{padding:8px 14px;font-family:var(--mono);font-size:10px;
   letter-spacing:.1em;color:var(--faint);border-bottom:1px solid var(--line3)}
@@ -426,7 +596,7 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 
 @media (max-width:1100px){
   #app{grid-template-columns:64px 1fr}
-  .brand .name,.brand .ver,.nav a .lbl,.nav .grp,.rig{display:none}
+  .brand .name,.brand .sub,.brand .ver,.nav a .lbl,.nav .grp,.rig{display:none}
   .nav a{justify-content:center}
   .cause{grid-template-columns:52px 1fr}
   .cause .ans{grid-column:1 / -1;border-top:1px solid var(--line2)}
@@ -466,6 +636,10 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 .tag.indigo{border-color:var(--purple);color:var(--purple)}
 .field-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
   color:var(--faint);display:block;margin:14px 0 4px;text-transform:uppercase}
+/* Внутри поля (`labeled()` кладёт подпись в `.field`) верхняя отбивка уже
+   задана самим полем — вторая складывалась с ней и разгоняла форму вдвое. */
+.field>.field-lbl:first-child{margin-top:0}
+.field-row .field-lbl{margin-top:0}
 .info-note{border:1px solid var(--line);background:var(--soft);padding:10px 12px;
   font-size:12px;color:var(--ink2);margin-top:10px}
 .rail-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
@@ -510,9 +684,26 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
   padding:11px 14px;line-height:1.8;overflow:auto;margin-top:10px}
 .pf-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .pf-chips .chip{font-family:var(--mono);font-size:11px}
+/* Шапка карточки проекта: имя, чем сравнивается, где лежит.
+
+   Правил у неё не было ни одного — ни у `.ph`, ни у `.nm`, ни у `.root`.
+   Три инлайновых элемента подряд без отбивки давали строку, в которой имя
+   проекта упиралось в рамку метки вплотную, а путь к нему шёл тем же кеглем и
+   тем же цветом, что и имя, то есть читался как часть названия. */
+.pj-card .ph{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:13px 16px;border-bottom:1px solid var(--line2)}
+.pj-card .ph .nm{font-size:14.5px;font-weight:600;letter-spacing:-.2px}
+.pj-card .ph .root{font-family:var(--mono);font-size:11px;color:var(--faint);
+  margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:46%}
+/* Тело карточки: у `.pj-rows` не было отбивки от краёв, и таблица «Tests /
+   Interpreter / …» начиналась ровно на границе карточки — читалось как текст,
+   выпавший из блока. */
+.pj-card>.pj-rows{padding:13px 16px}
 .pj-rows{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;
   font-size:12.5px;align-items:baseline}
-.pj-rows .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--faint)}
+.pj-rows .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  color:var(--faint);text-transform:uppercase;white-space:nowrap}
 .pj-rows .v{font-size:12.5px}
 
 /* --- разбор: полотно со сравнением --- */
@@ -546,8 +737,19 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
   object-fit:cover;object-position:top}
 .snap-card .ver{position:absolute;right:7px;top:7px;font-family:var(--mono);
   font-size:9.5px;background:var(--ink);color:#fff;padding:1px 5px;z-index:2}
+/* Имя снимка стало <button> ради клавиатуры — значит нужен сброс и полная
+   ширина: кнопка по умолчанию сжимается по содержимому, и обрезка длинного
+   имени многоточием переставала работать. */
 .snap-card .nm{font-family:var(--mono);font-size:12px;font-weight:600;margin-top:9px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:block;width:100%;text-align:left;border:0;background:none;padding:0;
+  color:var(--ink);cursor:pointer}
+.snap-card .nm:hover{color:var(--accent)}
+/* Ряд действий на карточке: кнопки не растягиваются и переносятся, а сама
+   карточка не прыгает по высоте от того, что у одного снимка на чип больше. */
+.snap-card .acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+.snap-card{display:flex;flex-direction:column}
+.snap-card .acts{margin-top:auto;padding-top:9px}
 .snap-card .chips{display:flex;align-items:center;gap:6px;margin-top:6px;
   font-family:var(--mono);font-size:10.5px;color:var(--faint);flex-wrap:wrap}
 .snap-card .c{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
@@ -564,8 +766,14 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 
 /* --- метрики --- */
 .hero{border:1px solid var(--line);background:var(--panel);padding:18px 20px;margin-top:18px}
-.kpi-cards{display:grid;grid-template-columns:repeat(5,1fr);
+/* Пять колонок были прибиты числом, а карточек в полосе шесть — шестая
+   оставалась одна во второй строке рядом с пустой ячейкой в четыре пятых
+   ширины экрана. Выглядело это как «здесь что-то не загрузилось». Колонки
+   теперь подбираются по ширине: сколько влезло по 200 px, столько и будет, и
+   последний ряд всегда полон. */
+.kpi-cards{display:flex;flex-wrap:wrap;
   background:var(--panel);border:1px solid var(--line);border-top:0;overflow:hidden}
+.kpi-cards>*{flex:1 1 200px}
 .kpi-cards>*{border-right:1px solid var(--line);border-bottom:1px solid var(--line);
   margin:0 -1px -1px 0}
 .kpi-card{background:var(--panel);padding:12px 14px}
@@ -577,14 +785,26 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 .pcard{background:var(--panel);padding:14px 16px}
 .bars{display:flex;align-items:flex-end;gap:3px;height:150px;margin-top:16px;
   position:relative;border-bottom:1px solid var(--line)}
-.bars .b{flex:1;max-width:52px;display:flex;flex-direction:column;
+/* Столбцы занимают всю ширину графика, а не первые её пятьдесят два пикселя
+   на столбец. Это не про плотность: на гистограмме severity под столбцами
+   подписана шкала 0–100, а поверх неё стоит вертикальная линия порога в
+   процентах от той же шкалы. Пока столбцы кончались на 45% ширины, линия
+   «threshold 50» проходила правее шестого ведра, хотя означала ровно его
+   левую границу, — график показывал порог не там, где он стоит, и это
+   единственный график, по которому порог и выставляют. */
+.bars .b{flex:1;max-width:120px;min-width:0;display:flex;flex-direction:column;
   justify-content:flex-end;gap:1px}
 .bars .thr{position:absolute;top:0;bottom:0;width:1px;background:var(--accent);z-index:2}
 .bars-x{display:flex;justify-content:space-between;font-family:var(--mono);
   font-size:10px;color:var(--faint);margin-top:6px}
 .noise-row{margin-bottom:11px}
-.noise-row .nr{display:flex;justify-content:space-between;font-family:var(--mono);
-  font-size:11.5px;margin-bottom:4px}
+/* `.nr` — это СТРОКА (подпись сверху, полоса под ней), а не сама подпись.
+   Правило стояло от прежней разметки и делало её флексом: подпись и полоса
+   вставали в ряд, полоса получала нулевую ширину и исчезала. На экране
+   оставались пять пар «имя — число» без единой полосы, то есть график, у
+   которого нет графика. Подпись раскладывается сама — `.noise-row .nl`. */
+.noise-row .nr{margin-top:11px}
+.noise-row .nr:first-child{margin-top:0}
 
 /* --- тесты --- */
 .tests-grid{display:grid;grid-template-columns:340px 1fr;gap:1px;background:var(--line);
@@ -614,6 +834,11 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 .pj-card .acts{display:flex;gap:7px;padding:12px 16px;flex-wrap:wrap}
 .pj-card .foot{background:var(--dark);padding:11px 16px;font-family:var(--mono);
   font-size:11px;color:#8C8E95;line-height:1.8;overflow:auto}
+.pj-card .pj-foot{border-top:1px solid var(--line2);background:var(--soft);
+  padding:9px 16px;font-size:11.5px;color:var(--muted)}
+/* Ряд действий переносится по строкам и не растягивает кнопки: восемь кнопок в
+   ряд на узком окне иначе выдавливают карточку за край страницы. */
+.pj-card .acts{gap:7px;row-gap:8px;align-items:center}
 .env-row{display:grid;grid-template-columns:200px 1fr auto;gap:12px;align-items:center;
   padding:9px 0;border-bottom:1px solid var(--line3)}
 .env-row .k{font-family:var(--mono);font-size:12px;color:var(--faint)}
@@ -622,8 +847,30 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 .env-table{border:1px solid var(--line);background:var(--panel);padding:0 15px}
 
 /* --- настройки --- */
-.slider{flex:1;height:6px;background:var(--line3);position:relative}
-.slider .slider-x{position:absolute;left:0;top:0;bottom:0;background:var(--accent)}
+/* Ползунок порога.
+
+   Правила были написаны под другую разметку — под <div> с внутренней полосой
+   заливки, — а в коде давно стоит `<input type=range>` и отдельная строка
+   подписей `.slider-x` РЯДОМ с ним, а не внутри. Селектор `.slider .slider-x`
+   поэтому не совпадал ни с чем: подписи оставались без стилей и слипались в
+   «0100», «0%5%», «020» — то есть минимум и максимум шкалы читались как одно
+   бессмысленное число ровно под тем ползунком, которым выставляют порог.
+
+   Заливка пройденной части — фоном по `--fillpct`, который считает код: это
+   единственный способ покрасить её одинаково в WebKit и в Gecko. */
+input.slider{appearance:none;-webkit-appearance:none;display:block;width:100%;
+  height:6px;margin:14px 0 0;cursor:pointer;outline:none;
+  background:linear-gradient(to right,var(--accent) 0,var(--accent) var(--fillpct,0%),
+    var(--line3) var(--fillpct,0%),var(--line3) 100%)}
+input.slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;
+  width:12px;height:18px;background:var(--ink);border:0;cursor:grab}
+input.slider::-moz-range-thumb{width:12px;height:18px;background:var(--ink);
+  border:0;border-radius:0;cursor:grab}
+input.slider::-moz-range-track{background:transparent}
+input.slider:active::-webkit-slider-thumb{cursor:grabbing}
+input.slider:focus-visible{box-shadow:0 0 0 3px rgba(194,65,12,.11)}
+.slider-x{display:flex;justify-content:space-between;margin-top:6px;
+  font-family:var(--mono);font-size:10.5px;color:var(--faint)}
 .storage-row{display:flex;align-items:center;gap:12px;padding:8px 0;
   border-bottom:1px solid var(--line3);font-size:12.5px}
 
@@ -689,5 +936,183 @@ textarea.inp{resize:vertical;font-family:var(--mono);font-size:11.5px;line-heigh
 .src .sh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .src .sel{font-family:var(--mono);font-size:11.5px;color:var(--accent);margin-top:6px}
 .src .hint{font-size:11.5px;color:var(--muted);margin-top:3px}
+/* Строка снимка. Правил у класса не было вовсе — ни сетки, ни отбивки, ни
+   границы, — и всюду, где он стоял без инлайновых стилей, четыре ячейки
+   ложились друг под друга столбиком. Так выглядел весь экран «What changed» и
+   история снимка: не «некрасиво», а нечитаемо — колонки, ради которых таблица
+   и существует, отсутствовали.
+
+   Колонки объявлены здесь по умолчанию; там, где строка знает свой набор
+   лучше (история снимка, список прогона), она задаёт `grid-template-columns`
+   сама, и это объявление перекрывается. */
+.snap-row{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;
+  align-items:center;padding:9px 15px;border-bottom:1px solid var(--line3);
+  font-size:12.5px}
+.snap-row:last-child{border-bottom:0}
+.snap-row[role="button"]{cursor:pointer}
+.snap-row[role="button"]:hover{background:var(--soft)}
+.snap-row .sn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--mono);font-size:12px;font-weight:500}
+.snap-row .mono{font-size:11.5px;color:var(--ink2);white-space:nowrap}
 .snap-row.is-err{background:var(--warn-bg)}
 .snap-row.is-err:hover{background:#FAF0DC}
+/* Заголовок группы внутри таблицы — часть таблицы, а не заголовок страницы:
+   у него своя отбивка и своя нижняя граница, иначе первая строка группы
+   приклеивается к её названию. */
+.row-table .sect-h{margin:0;padding:11px 15px;background:var(--soft);
+  border-bottom:1px solid var(--line);align-items:baseline}
+.row-table+.row-table{margin-top:14px}
+.row-table{margin-top:14px}
+
+/* ==========================================================================
+   Подсказки, липкие шапки, пустые состояния
+
+   Три вещи, которых не хватало интерфейсу, чтобы им можно было пользоваться
+   не зная его наизусть. Ни одна не добавляет нового языка — только применяет
+   уже описанный выше.
+   ========================================================================== */
+
+/* ---------- подсказка ----------
+   Тёмная плашка, единственная на документ, ставится из `js/tip.js`. Тёмная, а
+   не светлая с границей, намеренно: всё остальное здесь — белые блоки на
+   бежевом, и подсказка обязана читаться как «это поверх», а не как ещё один
+   блок, который вдруг появился в потоке. Скругление и тень — единственные во
+   всём интерфейсе, ровно по той же причине. */
+#tip{position:fixed;z-index:400;pointer-events:none;max-width:300px;
+  background:var(--ink);color:#EDECE8;font-size:12px;line-height:1.45;
+  padding:8px 11px;border-radius:9px;box-shadow:0 6px 20px rgba(22,23,26,.18);
+  opacity:0;visibility:hidden;transition:opacity .12s;
+  /* `pre-line`, а не `normal`: часть подсказок собирается списком через `\n`
+     (кто сейчас онлайн, какие есть варианты платформы), и без этого список
+     склеивался в одну строку. Обычные переносы при этом работают как всегда. */
+  left:0;top:0;white-space:pre-line}
+#tip.on{opacity:1;visibility:visible}
+#tip.above{transform:translate(-50%,-100%)}
+#tip.below{transform:translate(-50%,0)}
+/* Курсор — единственный намёк на то, что у элемента есть объяснение. Только
+   там, где элемент сам по себе ничего не делает: у кнопки и ссылки свой
+   курсор, и подменять его значит соврать о том, что произойдёт по щелчку. */
+[data-tip]:not(a):not(button):not(input):not(label):not(.tr):not([role="button"]){cursor:help}
+
+/* ---------- липкие шапки ----------
+   `#screen` — это то, что прокручивается, значит `sticky` внутри него
+   работает. Триста прогонов в таблице проходятся колесом за секунду, и без
+   этого через два экрана невозможно вспомнить, что означает вторая колонка
+   чисел. Шапка непрозрачна: сквозь полупрозрачную видно уезжающие строки, и
+   получается каша ровно в тот момент, когда в неё смотрят. */
+/* Полоса фильтров липнет к верху, шапка таблицы — сразу под ней: сначала
+   «что показано», потом «что в колонках». Высота полосы (37px) вынесена в
+   переменную, чтобы два числа не разъезжались при правке отбивки. */
+:root{--barh:37px}
+.bar.sticky{position:sticky;top:0;z-index:4;margin-top:18px}
+.bar.sticky~.rows .th{top:var(--barh)}
+.rows .th{position:sticky;top:0;z-index:3;background:var(--soft)}
+.grid-cards .th,.cards .th{position:sticky;top:0;z-index:3}
+
+/* ---------- пустое и грузящееся ----------
+   Пустое состояние отвечает на два вопроса, а не на один: «почему тут пусто»
+   и «что сделать, чтобы не было». Второй важнее, и до сих пор он оставался
+   человеку, впервые открывшему свежую инсталляцию. */
+.empty{padding:34px 24px;text-align:center;color:var(--faint)}
+.empty b{display:block;color:var(--ink2);font-size:13.5px;margin-bottom:8px}
+.empty .what{font-size:12.5px;line-height:1.9;max-width:64ch;margin:0 auto}
+.empty .acts{justify-content:center;margin-top:16px}
+
+/* Скелет вместо кружка. Кружок отвечает «идёт загрузка» и не отвечает
+   «загрузка чего»; полосы на месте будущих строк отвечают и на второе, а
+   заодно не дают странице прыгнуть, когда данные приедут. */
+.skel{border:1px solid var(--line);background:var(--panel)}
+.skel .ln{height:11px;margin:13px 15px;background:linear-gradient(90deg,
+  var(--line3) 0%,#F6F5F2 50%,var(--line3) 100%);background-size:200% 100%;
+  animation:shim 1.1s linear infinite}
+.skel .ln:nth-child(2n){width:72%}
+.skel .ln:nth-child(3n){width:54%}
+@keyframes shim{to{background-position:-200% 0}}
+/* Движение — не обязательная часть сообщения. Тем, кто просил у системы
+   поменьше анимации, оно только мешает. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;
+    animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
+/* ---------- мелочи, которые ломали строки ---------- */
+/* Возраст и длительность не переносятся: «20 minutes / ago» на двух строках
+   растягивало строку таблицы вдвое, и список прогонов переставал читаться
+   колонками. Не поместилось — обрезаем, целиком покажет подсказка. */
+.rows .tr .nowrap,.rows .th .nowrap,.age,.dur{white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+/* Заголовок и метка рядом с ним — через зазор. Без него имя проекта
+   упиралось в рамку тега вплотную и читалось как одно слово. */
+.pj-card .row>.h2,.pj-card .row>h2,.pj-card .row>b{margin-right:2px}
+.pj-card .row{gap:10px}
+
+/* Кнопка «удалить» в строке таблицы. Полупрозрачный «×» без наведения был
+   неотличим от опечатки; теперь это спокойный знак, который краснеет, когда
+   на него наводят, — и остаётся видимым для того, кто ходит клавиатурой. */
+.btn.row-x{padding:2px 7px;color:var(--faint);border-color:transparent;
+  background:none;font-size:14px;line-height:1}
+.tr:hover .btn.row-x{border-color:var(--line)}
+.btn.row-x:hover,.btn.row-x:focus-visible{color:var(--fail);
+  border-color:var(--fail-line);background:#FCEDEB}
+
+/* Фокус виден везде, включая тёмные полотна: на `--dark` оранжевая рамка
+   почти сливается, поэтому там она светлая. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.canvas :focus-visible,.stage :focus-visible,.code :focus-visible,
+.joblog :focus-visible,.editor:focus-visible{outline-color:#F0C7B2}
+
+/* Строка таблицы, доступная с клавиатуры, должна показывать, что она выбрана,
+   не только цветом фона: полоса слева читается и при слабом контрасте. */
+.rows .tr.click:focus-visible{background:var(--soft);
+  box-shadow:inset 2px 0 0 var(--accent)}
+
+/* ---------- узкое окно ----------
+   Сайдбар схлопывается в 64 px, и всё, кроме иконок, прячется. Метка при
+   этом оставалась прижатой влево вместе с исчезнувшим названием — теперь она
+   по центру полосы, как единственное, что в ней осталось. */
+@media (max-width:1100px){
+  .brand{justify-content:center;padding:14px 0}
+  /* В полосе шириной 64 px иконка и число рядом не помещаются: значок
+     обрезался, а число прижималось к краю. Складываем их в столбик — число
+     остаётся видно, а это единственное, ради чего свёрнутый сайдбар вообще
+     нужен: «сколько ждёт меня» читается и отсюда. */
+  .nav a{position:relative;flex-direction:column;gap:2px;padding:8px 2px}
+  .nav a svg{opacity:.85}
+  .nav .count{font-size:9.5px;line-height:1.2}
+  .nav .count.alert{padding:0 4px}
+  .nav .count:empty{display:none}
+  .form-grid,.two-col,.grid2{grid-template-columns:1fr}
+}
+/* Совсем узко — телефон в руках дежурного. Сетки в две колонки складываются
+   в одну, полоса чисел перестаёт быть полосой: пять ячеек по 60 px не
+   читаются вовсе. */
+@media (max-width:720px){
+  .strip{grid-template-columns:1fr 1fr!important}
+  .strip .cell{border-right:0;border-bottom:1px solid var(--line2)}
+  .kpi-cards{grid-template-columns:1fr 1fr}
+  .panel2,.tests-grid{grid-template-columns:1fr}
+  .page{padding:18px 14px 48px}
+  .search{width:auto;flex:1;min-width:0}
+  .crumb{display:none}
+}
+
+/* ---------- оглавление длинной страницы ----------
+   Липнет к верху экрана и остаётся на месте, пока под ним едут разделы.
+   Прокручивается по горизонтали, а не переносится: перенос на вторую строку
+   сдвигает всю страницу вниз в тот момент, когда её листают. */
+.rail-nav{position:sticky;top:0;z-index:5;display:flex;gap:0;margin:16px 0 0;
+  background:var(--panel);border:1px solid var(--line);overflow-x:auto;
+  scrollbar-width:none}
+.rail-nav::-webkit-scrollbar{display:none}
+.rail-nav a{padding:8px 14px;font-size:12.5px;color:var(--ink2);
+  white-space:nowrap;border-right:1px solid var(--line2);text-decoration:none;
+  border-bottom:2px solid transparent}
+.rail-nav a:last-child{border-right:0}
+.rail-nav a:hover{background:#FAF9F6;color:var(--ink);text-decoration:none}
+.rail-nav a.on{color:var(--ink);font-weight:600;border-bottom-color:var(--accent);
+  background:var(--accent-on)}
+/* Заголовок раздела получает фокус по щелчку в оглавлении — но рисовать
+   вокруг него рамку не за что, человек сам туда и целился. */
+.sect-h:focus,.sect:focus{outline:none}
+/* Под липким оглавлением заголовок раздела не должен въезжать вплотную. */
+.sect-h,.sect{scroll-margin-top:52px}

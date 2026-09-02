@@ -1,12 +1,3 @@
-/* VisTest - self-hosted visual regression testing.
- * Copyright (C) 2026 Kirill Kulagin
- * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * This file is part of VisTest. See LICENSE for the full terms and NOTICE for
- * the trademark and commercial-licensing terms. Removing this header does not
- * remove those obligations.
- */
-
 /* Основа: выборка узлов, `api()`, тосты, экранирование.
 
    Всё остальное опирается на этот файл, а он — ни на что. Поэтому он идёт первым,
@@ -99,6 +90,25 @@ async function api(p,opts){
   return ct.includes('json')?r.json():r.text();
 }
 
+/* «Я всё ещё на том экране, ради которого пошёл в сеть?»
+
+   Каждый экран — это `await`, а адрес за время ожидания меняется: человек
+   листает очередь разбора клавишами J/K, жмёт «назад», выбирает снимок в
+   палитре. Два запроса при этом идут одновременно, и рисует тот, кто ответил
+   ПОСЛЕДНИМ, — а это не тот, кого ждут. Симптом ровно такой, каким его и
+   приносят: «нажал ещё раз — открылся предыдущий снимок», «список прогонов
+   лёг поверх открытого прогона». Списать это на «подтормаживает» легко, найти
+   — почти нет: воспроизводится только на медленной сети.
+
+   Правило одно и короткое: адрес, под которым экран пошёл за данными, — это
+   его право рисовать. Изменился, пока ждали, — рисует уже другой, и мешать
+   ему нельзя. Ответ при этом не выбрасывается зря: он уже в кеше запросов
+   браузера, и возврат назад будет мгновенным. */
+function pageGuard(){
+  const at=location.hash;
+  return ()=>location.hash===at;
+}
+
 /* Полноэкранное объяснение вместо формы входа: показывается один раз и не
    перекрывается следующими запросами, которые упрутся в то же самое. */
 function blockingNotice(text){
@@ -117,4 +127,70 @@ function blockingNotice(text){
 let toastN=0;
 function toast(msg,kind){const n=el('div','toast'+(kind?' '+kind:''),esc(msg));$('#toast').append(n);
   const id=++toastN;setTimeout(()=>n.remove(),kind==='err'?6000:3200);return id;}
+
+/* ------- поломка обязана быть слышной -------
+
+   У интерфейса нет сборщика: файлы делят одну область видимости и подключаются
+   обычными `<script>`. Отсюда поломка, которой не бывает в собранном коде —
+   **тихая**. Достаточно, чтобы один файл приехал из кэша браузера старым, и
+   обработчик кнопки зовёт функцию, которой в нём ещё нет. Кнопка нажимается,
+   экран цел, консоль человек не открывает — и «ничего не происходит».
+
+   «Ничего не происходит» — худший из возможных ответов: он не отличим ни от
+   «задумалось», ни от «не нажалось», и искать по нему нечего. Поэтому любая
+   не пойманная ошибка — и синхронная, и из промиса — становится тостом с
+   именем файла и строкой. Дальше вопрос звучит уже как «почему в этом файле
+   нет этой функции», а на него ответ есть.
+
+   Тост один на минуту на одно и то же место: ошибка в обработчике `mousemove`
+   иначе завалит экран собой. */
+const seenErrors={};
+function reportBreak(what,where){
+  const key=String(what)+'@'+where;
+  const now=Date.now();
+  if(seenErrors[key]&&now-seenErrors[key]<60000)return;
+  seenErrors[key]=now;
+  toast(what+(where?' — '+where:''),'err');
+}
+/* Всё, что не решает, увидит ли человек экран, — под `safely`.
+
+   Раньше запуск был прямой цепочкой: `paintUser()`, `applyTeam()`, счётчики,
+   стенд, `route()`. Любое исключение в её начале не давало дойти до `route()`
+   — то есть до первой отрисовки вообще, — и человек оставался на «Loading…».
+   Ровно это и случилось с `applyTeam()`: одна строка про класс, которого нет
+   в разметке, гасила весь интерфейс.
+
+   Порядок теперь другой и правило одно: сперва экран, потом украшения. Экран
+   рисуется даже тогда, когда счётчики не сосчитались, а шум стенда не
+   приехал; поломка при этом не молчит — она уходит в тост через
+   `installErrorSurface()`, с именем файла и строкой. */
+function safely(what, fn){
+  try{
+    const out=fn();
+    if(out&&typeof out.then==='function')
+      return out.catch(e=>{reportBreak(String(e&&e.message||e),what);});
+  }catch(e){reportBreak(String(e&&e.message||e),what);}
+  return Promise.resolve();
+}
+
+function installErrorSurface(){
+  window.addEventListener('error',e=>{
+    if(e.target&&e.target.tagName==='SCRIPT'){
+      /* Файл вообще не загрузился. Всё, что он определял, отсутствует
+         целиком, и следующая поломка будет выглядеть случайной. */
+      reportBreak('Interface file did not load',
+        String(e.target.src||'').split('/').pop());
+      return;
+    }
+    /* Файл и строка — если они есть. Пустое «— :1» на месте имени файла
+       выглядит как обрезанное сообщение и уводит от вопроса, а не к нему. */
+    const file=String(e.filename||'').split('/').pop();
+    reportBreak(String((e.error&&e.error.message)||e.message||'Script error'),
+      file?file+(e.lineno?':'+e.lineno:''):'');
+  },true);
+  window.addEventListener('unhandledrejection',e=>{
+    const r=e.reason;
+    reportBreak(String((r&&r.message)||r||'Request failed'),'');
+  });
+}
 

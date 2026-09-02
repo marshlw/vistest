@@ -1,12 +1,3 @@
-/* VisTest - self-hosted visual regression testing.
- * Copyright (C) 2026 Kirill Kulagin
- * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * This file is part of VisTest. See LICENSE for the full terms and NOTICE for
- * the trademark and commercial-licensing terms. Removing this header does not
- * remove those obligations.
- */
-
 /* Совместная работа: кто сейчас смотрит, захват разбора, живые отметки. */
 let presenceTimer=null,liveTimer=null,claimTimer=null;
 function startCollab(){startPresence();startLive();}
@@ -31,13 +22,28 @@ function paintPresence(p){
   chip.title=(p.online||[]).map(o=>{const v=viewLabel(o.viewing);return (o.name||o.login)+(v?' · '+v:'');}).join('\n');
 }
 function startLive(){if(liveTimer)clearInterval(liveTimer);liveTimer=setInterval(liveTick,12000);}
+/* Живое обновление касается СПИСКА прогонов и только его.
+
+   `state.view` — первый сегмент адреса, и у `#/runs/42` он тоже `runs`. На
+   странице прогона строк `.run-item` нет ни одной, обновление считало это
+   расхождением со свежими данными и звало `SCREENS.runs()` без аргумента —
+   то есть рисовало список поверх открытого прогона. Раз в двенадцать секунд,
+   без единого действия человека: сидишь в разборе, и тебя выбрасывает
+   обратно, и понять, почему это происходит «иногда», невозможно — а это
+   просто таймер.
+
+   Правило поэтому не про содержимое экрана, а про адрес: обновляем то, что
+   открыто, и никогда не подменяем открытое чем-то другим. */
+function liveShouldRepaintRuns(view,hash){
+  return view==='runs'&&!/^#\/runs\/.+/.test(String(hash||''));
+}
 async function liveTick(){
   if(!state.me)return;
   /* В скрытой вкладке обновлять нечего: экрана никто не видит, а запросы идут
      раз в двенадцать секунд весь день. */
   if(document.hidden)return;
   refreshCounts();
-  if(state.view==='runs'){
+  if(liveShouldRepaintRuns(state.view,location.hash)){
     try{
       /* Два расхождения с отрисовкой, и оба приводили к одному: список
          перерисовывался каждые двенадцать секунд без всякой причины, теряя
@@ -84,7 +90,15 @@ function buildClaimBanner(){
   const c=state.claim;if(!c)return el('div');
   if(c.mine){const d=el('div','claim-banner mine');d.textContent='you hold this snapshot';return d;}
   const d=el('div','claim-banner');
-  d.innerHTML='<span class="who">'+esc(c.by||'Colleague')+'</span> is already reviewing this snapshot. You can continue, but it is better to coordinate.';
+  /* Вся фраза — один элемент. Раньше имя лежало в `<span>`, а остаток был
+     голым текстом рядом: во флекс-контейнере такой текст становится
+     отдельным элементом, получает свой `gap` в семь пикселей и складывает его
+     с обычным пробелом — между именем и словом «is» зияла дыра, похожая на
+     непроставленное значение. */
+  d.innerHTML='<span><b class="who">'+esc(c.by||'A colleague')+'</b> is already '
+    +'reviewing this snapshot. You can continue, but it is better to coordinate.</span>';
+  tip(d,'Somebody opened this snapshot for review less than a minute ago. Two people '
+    +'answering the same failure is how one answer quietly overwrites the other.');
   return d;
 }
 function paintClaimBanner(){const h=$('#claimBanner');if(!h)return;h.innerHTML='';h.append(buildClaimBanner());}

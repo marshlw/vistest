@@ -40,10 +40,32 @@ SCREENS.diff = async function(arg){
      прошлого раза» — самый частый вопрос, и требовать для него выбрать базу
      руками значит заставить человека сначала узнать её номер. */
   const parts=String(arg||'').split('/').filter(Boolean);
-  const head=parts[0], base=parts[1];
-  if(!head){location.hash='#/runs';return;}
+  let head=parts[0];
+  const base=parts[1];
+  /* Без аргумента — самый свежий прогон набора. Пункт «What changed» в
+     навигации ведёт именно сюда, и требовать от человека сначала узнать номер
+     прогона значит отправить его обратно в список за числом, которое
+     интерфейс и так знает. Раньше здесь стоял безусловный уход на «Runs», то
+     есть на экран, с которого только что пришли. */
+  if(!head){
+    loadingScreen();
+    let recent=state.runs||[];
+    if(!recent.length){
+      try{recent=await api('/api/runs?limit=2&project='
+                           +encodeURIComponent(state.project));}
+      catch(e){return errScreen(e);}
+    }
+    if(!recent.length)return noRunsToDiff();
+    head=recent[0].id;
+    /* Адрес обязан назвать прогон: ссылка на «что изменилось» кладётся в MR, и
+       завтра «последний прогон» будет уже другим. `replace` — чтобы «назад»
+       вернуло туда, откуда пришли, а не на этот же экран. */
+    location.replace('#/diff/'+head);
+    return;
+  }
 
   loadingScreen();
+  const here=pageGuard();
   let d;
   try{d=await api('/api/runs/'+encodeURIComponent(head)+'/diff'
                   +(base?'?base='+encodeURIComponent(base):''));}
@@ -58,6 +80,7 @@ SCREENS.diff = async function(arg){
     catch(e){state.runs=[];}
   }
 
+  if(!here())return;
   const screen=$('#screen');screen.innerHTML='';
   const s=el('div','page');screen.append(s);
   s.append(diffHead(d,head));
@@ -78,6 +101,31 @@ SCREENS.diff = async function(arg){
       +'<div class="faint" style="font-size:12.5px;margin-top:8px">The same snapshots with the same verdicts.</div></div>'));
   }
 };
+
+/* Сравнивать нечего, потому что сравнивать нечего: прогонов ещё нет. Это не
+   ошибка и говорить о ней как об ошибке не нужно — нужно сказать, откуда
+   берутся прогоны. */
+function noRunsToDiff(){
+  const screen=$('#screen');screen.innerHTML='';
+  const page=el('div','page narrow');screen.append(page);
+  const head=el('div','head');
+  head.innerHTML=`<div class="grow"><div class="eyebrow">RUNS · WHAT CHANGED</div>
+    <h1 class="h1">Two runs, side by side</h1>
+    <div class="lede">This screen answers «what did this branch break»: it takes two
+      runs and splits every snapshot by how its verdict moved between them.</div></div>`;
+  page.append(head);
+  const box=el('div','panel');box.style.marginTop='18px';
+  box.innerHTML='<div class="empty"><b>There are no runs yet to compare</b>'
+    +'<div class="what">A comparison needs two runs of the same set. '
+    +'Run <code>python run.py test</code>, or start a suite from the «Projects» tab '
+    +'— the second run is where this screen starts working.</div></div>';
+  const acts=el('div','acts');
+  const go=el('button','btn dark','Go to runs');
+  go.onclick=()=>{location.hash='#/runs';};
+  acts.append(go);
+  $('.empty',box).append(acts);
+  page.append(box);
+}
 
 function diffError(head,e){
   const msg=String(e.message||e);
@@ -195,6 +243,11 @@ function diffGroup(name,items){
     <span class="note">${items.length} · ${esc(g.note)}</span></div>`;
   items.forEach(i=>{
     const row=el('div','snap-row');
+    /* Четыре колонки одинаковой ширины во всех группах: человек читает этот
+       экран сверху вниз через пять таблиц подряд, и «сломалось» с «починилось»
+       он сравнивает по вертикали. Разъехавшиеся колонки это сравнение
+       уничтожают. */
+    row.style.gridTemplateColumns='1fr 190px 92px 78px';
     const delta=i.delta_severity;
     const dtxt=delta==null?'':(delta>0?'+':'')+fmt(delta,1);
     const dcls=i.worse?'style="color:var(--fail);font-weight:600"':'';

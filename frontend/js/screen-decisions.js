@@ -1,12 +1,3 @@
-/* VisTest - self-hosted visual regression testing.
- * Copyright (C) 2026 Kirill Kulagin
- * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * This file is part of VisTest. See LICENSE for the full terms and NOTICE for
- * the trademark and commercial-licensing terms. Removing this header does not
- * remove those obligations.
- */
-
 /* Экран «Decisions»: не «что красное», а «на что ответить».
 
    Экран прогона отвечает на первый вопрос. Человек, открывающий VisTest утром,
@@ -21,6 +12,7 @@
 
 SCREENS.decisions = async function(){
   loadingScreen();
+  const here=pageGuard();
   /* Очередь строится для ОДНОГО набора: причина объединяет снимки одного
      проекта, и общее решение для двух чужих друг другу наборов бессмысленно.
      Поэтому при «всех проектах» здесь не пустой экран, а выбор. */
@@ -38,6 +30,7 @@ SCREENS.decisions = async function(){
   let d;
   try{d=await api('/api/decisions?project='+encodeURIComponent(state.project));}
   catch(e){return errScreen(e);}
+  if(!here())return;
   state.queue=d;
 
   const s=$('#screen');s.innerHTML='';
@@ -66,16 +59,20 @@ SCREENS.decisions = async function(){
   strip.style.gridTemplateColumns='repeat(4,1fr)';
   strip.style.marginTop='22px';
   strip.innerHTML=`
-    <div class="cell"><div class="k">TO DECIDE</div>
+    <div class="cell" data-tip="Distinct causes, not snapshots. Snapshots are grouped by a shared root cause — same selector, same kind of change — because answering the group is the only way to review dozens of failures without learning to approve blindly.">
+      <div class="k">TO DECIDE</div>
       <div class="v accent">${fmtInt(c.causes||0)}</div>
       <div class="d">${plural(c.causes||0,'cause','causes','causes')} · ${fmtInt(c.snapshots||0)} snapshots</div></div>
-    <div class="cell"><div class="k">BLOCKED</div>
+    <div class="cell" data-tip="The picture was never taken, so there is nothing to compare. A snapshot that stopped being checked shows up in no list of failures — which is why it is counted here instead.">
+      <div class="k">BLOCKED</div>
       <div class="v warn">${fmtInt(c.blocked||0)}</div>
       <div class="d">never captured — errors</div></div>
-    <div class="cell"><div class="k">CLEAN</div>
+    <div class="cell" data-tip="Compared and identical. The denominator matters: three decisions out of a set of five is not three out of a hundred and forty-two.">
+      <div class="k">CLEAN</div>
       <div class="v pass">${fmtInt(c.clean||0)}</div>
       <div class="d">of ${fmtInt(c.total||0)} snapshots</div></div>
-    <div class="cell"><div class="k">RUN</div>
+    <div class="cell" data-tip="The newest run of this project — the one the queue above is built from.">
+      <div class="k">RUN</div>
       <div class="v" style="font-size:17px">${d.run?esc(String(d.run.key)):'—'}</div>
       <div class="d">${d.run?esc(runWhen(d.run)):'no runs yet'}</div></div>`;
   page.append(strip);
@@ -133,11 +130,6 @@ function runWhen(r){
   const dur=fmtDur(r.started_at,r.finished_at);
   return (dur!=='—'?dur+' · ':'')+timeAgo(r.started_at);
 }
-function sectionHead(title,note){
-  const d=el('div','sect');
-  d.innerHTML=`<h2 class="h2">${esc(title)}</h2><span class="note">${esc(note||'')}</span>`;
-  return d;
-}
 
 /* Ступени severity — те же три, что и везде в интерфейсе. Заводить здесь
    собственные пороги значило бы, что «красное» на одном экране и «красное» на
@@ -148,6 +140,9 @@ function causeCard(c,d){
   const box=el('div','cause');
 
   const sev=el('div','sev '+sevClass(c.severity||0));
+  tip(sev,'Severity blends how much of the page moved with how visible the change is. '
+    +'The number below it is how many snapshots share this cause — answering once '
+    +'closes all of them.');
   sev.innerHTML=`<div class="n">${Math.round(c.severity||0)}</div>
     <div class="u">SEV</div><div class="x">×${c.count}</div>`;
 
@@ -175,15 +170,21 @@ function causeCard(c,d){
   }
 
   const ok=el('button','btn dark','Accept as the new normal');
+  tip(ok,`Rewrites ${c.count} baseline${c.count===1?'':'s'} on this branch. The next run `
+    +'compares against the new picture, and none of these snapshots comes back.');
   ok.onclick=()=>answerCause(c,'approve',ok);
   const bug=el('button','btn danger','Confirm as a bug');
+  tip(bug,'Records this as a real regression. Baselines stay as they are, so the '
+    +'snapshots keep failing until somebody fixes the page.');
   bug.onclick=()=>answerCause(c,'reject',bug);
 
   const two=el('div','two');
   const look=el('button','btn sm','Inspect');
+  tip(look,'Opens one snapshot of this cause side by side, with the regions the engine '
+    +'found. Nothing is written from there either.');
   look.onclick=()=>{if(c.open)location.hash='#/compare/'+c.open;};
   const defer=el('button','btn sm','Defer');
-  defer.title='Leave it in the queue and move on. Nothing is written.';
+  tip(defer,'Leaves it in the queue and moves on. Nothing is written.');
   defer.onclick=()=>toast('Left in the queue');
   two.append(look,defer);
 
@@ -196,32 +197,6 @@ function tagTone(c){
   return v>=55?'red':v>=32?'amber':'ink';
 }
 
-/* Ответ на причину — ОДИН запрос на все её сравнения.
-
-   Цикл из одиннадцати POST здесь был бы не «медленнее», а хуже по смыслу:
-   каждый может упасть сам по себе и оставить причину решённой наполовину, а
-   защита от чужого решения (expected_version) в такой цикл не помещается. */
-async function answerCause(c,action,btn){
-  const what=action==='approve'?'accept as the new normal':'confirm as a bug';
-  if(!confirm(`Apply «${what}» to ${c.count} ${plural(c.count,'snapshot','snapshots','snapshots')}?\n\n${c.risk||''}`))return;
-  const old=btn.textContent;btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
-  try{
-    const r=await api('/api/comparisons/bulk',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ids:c.comparisons,action})});
-    const done=(r.counts||{}).done||0,bad=(r.counts||{}).failed||0;
-    if(bad){
-      const why=(r.failed||[]).slice(0,3).map(f=>`#${f.id}: ${f.error}`).join('\n');
-      toast(`Done ${done}, ${bad} could not be applied\n${why}`,'err');
-    }else toast(`Done: ${done} closed`,'ok');
-  }catch(e){toast(String(e.message||e),'err');btn.disabled=false;btn.textContent=old;return;}
-  refreshCounts();
-  /* Ответ мог прийти и из триажа — тогда мы не на экране очереди, и
-     перерисовать его на месте нельзя: получился бы экран решений под адресом
-     сравнения, из которого «назад» ведёт неизвестно куда. */
-  if(state.view==='decisions')SCREENS.decisions();
-  else location.hash='#/decisions';
-}
 
 function blockedRow(b){
   const row=el('div','rows');row.className='';

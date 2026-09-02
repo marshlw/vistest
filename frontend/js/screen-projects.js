@@ -10,6 +10,7 @@
 /* Экран «Projects»: подключение чужих наборов тестов, прогон, диагностика. */
 SCREENS.projects=async function(){
   loadingScreen();
+  const here=pageGuard();
   /* Вкладка требует роль admin И запроса с машины сервиса: подключение
      проекта запускает на сервере произвольный процесс. Ограничение осознанное,
      но голый 403 посреди пустого экрана выглядит поломкой, а не решением, —
@@ -18,6 +19,7 @@ SCREENS.projects=async function(){
   try{data=await api('/api/projects');}
   catch(e){return projectsBlocked(e);}
   const projects=data.projects||[];
+  if(!here())return;
   const screen=$('#screen');screen.innerHTML='';
   const s=el('div','page narrow');screen.append(s);
   s.innerHTML='<div class="eyebrow">SETUP</div>'
@@ -146,10 +148,21 @@ function projectCard(p){
   const bs=p.baseline_status||{};
   const vs=bs.vistest||[];
   const vtotal=bs.vistest_total!=null?bs.vistest_total:vs.reduce((a,x)=>a+(x.count||0),0);
-  const here=vs.find(x=>x.platform===bs.current_platform);
+  /* Пустой набор и отсутствующий набор — разные вещи, и в одну строку их
+     складывать нельзя.
+
+     Строка читалась так: «11 on docker-chromium-1x (11), docker-firefox-1x
+     (0), docker-webkit-1x (0)» — то есть «наборы есть у всех трёх, у двух они
+     пустые». На самом деле у firefox и webkit набора не было никогда: пустые
+     каталоги оставляла за собой каждая ОТВЕРГНУТАЯ попытка прогона (см.
+     `external.run_project`). Человек шёл разбираться, почему набор опустел,
+     вместо того чтобы его снять. */
+  const filled=vs.filter(x=>(x.count||0)>0);
+  const blank=vs.filter(x=>!(x.count||0));
   const vtText=vtotal
-    ? `${vtotal} on ${vs.map(x=>esc(x.platform)+' ('+x.count+')').join(', ')}`
-      +(here?'':' — nothing for this platform yet')
+    ? filled.map(x=>esc(variantLabel(x.platform))+' ('+x.count+')').join(', ')
+      +(blank.length?' · not captured yet: '
+        +blank.map(x=>esc(variantLabel(x.platform))).join(', '):'')
     : 'not captured yet';
 
   c.innerHTML=`<div class="ph"><span class="nm">${esc(p.name||p.key)}</span><span class="tag ${tagcls}">${esc(adapter)}</span><span class="root">${esc(p.root||'')}</span></div>
@@ -165,7 +178,16 @@ function projectCard(p){
     const open=el('button','btn sm','Open VisTest snapshots');
     open.onclick=()=>{
       state.scope='project:'+(p.key||p.name);
-      if(here)state.platform=here.platform;
+      /* Открывать надо НЕПУСТОЙ набор.
+
+         Здесь стояла платформа, совпавшая с `current_platform`, а тот —
+         платформа машины сервиса, то есть всегда chromium. Сняли набор для
+         firefox, нажали «Open VisTest snapshots» — и попали на вкладку
+         эталонов с прибитым chromium. Снаружи это ровно «снятые эталоны не
+         появляются в эталонах»: они были, просто открывался чужой набор, а
+         `state.platform` после этого держался до конца сессии. */
+      const best=bs.best_platform||(filled[0]&&filled[0].platform);
+      if(best)state.platform=best;
       location.hash='#/baselines';
       if(state.view==='baselines')SCREENS.baselines();
     };
@@ -177,22 +199,53 @@ function projectCard(p){
   }
 
   const acts=el('div','acts');
+  /* Каждая кнопка прогона получает свой выбор браузера, а не один общий на
+     карточку. Источник эталонов и браузер — два независимых измерения, и
+     общий переключатель заставлял бы держать в голове, к какой из двух кнопок
+     он сейчас относится. */
+  /* Объяснение переехало с кнопок в подсказки. Раньше все семь описывались
+     одним абзацем под ними, и чтобы понять, что делает третья, надо было
+     сопоставить её название с фразой в тексте — то есть выполнить ту работу,
+     которую и должен делать интерфейс. */
   const runP=el('button','btn dark','Run on project baselines');
+  tip(runP,'Runs the project’s own tests and compares against the PNG files that lie '
+    +'in its repository. Nothing in the project is edited.');
   runP.onclick=()=>runProject(p,{baselines:'project'});
+  const pickP=browserPick(p,{baselines:'project'},'project baselines');
   const runV=el('button','btn','Run on VisTest baselines');
+  tip(runV,'Same tests, compared against the set VisTest captured itself. Capture it '
+    +'first from «⋯» if the set is empty.');
   runV.onclick=()=>runProject(p,{baselines:'vistest'});
+  const pickV=browserPick(p,{baselines:'vistest'},'VisTest baselines');
   const noise=el('button','btn','Measure noise');
+  tip(noise,'Loads one page several times and compares the shots against each other. '
+    +'Whatever it finds is noise, not a regression — and it is the ceiling on what '
+    +'every other number here can mean.');
   noise.onclick=()=>{location.hash='#/doctor';};
   const deps=el('button','btn','Install missing libraries');
+  tip(deps,'Installs the system libraries the browser needs on this machine. Safe to '
+    +'press twice — what is already there is left alone.');
   deps.onclick=()=>installDeps(p);
   /* Снять страницу движком VisTest, не заводя ради этого теста. Кнопка стоит
      на карточке проекта, а не на «Baselines»: вопрос звучит как «добавь этот
      экран проекта в набор», и набор здесь уже выбран — сам проект. */
   const shot=el('button','btn','Capture a screenshot');
+  tip(shot,'Adds one page of this project to the VisTest set without writing a test '
+    +'for it. Asks for the address, the frame and the window size — that is what a '
+    +'snapshot is.');
   shot.onclick=()=>captureDialog(p,vs,bs.current_platform);
-  const more=el('button','btn ghost icon','⋯');more.onclick=e=>projectMenu(e,p);
-  acts.append(runP,runV,shot,noise,deps,more);c.append(acts);
-  c.append(el('div','foot','«Run on project baselines» compares against the project own PNGs; «Run on VisTest baselines» against the set VisTest captured (snap it first from «⋯» if empty). More actions are under «⋯».'));
+  const more=el('button','btn ghost icon','⋯');
+  more.setAttribute('aria-label','More actions for this project');
+  tip(more,'Capture the VisTest set, reset it, edit the connection, disconnect the project.');
+  more.onclick=e=>projectMenu(e,p);
+  acts.append(runP,pickP,runV,pickV,shot,noise,deps,more);c.append(acts);
+  /* Полоса под карточкой была тёмной. Тёмный фон в этом интерфейсе означает
+     ровно одно — «здесь машинный вывод»: полотна со скриншотами, код теста,
+     лог задачи. Абзац объяснения на нём читался как консоль, в которую зачем-то
+     написали прозой. Теперь это обычная сноска, а сами объяснения — на
+     кнопках, к которым относятся. */
+  c.append(el('div','pj-foot','Two sets of baselines, two buttons. What each action '
+    +'does is on the action itself — hover or tab to it.'));
   return c;
 }
 /* Съёмка страницы движком VisTest — прямо в набор проекта.
@@ -308,14 +361,70 @@ function captureDialog(p,sets,current){
   setTimeout(()=>{const f=$('#capUrl',wrap);if(f)f.focus();},30);
   return m;
 }
+/* Кнопка «▾» рядом с прогоном: тот же прогон, но в выбранных браузерах.
+
+   `browser_refusal` приезжает с сервера вместе с проектом. Проект, который
+   запускается своей командой (`npx playwright test`), назвать браузер не даёт —
+   куда его там вписать, знают только они. Пункты в этом случае показываются
+   отключёнными с причиной в подсказке: спрятать их совсем значило бы оставить
+   человека гадать, почему у соседнего проекта выбор есть, а у его нет. */
+/* Снять набор эталонов VisTest. Отдельная функция, потому что зовётся из двух
+   мест меню — «как решат тесты» и «выбрать браузеры». */
+function snapVistestSet(p,how){
+  const key=encodeURIComponent(p.key||p.name);
+  const list=(how&&how.browsers)||[];
+  if(!confirm('Capture the VisTest baseline set'
+    +(list.length?' for: '+list.join(', '):'')
+    +'?\n\nEvery snapshot of this run becomes the baseline.'))return;
+  const body={baselines:'vistest',update_baselines:true,...how};
+  const started=api(`/api/projects/${key}/run`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(list.length>1&&how.mode!=='together')
+    return followRun(started,{title:'Snap VisTest baselines',
+                              then:()=>SCREENS.projects()});
+  return runJobLog(started,{title:'Snap VisTest baselines'
+      +(list.length?' · '+list.join(', '):''),
+    sub:'every snapshot of this run becomes the baseline',
+    then:()=>SCREENS.projects()});
+}
+
+function browserPick(p,opts,what){
+  /* Класс, а не `style`.
+
+     Здесь стояло `b.style.cssText='padding:6px 9px'` — свой вертикальный
+     отступ поверх `.btn`. Кнопка получалась ниже соседних, и строка действий
+     разъезжалась: шесть кнопок в ряд одной высоты и две — другой, ровно там,
+     где глаз считывает их как одну группу. Узкой её делает горизонтальный
+     отступ, а высоту обязан задавать `.btn`, один на все кнопки строки. */
+  const b=el('button','btn pick','▾');
+  b.title=p.browser_refusal
+    || 'Choose a browser for the run on '+what;
+  b.onclick=e=>runBrowserMenu(e,{
+    run:how=>runProject(p,{...opts,...how}),
+    refusal:p.browser_refusal||'',
+    label:'Run on '+what});
+  return b;
+}
+
 function runProject(p,opts){
   const key=p.key||p.name;
   const label=opts.baselines==='vistest'?'VisTest baselines':(opts.baselines==='project'?'project baselines':'baselines');
   // Прогон чужих тестов показываем с живым логом, а не одним тостом: разница
   // между «тесты не запустились» и «тесты не дошли до сравнения» видна только
   // в выводе, и именно её приходится выяснять чаще всего.
-  return runJobLog(api(`/api/projects/${encodeURIComponent(key)}/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(opts)}),
-    {title:'Run '+(p.name||key)+' · '+label,
+  const started=api(`/api/projects/${encodeURIComponent(key)}/run`,
+    {method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify(opts)});
+  /* Несколько прогонов сразу — тостами, один — с живым логом. Шесть модалок с
+     логами друг поверх друга не читает никто, а для одного прогона вывод и
+     есть главное: разница между «тесты не запустились» и «тесты не дошли до
+     сравнения» видна только там. */
+  if((opts.browsers||[]).length>1&&opts.mode!=='together')
+    return followRun(started,{title:'Run '+(p.name||key),
+                              then:()=>SCREENS.projects()});
+  return runJobLog(started,
+    {title:'Run '+(p.name||key)+' · '+label
+       +((opts.browsers||[]).length?' · '+opts.browsers.join(', '):''),
      sub:'their pytest, their output — as is',
      then:()=>SCREENS.projects()});
 }
@@ -382,7 +491,33 @@ function projectMenu(e,p){
   m.append(mkItem('Collect tests (diagnose)',()=>{closeMenus();showPreflight(p);}));
   m.append(mkItem('Run like in CI',()=>runProject(p,{ci:true})));
   m.append(mkDiv());
-  m.append(mkItem('Snap VisTest baselines',()=>{if(confirm('Capture the VisTest baseline set now? All snapshots will be recorded as the new baseline.'))runJobLog(api(`/api/projects/${key}/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({baselines:'vistest',update_baselines:true})}),{title:'Snap VisTest baselines',sub:'every snapshot of this run becomes the baseline',then:()=>SCREENS.projects()});}));
+  /* Съёмка набора — тоже прогон, и браузер ей нужен не меньше.
+
+     Здесь стоял вызов без браузера, то есть всегда chromium. Отсюда тупик, в
+     который человек попадал буквально: прогон во всех браузерах отказывал по
+     firefox и советовал снять набор через это меню, меню снимало набор снова
+     для chromium, и следующий прогон отказывал ровно так же. Совет, который не
+     помогает, хуже отсутствия совета: по нему идут. */
+  m.append(mkItem('Snap VisTest baselines',()=>snapVistestSet(p,{})));
+  /* Якорь подменю — КНОПКА «⋯», а не пункт, по которому нажали.
+
+     Здесь снимался прямоугольник самого пункта. Пункт стоит на середине
+     открытого меню, то есть примерно на двести пикселей ниже кнопки; в момент
+     показа подменю родительское меню уже закрыто, и подменю оказывается висеть
+     в пустоте посреди страницы — далеко от того единственного места, куда
+     человек в этот момент смотрел. `rc` — прямоугольник кнопки, по которой
+     меню и открыли: подменю встаёт ровно туда, где было родительское.
+
+     Снимать заранее всё равно приходится: `mkItem` закрывает меню до вызова
+     обработчика и события ему не передаёт. */
+  const pickSnap=el('button','mi',esc('Snap VisTest baselines · pick browsers…'));
+  pickSnap.onclick=()=>{
+    closeMenus();
+    runBrowserMenu(null,{at:rc,run:how=>snapVistestSet(p,how),
+                         refusal:p.browser_refusal||'',
+                         label:'Snap VisTest baselines'});
+  };
+  m.append(pickSnap);
   m.append(mkItem('Reset baselines',()=>{if(confirm('Reset the project baselines?'))runJob(api(`/api/projects/${key}/baselines/reset`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}),{title:'Baseline reset'});}));
   m.append(mkDiv());
   m.append(mkItem('Disconnect the project',async()=>{if(confirm('Disconnect the project from VisTest?')){try{await api('/api/projects/'+key,{method:'DELETE'});toast('Disconnected','ok');SCREENS.projects();refreshCounts();}catch(err){toast(String(err.message||err),'err');}}}));

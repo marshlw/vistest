@@ -16,12 +16,24 @@ let blinkTimer=null;
 SCREENS.compare=async function(id){
   if(blinkTimer){clearInterval(blinkTimer);blinkTimer=null;}
   loadingScreen();
-  let cp;try{cp=await api('/api/comparisons/'+id);}catch(e){return errScreen(e);}
-  state.comp=cp;
-  state.baselineState=await api(`/api/comparisons/${id}/baseline-state`).catch(()=>null);
+  /* Разбор листают клавишами: J, J, J — три адреса за секунду и три запроса в
+     полёте. Без этой проверки экран рисовал тот, кто ответил последним, и
+     человек видел не тот снимок, на котором стоит. Хуже того, `state.comp`
+     тоже оставался от чужого ответа — то есть «Принять» относилось бы не к
+     тому, что на экране. */
+  const here=pageGuard();
+  let cp;try{cp=await api('/api/comparisons/'+id);}catch(e){return here()?errScreen(e):undefined;}
+  if(!here())return;
+  const bs=await api(`/api/comparisons/${id}/baseline-state`).catch(()=>null);
+  if(!here())return;
   if(!state.thresholds)state.thresholds=await api('/api/settings/thresholds').catch(()=>({}));
-  if(!state.run||state.run.id!==cp.run_id){try{state.run=await api('/api/runs/'+cp.run_id);}catch{}}
+  if(!here())return;
+  let run=state.run;
+  if(!run||run.id!==cp.run_id){try{run=await api('/api/runs/'+cp.run_id);}catch{}}
+  if(!here())return;
+  state.comp=cp;state.baselineState=bs;state.run=run;
   await takeClaim(id);
+  if(!here())return;
   renderCompare();
 };
 
@@ -75,15 +87,23 @@ function renderCompare(){
   const cause=currentCause();
   const head=el('div','head');
   const ttl=el('div','grow');
+  /* Вариант матрицы — в надстрочнике, всегда. Один снимок лежит в очереди
+     столько раз, сколько у него вариантов, и «кнопка сдвинулась на 14px» на
+     390×844 и на 1440×900 — разные новости: первое, скорее всего, ломает
+     мобильную вёрстку, второе, скорее всего, ничего. Показывать ключ
+     платформы (`linux-chromium-1x-390x844`) вместо подписи нельзя: это адрес
+     каталога, а не ответ на вопрос. */
+  const variant=cp.variant||[cp.platform,cp.browser].filter(Boolean).join(' · ');
   const eyebrow=cause
-    ? `CAUSE ${cause.position||1} OF ${(state.triage.causes||[]).length} · ${esc(cause.tag||'')} · ${cause.count} ${plural(cause.count,'SNAPSHOT','SNAPSHOTS','SNAPSHOTS')}`
-    : `${esc(String(cp.platform||''))} · ${esc(String(cp.browser||''))}`;
+    ? `CAUSE ${cause.position||1} OF ${(state.triage.causes||[]).length} · ${esc(cause.tag||'')} · ${cause.count} ${plural(cause.count,'SNAPSHOT','SNAPSHOTS','SNAPSHOTS')} · ${esc(variant)}`
+    : esc(variant);
   const run=state.run||{};
   ttl.innerHTML=`<div class="eyebrow">${eyebrow}</div>
     <h1 class="h1" style="font-size:20px;margin-top:7px">${esc(cp.snapshot_name||'')}</h1>
     <div class="mono" style="font-size:11.5px;color:var(--muted);margin-top:5px">
       ${esc(run.run_key||('#'+(cp.run_id||'')))} · ${esc(run.branch||'—')} ·
       ${esc((run.git_sha||'—').slice(0,7))} · ${esc(cp.platform||'')}</div>`;
+  if((run.variants||[]).length>1)ttl.append(variantSwitch(cp,run));
   head.append(ttl);
   const cbHolder=el('div');cbHolder.id='claimBanner';cbHolder.append(buildClaimBanner());
   head.append(cbHolder);
@@ -98,17 +118,28 @@ function renderCompare(){
   /* Порог рядом с severity: число «82.0» само по себе не отвечает на вопрос
      «это много», а «82 при пороге 50» отвечает сразу. */
   const th=(state.thresholds||{}).fail_severity;
+  /* Каждое из пяти чисел объясняется подсказкой. Это ровно тот случай, ради
+     которого подсказки и заведены: «ΔE00 P95 = 7.4» — точная величина с
+     точным смыслом, и человек, который видит её впервые, не может решить по
+     ней ничего, пока ему не сказали, что ниже двух разницу не видит глаз.
+     Написать это под числом нельзя — пять таких абзацев вытеснят с экрана
+     сами картинки, ради которых сюда пришли. */
   strip.innerHTML=`
-    <div class="cell"><div class="k">SEVERITY</div>
+    <div class="cell" data-tip="A single 0–100 number blending area, colour distance and structure. Above the threshold the comparison fails; below it never reaches the decisions queue.">
+      <div class="k">SEVERITY</div>
       <div class="v fail">${fmt(cp.max_severity,1)}</div>
       <div class="d">${th!=null?'threshold '+th:'of 100'}</div></div>
-    <div class="cell"><div class="k">AREA</div>
+    <div class="cell" data-tip="Share of pixels that differ. A large area with low severity usually means the whole page shifted, not that an element broke.">
+      <div class="k">AREA</div>
       <div class="v">${pct(cp.changed_area_pct,3)}</div><div class="d">of the page</div></div>
-    <div class="cell"><div class="k">ΔE00 P95</div>
+    <div class="cell" data-tip="Perceptual colour distance at the 95th percentile. Below about 2 a human cannot see the difference at all, however loudly the pixels disagree.">
+      <div class="k">ΔE00 P95</div>
       <div class="v">${fmt(cp.de_p95)}</div><div class="d">colour distance</div></div>
-    <div class="cell"><div class="k">SSIM</div>
+    <div class="cell" data-tip="Structural similarity; 1.0 is identical. It catches moved and reshaped content that a pixel count misses.">
+      <div class="k">SSIM</div>
       <div class="v">${fmt(cp.ssim,4)}</div><div class="d">structure</div></div>
-    <div class="cell"><div class="k">SIZE</div>
+    <div class="cell" data-tip="Did the page get taller or shorter? If it did, everything below the change shifts and the whole snapshot goes red for one edit — read the other four numbers with that in mind.">
+      <div class="k">SIZE</div>
       <div class="v ${cp.size_changed?'warn':'pass'}">${cp.size_changed?'changed':'same'}</div>
       <div class="d">page height</div></div>`;
   pad.append(strip);
@@ -125,6 +156,9 @@ function renderCompare(){
   mbar.append(el('div','fill',stageHint(state.mode)));
   pad.append(mbar);
 
+  const notes=buildNotes(cp);
+  if(notes)pad.append(notes);
+
   const stage=buildStage(cp);
   stage.classList.add('canvas');
   stage.style.borderTop='0';
@@ -140,6 +174,68 @@ function renderCompare(){
   side.append(buildWhere(cp));
   side.append(buildHistory(cp));
 }
+/* Тот же снимок в других вариантах — переключателем, а не поиском по списку.
+
+   Вопрос «а на мобильном так же?» задают сразу после того, как посмотрели на
+   десктопный кадр, и до сих пор ответ на него добывался возвратом в прогон и
+   поиском строки глазами. Здесь варианты стоят рядом, и видно, какие из них
+   красные, ещё до перехода. */
+function variantSwitch(cp,run){
+  const others=(run.comparisons||[])
+    .filter(c=>c.snapshot_name===cp.snapshot_name)
+    .sort((a,b)=>String(a.variant||'').localeCompare(String(b.variant||'')));
+  if(others.length<2)return el('div');
+  const bar=el('div','bar');
+  bar.style.marginTop='10px';
+  others.forEach(c=>{
+    const on=c.id===cp.id;
+    const b=el('button',on?'on':'');
+    const tone=c.verdict==='fail'&&!c.review?'var(--fail)'
+      :c.verdict==='error'?'var(--warn)':'var(--pass)';
+    b.innerHTML=`<i style="display:inline-block;width:6px;height:6px;border-radius:50%;`
+      +`background:${tone};margin-right:6px"></i>${esc(c.variant||c.platform||'—')}`;
+    b.title=on?'this variant':'Open the same snapshot in this variant';
+    if(!on)b.onclick=()=>{location.hash='#/compare/'+c.id;};
+    bar.append(b);
+  });
+  return bar;
+}
+
+/* Что движок заметил по дороге — на экране, а не только в базе.
+
+   Движок пишет заметки с самого начала: «12.4% пикселей нестабильны, страница
+   слишком живая», «прислан один кадр — автоподавление движения выключено»,
+   «зона игнорирования больше не находит свой элемент». Все они складывались в
+   `meta.notes` и не показывались НИГДЕ. То есть на каждый из этих случаев у
+   движка был готовый ответ, а человек смотрел на непонятное красное и шёл
+   выяснять заново.
+
+   Стоит блок выше картинки намеренно: это условия, в которых снят кадр. Читать
+   их после того, как решение принято, поздно. */
+function buildNotes(cp){
+  const list=((cp.meta||{}).notes||[]).filter(Boolean);
+  if(!list.length)return null;
+  const box=el('div','panel');
+  box.style.cssText='margin-top:14px;padding:11px 14px';
+  box.append(el('div','k','WHAT THE ENGINE NOTICED'));
+  list.forEach(text=>{
+    const warn=/WARNING|no longer finds|single frame/i.test(String(text));
+    const row=el('div');
+    row.style.cssText='display:flex;gap:8px;align-items:flex-start;margin-top:7px;'
+      +'font-size:12.5px;line-height:1.5;color:'
+      +(warn?'var(--warn)':'var(--ink2)');
+    const dot=el('span',null,warn?'⚠':'·');
+    dot.style.cssText='flex:none;width:14px;text-align:center';
+    const said=el('span');
+    // textContent: заметку сочиняет движок, но в неё попадают селекторы и
+    // тексты со стенда — то есть чужая строка целиком.
+    said.textContent=String(text).replace(/^WARNING:\s*/i,'');
+    row.append(dot,said);
+    box.append(row);
+  });
+  return box;
+}
+
 function stageHint(m){return {slide:'drag the handle',blink:'frames alternate',
   onion:'adjust the opacity',boxes:'rectangles are the differences',
   heat:'brighter is a stronger ΔE00',side:'baseline left · current right'}[m]||'';}
@@ -314,11 +410,19 @@ function buildGroupPanel(cause){
   all.onclick=()=>answerCause(cause,'approve',all);
   card.append(all);
 
-  const keep=el('label','check');
-  keep.innerHTML='<input type="checkbox" checked> keep asking me per snapshot';
-  keep.title='Unchecked, an answer to one snapshot is applied to the whole cause '
-    +'right away. Checked, the group is only ever answered by the button above.';
-  card.append(keep);
+  /* Здесь стоял чекбокс «keep asking me per snapshot» — включённый, с
+     подсказкой, объясняющей два режима поведения. Читать её не читал никто, а
+     кто читал — верил: подсказка обещала, что со снятой галкой ответ на один
+     снимок закроет всю причину. Ни одна строка кода это значение не
+     спрашивала. То есть на экране, где принимаются необратимые решения, стоял
+     переключатель, который не переключал ничего.
+
+     Обещание убрано, факт оставлен: одиночный ответ закрывает один снимок,
+     всю причину закрывает кнопка выше. Второй режим — это отдельная функция,
+     и заводить её надо кодом, а не галочкой. */
+  const how=el('div','exp','An answer to a single snapshot closes only that '
+    +'snapshot. The whole cause is closed by the button above.');
+  card.append(how);
   return card;
 }
 
@@ -517,11 +621,20 @@ function buildRegions(cp){
       ig.onclick=async()=>{
         ig.disabled=true;
         try{
-          await api(`/api/comparisons/${cp.id}/ignore-region`,{method:'POST',
+          /* Селектор уходит вместе с зоной, а не теряется по дороге. Движок
+             уже назвал этот регион — `button[data-testid=submit]`, — и
+             записать после этого голый прямоугольник значило бы поставить
+             маску на то место, где элемент БЫЛ. Ровно так маски и
+             превращались в мусор при первом же переносе блока. */
+          const res=await api(`/api/comparisons/${cp.id}/ignore-region`,{method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({x:r.x,y:r.y,w:r.w,h:r.h,
+              selector:r.selector||undefined,
               reason:r.selector||r.kind||'via review'})});
-          toast('Ignore zone added · applies from the next run','ok');
+          toast(res&&res.held_by==='element'
+            ? 'Ignore zone added, bound to '+(r.selector||'the element')
+              +' · it moves with the layout'
+            : 'Ignore zone added by coordinates · applies from the next run','ok');
         }catch(e){toast(String(e.message||e),'err');ig.disabled=false;}
       };
       hd.append(ig);

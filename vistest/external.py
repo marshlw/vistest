@@ -38,6 +38,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,6 +57,10 @@ class ExternalRun:
     # made later has to land in the store the run used — not in whatever the
     # project setting says months afterwards.
     baseline_scope: str = "project"
+    # Браузер, в котором прогон шёл. Едет вместе с прогоном до самой истории:
+    # без него список прогонов не отличает «упало в firefox» от «упало везде»,
+    # а апрув не знает, чей набор эталонов переписывать.
+    browser: str = ""
     command: list[str] = field(default_factory=list)
     exit_code: int | None = None
     results: list[dict] = field(default_factory=list)
@@ -118,7 +123,8 @@ class ExternalRun:
         return {
             "project": self.project, "mode": self.mode,
             "baseline_dir": self.baseline_dir,
-            "baseline_scope": self.baseline_scope, "command": self.command,
+            "baseline_scope": self.baseline_scope, "browser": self.browser,
+            "command": self.command,
             "exit_code": self.exit_code, "results": self.results,
             "errors": self.errors, "output": self.output[-400:],
             "run_dir": self.run_dir, "elapsed_s": round(self.elapsed_s, 1),
@@ -130,6 +136,38 @@ class ExternalRun:
 
 
 # --------------------------------------------------------------------------- #
+class ExternalRunRefused(RuntimeError):
+    """Прогон невозможен по причине, которая уже названа словами.
+
+    Отличается от любого другого исключения тем, что это НЕ поломка: у набора
+    нет эталонов, не выбран каталог, не совпало ни одно правило. Причина
+    сформулирована для человека и целиком помещается в одну строку.
+
+    Различать это нужно ради стектрейса. Задача, упавшая с обычным
+    исключением, дописывает в лог питоновский трейс — и правильно делает: там
+    настоящая поломка, и её надо чинить. На объяснённом отказе трейс говорит
+    «инструмент сломался» ровно там, где инструмент отработал как задумано, а
+    человек в это время читает пятнадцать строк `File "...", line ...` вместо
+    одной строки с ответом.
+    """
+
+
+def browsers_with_baselines(project, cfg) -> dict[str, bool]:
+    """У каких браузеров набор VisTest уже снят, а у каких пусто.
+
+    Нужно до запуска. Многобраузерный прогон иначе узнаёт это по одному
+    браузеру за раз: chromium отработал полторы минуты, firefox отказал, — и
+    только тогда выясняется, что снимать надо было заранее.
+    """
+    from .matrix import BROWSERS
+
+    out = {}
+    for name in BROWSERS:
+        key = platform_key(name, cfg.capture.device_scale_factor)
+        out[name] = has_own_baselines(project.vistest_baselines_path(cfg, key))
+    return out
+
+
 def has_own_baselines(directory: Path) -> bool:
     """Is there at least one baseline in VisTest's own set for this platform?
 
@@ -152,11 +190,61 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
                 update_baselines: bool = False,
                 extra_args: list[str] | None = None,
                 baseline_source: str | None = None,
+                browser: str = "",
                 ci: bool = False, only: str = "",
                 log=print, should_stop=lambda: False) -> ExternalRun:
+    """`browser` — в каком браузере гнать их набор.
+
+    Пусто — как было: браузер выбирает их conftest, а мы про него не знаем.
+    Задан — имя доезжает до их pytest (см. `_browser_env_and_args`), и, что
+    важнее, попадает в КЛЮЧ ПЛАТФОРМЫ.
+
+    Ключ платформы здесь и был главной ошибкой. Он считался как
+    `platform_key()` — без аргументов, то есть всегда `…-chromium-…`. Прогон
+    того же проекта в firefox складывал свои кадры в набор chromium и с ним же
+    сравнивался. Отрисовка шрифтов в этих движках физически разная, так что
+    падало всё подряд; а если эталоны сначала сняли под firefox, то chromium
+    потом «чинил» их обратно. Ни в одном логе это не написано: обе стороны
+    уверены, что работают со своим набором.
+    """
     cfg = cfg or VisTestConfig.load()
+    browser = (browser or "").strip().lower()
+    if browser:
+        from .matrix import normalize_browser
+
+        browser = normalize_browser(browser)
     unresolved: list[str] = []
     env = _build_env(project, cfg, env_overrides, unresolved)
+
+    # Движка может просто не быть.
+    #
+    # Это и была настоящая причина «firefox и webkit не работают». Меню
+    # предлагало три движка, потому что `known_browsers` — список того, что
+    # УМЕЕТ Playwright, а не того, что установлено. Выбор firefox уходил в
+    # работу, pytest падал строкой «Executable doesn't exist at
+    # …/firefox-1495/firefox/firefox» посреди чужого вывода, набор оставался
+    # пустым — и следующий прогон отвечал «набор для docker-firefox-1x ещё не
+    # снят, снимите его», то есть отправлял по кругу, который не размыкается.
+    #
+    # Спрашиваем ИХ интерпретатор: браузеры берутся из установки Playwright
+    # проекта, наша к этому отношения не имеет.
+    #
+    # Отказ ровно на одном состоянии — `not-installed`: пакет Playwright есть,
+    # он сам называет путь к бинарю, бинаря по этому пути нет. Это факт, а не
+    # предположение.
+    #
+    # `no-playwright` отказом НЕ является, и это не осторожность, а суть дела:
+    # чужой набор может гоняться selenium'ом или чем угодно ещё — адаптер
+    # цепляется за их драйвер, а не за наш. Отказать здесь значило бы
+    # остановить работающий набор по причине, которой у него нет. Не смогли
+    # спросить — тоже запускаем.
+    if browser and project.uses_pytest():
+        from .matrix import NOT_INSTALLED, install_hint
+
+        state = project_browser_state(project, browser)
+        if state == NOT_INSTALLED:
+            raise ExternalRunRefused(
+                install_hint(browser, state, where="the project environment"))
 
     # baseline_source overrides the baseline source for a specific run:
     #   "project" — compare against their committed PNGs; "vistest" — against the
@@ -175,26 +263,64 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
         # The platform in the path is mandatory: text rendering in Windows and in
         # a container is physically different, there is no shared baseline between
         # them.
-        baseline_dir = project.vistest_baselines_path(cfg, platform_key())
-        baseline_dir.mkdir(parents=True, exist_ok=True)
+        platform = platform_key(browser or "chromium",
+                                cfg.capture.device_scale_factor)
+        baseline_dir = project.vistest_baselines_path(cfg, platform)
+        # Каталог НЕ создаётся здесь.
+        #
+        # Здесь стоял `mkdir(parents=True, exist_ok=True)` — до всех проверок,
+        # то есть каждая неудачная попытка прогона оставляла на диске пустой
+        # каталог платформы. Дальше он попадал в `baseline_status()` и на
+        # карточку: «11 on docker-chromium-1x (11), docker-firefox-1x (0),
+        # docker-webkit-1x (0)». Читается это как «набор для firefox есть, но
+        # пуст», хотя на самом деле его не снимали ни разу и попытка была
+        # отвергнута секундой раньше.
+        #
+        # Каталог создаёт тот, кто в него пишет: адаптер, когда
+        # `VISTEST_ADAPTER_UPDATE=1`. Отсутствие каталога — честный ответ
+        # «этого набора нет».
         # An empty set + no request to capture is an error, not a «first run».
         # Capturing VisTest baselines is a separate explicit action (a button in «⋯»).
         if not update_baselines and not has_own_baselines(baseline_dir):
-            raise RuntimeError(
-                f"VisTest baselines for this platform ({platform_key()}) have not "
-                f"been captured yet — there is nothing in {baseline_dir}. First "
-                "capture them with the «Capture VisTest baselines» action in the "
-                "«⋯» menu, then run the comparison.")
+            # Совет обязан вести туда, где помогает.
+            #
+            # Здесь стояло «снимите набор через ⋯ → Capture VisTest baselines»,
+            # и для многобраузерного прогона это тупик: то действие снимает
+            # набор браузера по умолчанию, то есть chromium — который как раз и
+            # работал. Человек делал ровно то, что написано, и получал ту же
+            # ошибку про firefox.
+            #
+            # Поэтому сообщение называет БРАУЗЕР и говорит, у каких браузеров
+            # набор уже есть: из этого сразу видно, что вопрос не в проекте, а
+            # в одном движке.
+            have = [name for name, ok in
+                    browsers_with_baselines(project, cfg).items() if ok]
+            hint = (f"Sets are already captured for: {', '.join(have)}. "
+                    if have else "")
+            for_browser = f" for {browser}" if browser else ""
+            raise ExternalRunRefused(
+                f"The VisTest baseline set for platform {platform} has not been "
+                f"captured yet — there is nothing in {baseline_dir}. {hint}"
+                f"Capture it{for_browser}: «⋯ → Snap VisTest baselines», "
+                f"picking{for_browser or ' the browser'} in the «▾» menu, "
+                "then run the comparison again.")
     else:
         baseline_dir = project.baseline_dir(env)
         if baseline_dir is None:
-            raise RuntimeError(
+            raise ExternalRunRefused(
                 "No baselines folder selected. Check the rules in the project "
                 "description: no condition matched the run environment.")
         if not baseline_dir.exists():
-            raise RuntimeError(f"Baselines folder not found: {baseline_dir}")
+            raise ExternalRunRefused(f"Baselines folder not found: {baseline_dir}")
 
-    run_key = f"ext-{project.key}-{int(time.time())}"
+    # Секунды не хватает на идентификатор прогона, а с многобраузерностью и
+    # подавно: три прогона одного проекта стартуют в одну секунду штатно, а
+    # `run_key` уникален и приём сделан на `INSERT OR REPLACE` — то есть второй
+    # молча стёр бы первый вместе со всеми его сравнениями. Браузер в имени
+    # заодно делает ключ читаемым в списке прогонов.
+    run_key = "-".join(x for x in (
+        "ext", project.key, browser, time.strftime("%Y%m%d-%H%M%S"),
+        uuid.uuid4().hex[:4]) if x)
     run_dir = cfg.runs_path() / run_key
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -207,6 +333,11 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
     run = ExternalRun(project=project.key, mode=mode,
                       baseline_dir=str(baseline_dir), run_dir=str(run_dir),
                       baseline_scope="vistest" if own else "project",
+                      # Браузер — свойство прогона с самого начала, а не с
+                      # момента сборки команды. Прогон, оборвавшийся на сборе
+                      # тестов, тоже обязан помнить, чьим он был: иначе в
+                      # истории и в отчёте он выглядит прогоном chromium.
+                      browser=browser,
                       git=git_info(project.root_path))
     if run.git.get("sha"):
         log(f"commit: {run.git.get('branch') or '—'} · {run.git['sha'][:8]}")
@@ -221,6 +352,11 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
         "VISTEST_ADAPTER_STORE": "vistest" if own else "project",
         "VISTEST_ROOT": str(cfg.root_path),
     })
+
+    browser_args: list[str] = []
+    if browser:
+        env_bits, browser_args = _browser_env_and_args(project, browser, log=log)
+        env.update(env_bits)
 
     # Verdict thresholds set in the interface. This is a separate process with
     # its own `vistest.yaml`, and it knows nothing about our database — so the
@@ -308,7 +444,9 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
         before.update(_png_snapshot(baseline_dir))
         before.update(_png_snapshot(project.tests_path()))
 
-    run.command = _build_command(project, mode, extra_args, exe=exe, only=only)
+    run.command = _build_command(project, mode,
+                                 list(extra_args or []) + browser_args,
+                                 exe=exe, only=only)
     log("$ " + " ".join(run.command))
 
     started = time.perf_counter()
@@ -496,6 +634,108 @@ def choose_interpreter(project: Project, log=print) -> str:
         log("to make it permanent: remove the interpreter in the project settings")
         return sys.executable
     return exe
+
+
+def _browser_env_and_args(project: Project, browser: str, *, log=print
+                          ) -> tuple[dict[str, str], list[str]]:
+    """Как имя браузера дойдёт до ИХ pytest.
+
+    Своего браузера в этом пути у нас нет: его поднимает их conftest. Значит
+    единственный способ — попросить их код, и способов попросить ровно два.
+
+    `VISTEST_BROWSER` выставляется ВСЕГДА, даже когда используется флаг. Это
+    дешёвая страховка: проекту, у которого свой разбор аргументов, достаточно
+    прочитать переменную, и ему не нужно ни нашего согласия, ни настройки.
+
+    `--browser` добавляется только там, где он существует. Флаг вводит
+    pytest-playwright; без него pytest падает на «unrecognized arguments» —
+    то есть многобраузерный прогон убивал бы набор, который прекрасно
+    работает. Поэтому в режиме `auto` наличие плагина проверяется их же
+    интерпретатором, а не предполагается.
+    """
+    env = {"VISTEST_BROWSER": browser}
+    how = project.browser_control()
+    if how == "env":
+        return env, []
+    if how == "flag":
+        return env, ["--browser", browser]
+    if how == "none":                                      # pragma: no cover
+        return env, []
+
+    # auto
+    if any(str(a).startswith("--browser") for a in (project.pytest_args or [])):
+        # Проект уже назвал браузер сам. Приписать второй флаг значит спорить с
+        # его собственной настройкой — а чья возьмёт, зависит от порядка
+        # аргументов, то есть непредсказуемо.
+        log(f"browser: {browser} только через VISTEST_BROWSER — в pytest_args "
+            "проекта уже есть свой --browser")
+        return env, []
+    if _has_pytest_playwright(project):
+        return env, ["--browser", browser]
+    log(f"browser: {browser} только через VISTEST_BROWSER — pytest-playwright "
+        "в окружении проекта не найден, флага --browser у их pytest нет")
+    return env, []
+
+
+_BROWSER_PROBE: dict[str, dict[str, bool]] = {}
+
+
+def project_browser_state(project: Project, browser: str) -> str:
+    """Есть ли этот движок В ОКРУЖЕНИИ ПРОЕКТА.
+
+    Спрашивать надо именно там. Прогон чужого проекта поднимает ИХ pytest их
+    интерпретатором, и браузеры берутся из их установки Playwright — наша к
+    этому отношения не имеет вовсе. Сервис вполне может стоять в образе без
+    единого браузера (`Dockerfile.api` собран из `python:3.12-slim`), а проект
+    при этом гоняться прекрасно.
+
+    Отсюда же и правило на случай «не смогли спросить»: отвечаем `installed`.
+    Ложный отказ здесь дороже молчания — он останавливает набор, который
+    работает, и объясняет это причиной, которой нет.
+    """
+    from .matrix import INSTALLED, NO_PLAYWRIGHT, NOT_INSTALLED, PROBE
+
+    exe = project.resolve_python()
+    if exe not in _BROWSER_PROBE:
+        try:
+            done = subprocess.run([exe, "-c", PROBE],
+                                  capture_output=True, timeout=30, text=True)
+            found = json.loads((done.stdout or "{}").strip().splitlines()[-1])
+            _BROWSER_PROBE[exe] = found if isinstance(found, dict) else {}
+        except Exception:
+            _BROWSER_PROBE[exe] = {"__unknown__": True}
+    found = _BROWSER_PROBE[exe]
+    if found.get("__unknown__"):
+        return INSTALLED
+    if not found:
+        return NO_PLAYWRIGHT
+    return INSTALLED if found.get(browser) else NOT_INSTALLED
+
+
+_PW_PROBE: dict[str, bool] = {}
+
+
+def _has_pytest_playwright(project: Project) -> bool:
+    """Стоит ли pytest-playwright в ИХ окружении.
+
+    Один короткий подпроцесс на интерпретатор, с запоминанием: спрашивать это
+    на каждый прогон одного и того же проекта незачем, а угадывать нельзя —
+    цена ошибки в обе стороны одинаковая. Не смогли спросить (нет
+    интерпретатора, таймаут) — считаем, что плагина нет: не добавить флаг
+    безопаснее, чем добавить неизвестный.
+    """
+    exe = project.resolve_python()
+    if exe in _PW_PROBE:
+        return _PW_PROBE[exe]
+    try:
+        done = subprocess.run(
+            [exe, "-c", "import pytest_playwright"],
+            capture_output=True, timeout=20)
+        ok = done.returncode == 0
+    except Exception:
+        ok = False
+    _PW_PROBE[exe] = ok
+    return ok
 
 
 def _build_command(project: Project, mode: str,
@@ -924,8 +1164,23 @@ def baseline_status(project: Project, cfg: VisTestConfig | None = None) -> dict:
                         1 for p in d.rglob("meta.json")
                         if _has_url(p)),
                 })
+    # `current_platform` — платформа МАШИНЫ СЕРВИСА, то есть всегда
+    # `…-chromium-…`: `platform_key()` без аргументов не знает ни про какой
+    # другой движок. Карточка выбирала по нему набор для «Open VisTest
+    # snapshots» и уводила на вкладку эталонов, прибив платформу к chromium.
+    # Снаружи это и было «сняли эталоны для firefox — на вкладке их нет»: они
+    # там были, просто открывался чужой набор.
+    #
+    # Поэтому рядом появляется `best_platform` — непустой набор, самый большой
+    # из имеющихся, с предпочтением текущему. Открывать надо то, где что-то
+    # есть; пустая платформа по умолчанию не отвечает ни на один вопрос.
     out["current_platform"] = platform_key()
     out["vistest_total"] = sum(v["count"] for v in out["vistest"])
+    filled = [v for v in out["vistest"] if v["count"]]
+    here = next((v for v in filled if v["platform"] == out["current_platform"]),
+                None)
+    best = here or (max(filled, key=lambda v: v["count"]) if filled else None)
+    out["best_platform"] = best["platform"] if best else ""
     return out
 
 

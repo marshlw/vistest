@@ -168,9 +168,22 @@ class CheckService:
 
         ignore = _noise.merge_masks(baseline.stability_mask, unstable, sticky=True)
         if baseline.ignore_boxes:
-            ignore = _noise.merge_masks(
-                ignore, _noise.mask_from_boxes(rgb.shape[:2], baseline.ignore_boxes)
-            )
+            # Зона может держаться за ЭЛЕМЕНТ, а не за прямоугольник, и тогда
+            # маска встаёт туда, где элемент сейчас, — в обоих кадрах сразу.
+            # Единственное место во всём движке, где на руках есть оба DOM'а:
+            # эталонный лежит в хранилище, текущий приехал вместе с кадром.
+            # Дальше по дороге их уже нет, и опознавать будет нечем.
+            from . import zones as _zones
+
+            boxes_mask, resolved = _zones.mask(
+                rgb.shape[:2], baseline.ignore_boxes,
+                baseline_dom=baseline.dom, actual_dom=dom)
+            ignore = _noise.merge_masks(ignore, boxes_mask)
+            # Маска, потерявшая цель, не отличима от работающей — ни на
+            # картинке, ни по вердикту. Поэтому она говорит о себе сама, и
+            # говорит в заметках сравнения: их человек видит в разборе ровно
+            # тогда, когда смотрит на этот снимок.
+            notes.extend(resolved.notes)
 
         # Пороги: конфиг → проект (уже учтён в `self.cfg`) → **снимок** → вызов.
         #

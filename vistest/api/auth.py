@@ -94,6 +94,18 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
+# Заглушка для входа с несуществующим логином. Считается один раз при импорте.
+#
+# Здесь стояло `hash_password("x" * 12)` прямо в обработчике: на каждую попытку
+# войти под логином, которого нет, сервис считал PBKDF2 дважды — сначала чтобы
+# СОЗДАТЬ фиктивный хеш, потом чтобы его проверить. Цель была правильная
+# (выровнять время ответа и не выдать, какие логины существуют), а получилось
+# наоборот: несуществующий логин отвечал заметно ДОЛЬШЕ существующего — то
+# есть перебор логинов измерялся секундомером, — и стоил при этом миллион
+# раундов на запрос без единого пароля, то есть был готовым усилителем нагрузки.
+_ABSENT_USER_HASH = hash_password("x" * 24)
+
+
 def needs_rehash(stored: str) -> bool:
     try:
         return int(stored.split("$")[1]) < PBKDF2_ITERATIONS
@@ -167,6 +179,30 @@ def close_setup(db, who: str = "") -> None:
     set_flag(db, SETUP_OPEN, False, who)
 
 
+def claim_setup(db, who: str = "") -> bool:
+    """Закрыть окно первого администратора — и узнать, успели ли мы первыми.
+
+    Проверка `setup_open()` и `close_setup()` стояли по краям `create_user`, а
+    между ними PBKDF2 на полмиллиона раундов. Два запроса, пришедшие в это
+    окно, оба видели «занять ещё можно» и оба заводили администратора — то
+    есть на свежей инсталляции, открытой по сети, окно «сделай меня админом»
+    было не одноразовым, как обещано, а одноразовым «примерно».
+
+    Закрытие совмещено с проверкой в одном UPDATE: строку меняет ровно один
+    запрос. Флага может ещё не быть в таблице вовсе (значение по умолчанию —
+    «открыто»), поэтому сначала INSERT OR IGNORE, и только потом обмен.
+    """
+    with db.connect():
+        db.execute(
+            "INSERT OR IGNORE INTO setting(scope, project_key, name, value,"
+            " updated_at, updated_by) VALUES('global','',?,'1',datetime('now'),?)",
+            (SETUP_OPEN, who))
+        return bool(db.execute(
+            "UPDATE setting SET value='0', updated_at=datetime('now'),"
+            " updated_by=? WHERE scope='global' AND project_key=''"
+            "   AND name=? AND value<>'0'", (who, SETUP_OPEN)))
+
+
 def reopen_setup(db, who: str = "") -> None:
     """Открыть окно заново — например, если единственный админ потерял доступ.
 
@@ -233,9 +269,35 @@ def reject_user(db, login: str) -> bool:
         ((login or "").strip().lower(),)) > 0
 
 
-def set_password(db, login: str, password: str) -> bool:
-    return db.execute("UPDATE user SET password=? WHERE login=?",
-                      (hash_password(password), login.strip().lower())) > 0
+def set_password(db, login: str, password: str, *, keep_token: str = "") -> bool:
+    """Сменить пароль — и закрыть сессии, открытые старым.
+
+    Раньше здесь был только UPDATE. Из-за этого смена пароля не делала того
+    единственного, ради чего её и делают срочно: человек, у которого пароль
+    увели, менял его — и чужая сессия продолжала работать ещё две недели,
+    потому что сессии у нас серверные и о пароле ничего не знают. То же самое и
+    со стороны администратора: он сбрасывал пароль скомпрометированной учётной
+    записи и считал, что закрыл дверь, а дверь оставалась открытой.
+
+    `keep_token` — сессия того, кто меняет пароль себе: выкидывать человека из
+    его собственного браузера за то, что он поступил правильно, незачем. При
+    сбросе администратором не остаётся ни одной.
+    """
+    login = login.strip().lower()
+    with db.connect():
+        changed = db.execute("UPDATE user SET password=? WHERE login=?",
+                             (hash_password(password), login)) > 0
+        if changed:
+            row = db.one("SELECT id FROM user WHERE login=?", (login,))
+            if row:
+                if keep_token:
+                    db.execute(
+                        "DELETE FROM session WHERE user_id=? AND token<>?",
+                        (row["id"], keep_token))
+                else:
+                    db.execute("DELETE FROM session WHERE user_id=?",
+                               (row["id"],))
+    return changed
 
 
 def set_role(db, login: str, role: str) -> bool:
@@ -469,6 +531,41 @@ def valid_invite(db, token: str) -> dict | None:
     return row
 
 
+def claim_invite(db, token: str, by: str) -> dict | None:
+    """Забрать приглашение — одним UPDATE, а не «проверить, потом пометить».
+
+    В `accept_invite` стояло: проверить `valid_invite`, создать пользователя,
+    пометить приглашение использованным. Между первым и третьим шагом лежит
+    `create_user`, а он считает PBKDF2 в 480 000 раундов — то есть окно между
+    проверкой и пометкой открыто сотни миллисекунд. Ссылка-приглашение при этом
+    ходит по чату: два человека, нажавшие её одновременно, оба проходили
+    проверку и оба заводили себе учётку. Ровно тем же способом ссылка,
+    попавшая не туда, превращается в сколько угодно учётных записей с ролью,
+    которую администратор выдал ОДНОМУ человеку.
+
+    Пометка теперь стоит ПЕРВОЙ и совмещена с проверкой: `WHERE used_at IS
+    NULL` в самом UPDATE. Сколько бы запросов ни пришло одновременно, строку
+    меняет ровно один — остальные видят ноль и получают отказ. Если создание
+    пользователя после этого не удалось, приглашение возвращается обратно:
+    сгоревшая ссылка при опечатке в логине — это поход к администратору за
+    новой.
+    """
+    token = token or ""
+    row = db.one("SELECT * FROM invite WHERE token=?", (token,))
+    if not row or invite_status(row) != "active":
+        return None
+    taken = db.execute(
+        "UPDATE invite SET used_at=datetime('now'), used_by=?"
+        "  WHERE token=? AND used_at IS NULL", (by, token))
+    return row if taken else None
+
+
+def release_invite(db, token: str) -> None:
+    """Вернуть приглашение в оборот — если тем, ради чего его забрали, не воспользовались."""
+    db.execute("UPDATE invite SET used_at=NULL, used_by=NULL WHERE token=?",
+               (token or "",))
+
+
 # --------------------------------------------------------------------------- #
 #  Team profile
 # --------------------------------------------------------------------------- #
@@ -600,14 +697,27 @@ def build_router(db):
                   (request.client.host if request.client else "") or "?")
             raise HTTPException(403, "Wrong setup token")
 
+        # Окно закрывается ЗДЕСЬ, и это же проверка «мы первые» — см.
+        # `claim_setup`. Порядок противоположен прежнему намеренно: раньше флаг
+        # закрывался после создания, чтобы упавшее создание не оставило
+        # инсталляцию без администратора и без способа его завести. Цена была
+        # окно гонки длиной в PBKDF2; теперь флаг возвращается руками ровно на
+        # тех путях, где создать не удалось.
+        if not claim_setup(db, payload.get("login") or ""):
+            raise HTTPException(
+                409, "This installation already has an administrator. "
+                     "Sign in, or ask them for an invite.")
         try:
             create_user(db, payload.get("login") or "",
                         payload.get("password") or "",
                         role="admin", name=payload.get("name") or "")
         except ValueError as e:
+            reopen_setup(db, payload.get("login") or "")
             raise HTTPException(400, str(e)) from None
+        except Exception:
+            reopen_setup(db, payload.get("login") or "")
+            raise
 
-        close_setup(db, payload.get("login") or "")
         row = db.one("SELECT id, login, name, role FROM user WHERE login=?",
                      ((payload.get("login") or "").strip().lower(),))
         audit(db, row["login"], "setup.completed",
@@ -695,7 +805,7 @@ def build_router(db):
 
         # We check the password even when the user is absent: otherwise the
         # response time reveals which logins exist.
-        stored = row["password"] if row else hash_password("x" * 12)
+        stored = row["password"] if row else _ABSENT_USER_HASH
         password_ok = verify_password(password, stored)
         ok = password_ok and row and row["active"]
 
@@ -754,7 +864,10 @@ def build_router(db):
         if not verify_password(payload.get("old") or "", row["password"]):
             raise HTTPException(403, "The current password is wrong")
         try:
-            set_password(db, user["login"], payload.get("new") or "")
+            # Свою сессию оставляем, остальные закрываем: смена пароля — это в
+            # первую очередь «выгнать того, кто вошёл под ним без меня».
+            set_password(db, user["login"], payload.get("new") or "",
+                         keep_token=vistest_session or "")
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
         audit(db, user["login"], "password.changed")
@@ -957,7 +1070,9 @@ def build_router(db):
                       payload: dict = Body(...)):
         """The invited person sets their own login and password — their account is created."""
         token = payload.get("token") or ""
-        inv = valid_invite(db, token)
+        login_name = (payload.get("login") or "").strip().lower()
+        # Приглашение забирается ДО создания пользователя: см. `claim_invite`.
+        inv = claim_invite(db, token, login_name)
         if not inv:
             raise HTTPException(400, "The invite link is invalid or has expired")
         try:
@@ -965,11 +1080,13 @@ def build_router(db):
                               payload.get("password", ""),
                               role=inv["role"], name=payload.get("name", ""))
         except ValueError as e:
+            # Логин занят или пароль короткий — ссылку сжигать не за что.
+            release_invite(db, token)
             raise HTTPException(400, str(e)) from None
+        except Exception:
+            release_invite(db, token)
+            raise
 
-        login_name = (payload.get("login") or "").strip().lower()
-        db.execute("UPDATE invite SET used_at=datetime('now'), used_by=?"
-                   " WHERE token=?", (login_name, token))
         token_s = open_session(db, uid, request.headers.get("user-agent", ""))
         response.set_cookie(
             COOKIE, token_s, httponly=True, samesite="lax",
@@ -977,6 +1094,71 @@ def build_router(db):
         audit(db, login_name, "invite.accepted", role=inv["role"])
         return {"login": login_name, "name": payload.get("name", "") or login_name,
                 "role": inv["role"]}
+
+    # ---------------- токены CI ----------------
+    #
+    # Живут рядом с приглашениями не случайно: и то и другое — выдача доступа
+    # тому, кого сейчас нет за экраном, и оба показываются ровно один раз.
+    @router.get("/api/ci-tokens")
+    def list_ci_tokens(project: str | None = None,
+                       vistest_session: str | None = Cookie(default=None)):
+        require(db, vistest_session, "admin")
+        from . import citokens
+
+        return {"tokens": citokens.listing(db, project or "")}
+
+    @router.post("/api/ci-tokens")
+    def create_ci_token(payload: dict = Body(default={}),
+                        vistest_session: str | None = Cookie(default=None)):
+        """Выпустить токен. Сам токен возвращается ЕДИНСТВЕННЫЙ раз — здесь.
+
+        body: {name?, project?, role?, days?}
+
+        Пустой `project` — токен на всю инсталляцию. Это путь совместимости со
+        старой переменной окружения, и он остаётся осознанным выбором
+        администратора, а не значением по умолчанию: интерфейс спрашивает
+        проект первым полем.
+        """
+        me_ = require(db, vistest_session, "admin")
+        from . import citokens
+
+        out = citokens.issue(db, name=payload.get("name", ""),
+                             project=payload.get("project", ""),
+                             role=payload.get("role", "reviewer"),
+                             days=payload.get("days"),
+                             created_by=me_["login"])
+        audit(db, me_["login"], "citoken.created", out["prefix"],
+              project=out["project"], role=out["role"],
+              expires_at=out["expires_at"])
+        return out
+
+    @router.post("/api/ci-tokens/{token_id}/rotate")
+    def rotate_ci_token(token_id: int,
+                        vistest_session: str | None = Cookie(default=None)):
+        """Сменщик с теми же правами. Старый ОСТАЁТСЯ действующим.
+
+        В этом и смысл ротации: пока пайплайны перекатываются на новый секрет,
+        старый обязан работать. Гасить его надо тогда, когда «последнее
+        использование» перестанет двигаться, — и это видно в списке.
+        """
+        me_ = require(db, vistest_session, "admin")
+        from . import citokens
+
+        out = citokens.rotate(db, token_id, created_by=me_["login"])
+        audit(db, me_["login"], "citoken.rotated", out["prefix"],
+              project=out["project"], replaces=token_id)
+        return out
+
+    @router.delete("/api/ci-tokens/{token_id}")
+    def revoke_ci_token(token_id: int,
+                        vistest_session: str | None = Cookie(default=None)):
+        me_ = require(db, vistest_session, "admin")
+        from . import citokens
+
+        gone = citokens.revoke(db, token_id)
+        if gone:
+            audit(db, me_["login"], "citoken.revoked", str(token_id))
+        return {"ok": True, "revoked": gone}
 
     # ---------------- team profile ----------------
     @router.get("/api/team")

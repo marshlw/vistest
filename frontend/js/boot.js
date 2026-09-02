@@ -1,17 +1,11 @@
-/* VisTest - self-hosted visual regression testing.
- * Copyright (C) 2026 Kirill Kulagin
- * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * This file is part of VisTest. See LICENSE for the full terms and NOTICE for
- * the trademark and commercial-licensing terms. Removing this header does not
- * remove those obligations.
- */
-
 /* Запуск: что спрашивается до первого экрана и в каком порядке.
 
    Идёт последним и обязан идти последним: здесь вызывается всё, что определено
    выше. Это второе и последнее правило порядка подключения. */
 async function boot(){
+  /* Раньше всего остального — до навигации и до первого запроса. Если сломано
+     что-то из подключённого выше, услышать об этом надо, а не гадать. */
+  installErrorSurface();
   buildNav();
   const joinMatch=location.hash.match(/^#\/join\/([^/]+)/);
 
@@ -31,12 +25,7 @@ async function boot(){
   try{state.me=await api('/api/auth/me');}catch(e){/* 401 is handled */}
   if(joinMatch){renderJoin(joinMatch[1]);return;}
   if(!state.me){await showLogin();return;}
-  paintUser();
-  applyTeam(await api('/api/team').catch(()=>null));
-  if(!location.hash)location.hash='#/runs';
-  await refreshCounts();loadRig();
-  route();
-  startCollab();
-  initPalette();
+  await enterApp(state.me);
 }
+
 boot();

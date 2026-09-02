@@ -438,22 +438,36 @@ class FileBaselineStore(BaselineStore):
         return sorted({split_project(n)[0] for n in self.list_names()})
 
     def add_ignore_box(self, name: str, box: dict) -> None:
+        from ..zones import normalize
+
         d = self.dir_for(name)
         path = d / "meta.json"
         meta = json.loads(path.read_text("utf-8")) if path.exists() else {}
         boxes = meta.setdefault("ignore_boxes", [])
-        boxes.append({k: int(box[k]) for k in ("x", "y", "w", "h")})
+        # Через `normalize`, а не через выборку четырёх чисел: зона, пришедшая
+        # из разбора падения, знает СЕЛЕКТОР найденного региона, и терять его
+        # здесь значило бы записывать прямоугольник там, где был элемент.
+        boxes.append(normalize(box))
         d.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # ------------------------------------------------------------------ #
     def ignore_mask(self, name: str, shape: tuple[int, int]) -> np.ndarray | None:
-        """stability-маска + вечные ignore-боксы, приведённые к размеру кадра."""
+        """stability-маска + вечные ignore-зоны, приведённые к размеру кадра.
+
+        Текущего кадра здесь нет — значит нет и его DOM'а: зоны разрешаются по
+        снепшоту ЭТАЛОНА. Для не двигавшегося элемента это тот же ответ, для
+        переехавшего — только его прежнее положение. Полное разрешение живёт в
+        `service.check`, где на руках оба снепшота; сюда ходят те, кому нужна
+        маска снимка саму по себе.
+        """
         rec = self.load(name)
         if rec is None:
             return None
         mask = rec.stability_mask
         if rec.ignore_boxes:
-            boxes_mask = _noise.mask_from_boxes(shape, rec.ignore_boxes)
+            from ..zones import mask as zone_mask
+
+            boxes_mask, _ = zone_mask(shape, rec.ignore_boxes, baseline_dom=rec.dom)
             mask = boxes_mask if mask is None else _noise.merge_masks(mask, boxes_mask)
         return mask

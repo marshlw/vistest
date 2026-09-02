@@ -273,6 +273,28 @@ def cmd_doctor(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# Команды, которые run.py не выполняет сам, а передаёт в `vistest.cli` как есть.
+#
+# Список ОДИН на два места: раньше их было два — цикл, объявляющий парсеры, и
+# словарь обработчиков ниже. Расходились они молча и уже разошлись: новая
+# команда объявлялась в парсере, забывалась в словаре, и `run.py matrix`
+# отвечал не подсказкой, а `KeyError: 'matrix'` со стеком. Для человека,
+# который просто прочитал README, это выглядит как сломанный инструмент.
+PASSTHROUGH = (
+    ("record", "open the browser with the panel and capture baselines"),
+    ("snap", "capture baseline(s) by URL"),
+    ("check", "check a ready PNG against the baseline"),
+    ("list", "list the baselines"),
+    ("rm", "delete baseline(s)"),
+    ("prune", "delete old runs and free up space"),
+    ("codegen", "rebuild the tests from baseline passports"),
+    ("matrix", "what the browser × window-size matrix expands to"),
+    ("project", "test suites connected from outside"),
+    ("report", "offline HTML report on a run"),
+    ("evidence", "accumulated quality statistics"),
+)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="run.py", description="VisTest launcher")
     sub = p.add_subparsers(dest="cmd")
@@ -296,18 +318,7 @@ def main() -> int:
     cmp_.add_argument("actual")
 
     # Команды, которые просто проксируются в vistest.cli со всеми аргументами
-    for name, help_ in (
-        ("record", "open the browser with the panel and capture baselines"),
-        ("snap", "capture baseline(s) by URL"),
-        ("check", "check a ready PNG against the baseline"),
-        ("list", "list the baselines"),
-        ("rm", "delete baseline(s)"),
-        ("prune", "delete old runs and free up space"),
-        ("codegen", "rebuild the tests from baseline passports"),
-        ("project", "test suites connected from outside"),
-        ("report", "offline HTML report on a run"),
-        ("evidence", "accumulated quality statistics"),
-    ):
+    for name, help_ in PASSTHROUGH:
         sp = sub.add_parser(name, help=help_)
         sp.add_argument("rest", nargs=argparse.REMAINDER)
 
@@ -330,11 +341,7 @@ def main() -> int:
         "setup": cmd_setup, "ui": cmd_ui, "test": cmd_test, "update": cmd_update,
         "compare": cmd_compare, "docker": cmd_docker, "doctor": cmd_doctor,
         "push": cmd_push,
-        "record": cmd_passthrough, "snap": cmd_passthrough,
-        "check": cmd_passthrough, "list": cmd_passthrough,
-        "rm": cmd_passthrough, "prune": cmd_passthrough,
-        "codegen": cmd_passthrough, "project": cmd_passthrough,
-        "report": cmd_passthrough, "evidence": cmd_passthrough,
+        **{name: cmd_passthrough for name, _ in PASSTHROUGH},
     }
     try:
         return handlers[args.cmd](args)

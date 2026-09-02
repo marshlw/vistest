@@ -14,7 +14,12 @@
    раздел внутри одного. */
 SCREENS.settings=async function(){
   loadingScreen();
-  const admin=!!(state.me&&state.me.role==='admin');
+  const here=pageGuard();
+  /* Роль спрашивается той же функцией, что и везде, а не сравнением строк:
+     `role==='admin'` не знает про права, выданные на один проект, и разошлось
+     бы с остальным интерфейсом при первой же выдаче. */
+  const admin=can('admin');
+  if(!here())return;
   const screen=$('#screen');screen.innerHTML='';
   /* Страница в общей рамке. Без неё настройки шли во всю ширину окна и
      единственные из всех экранов начинались без полей — читалось как сбой
@@ -77,6 +82,13 @@ SCREENS.settings=async function(){
   s.append(el('div','sect-h','<h2>Automatic cleanup</h2>'));
   const rtHolder=el('div');rtHolder.id='retentionCard';s.append(rtHolder);
   renderRetention(rtHolder);
+
+  /* Оглавление ставится последним и в самое начало: собрать его можно только
+     когда разделы уже на странице, а место ему — под заголовком, где его
+     ищут. Панели, которые дозагружаются (`renderThresholds` и соседи),
+     заголовки свои уже отдали — они добавлены выше синхронно. */
+  const rail=sectionRail(s,{label:'Settings sections'});
+  if(rail)s.querySelector('.h1').after(rail);
 };
 /* ------- ретеншен -------
    Единственное фоновое действие, которое УДАЛЯЕТ данные. Отсюда весь тон
@@ -464,7 +476,13 @@ async function renderThresholds(box,project){
   scopeRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap';
   scopeRow.append(el('span','field-lbl','Applies to'));
   const pick=el('select','inp');
-  pick.style.cssText='margin:0;width:auto;padding:6px 10px';
+  /* Ширина по содержимому — да, отступы — нет: справа в поле нарисована
+     стрелка, и `padding:6px 10px` заезжал текстом прямо под неё. Отступы у
+     `select.inp` заданы в `ui.css` и учитывают её. */
+  pick.style.cssText='margin:0;width:auto';
+  pick.id='thresholdScope';
+  tip(pick,'A per-project threshold overrides the shared one. Projects are noisy in '
+    +'different ways, and one number for all of them is always somebody’s compromise.');
   const opts=[['','everyone']].concat((state.projectKeys||[]).map(k=>[k,k]));
   opts.forEach(([v,label])=>{const o=el('option');o.value=v;o.textContent=label;pick.append(o);});
   pick.value=project||'';
@@ -477,8 +495,8 @@ async function renderThresholds(box,project){
 
   Object.keys(data.editable||{}).forEach(name=>{
     const spec=data.editable[name];
-    const value=data.values[name];
-    const source=data.sources[name];
+    const value=(data.values||{})[name];
+    const source=(data.sources||{})[name];
     const row=el('div');row.style.marginTop='22px';
 
     const head=el('div');
@@ -546,7 +564,12 @@ async function renderThresholds(box,project){
   /* «Вернуть как в конфиге» — это не «поставить ноль». Ноль здесь осмысленное
      значение («падать на любом видимом различии»), и без отдельной кнопки
      вернуться к тому, что написано в vistest.yaml, было бы нельзя. */
-  const anyOverride=Object.values(data.sources).some(x=>x!=='config');
+  /* `data.sources` спрашивается через `||{}`, как и `data.editable` двадцатью
+     строками выше. Без этого ответ старого сервиса, в котором поля ещё нет,
+     не «показывал на одну кнопку меньше», а валил `Object.values(undefined)` —
+     то есть уносил с собой весь экран настроек целиком, вместе с командой,
+     заявками на доступ и сроком хранения. */
+  const anyOverride=Object.values(data.sources||{}).some(x=>x!=='config');
   if(anyOverride){
     const reset=el('button','btn','Back to vistest.yaml');
     reset.title='Removes the override; the value from the config applies again';

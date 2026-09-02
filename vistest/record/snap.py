@@ -24,66 +24,91 @@ pages.yaml:
 
 from __future__ import annotations
 
-from ..config import VisTestConfig, platform_key
+from ..config import VisTestConfig
 from ..integrations.driver import PlaywrightDriver
 from ..service import CheckService
 
-C = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m", "0": "\033[0m"}
+C = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m",
+     "b": "\033[34m", "0": "\033[0m"}
 
 
 def snap_urls(targets: list[dict], *, browser: str = "chromium",
-              update: bool = False) -> int:
+              update: bool = False, variants=None) -> int:
+    """Снять эталоны по адресам.
+
+    `variants` — матрица «браузер × размер окна». Не задана — один вариант, тот
+    самый `browser`, и поведение ровно как раньше. Задана — каждый адрес
+    снимается во всех вариантах, у каждого свой набор эталонов (см.
+    `vistest.matrix`), а размер окна варианта перекрывает размер из цели: сама
+    матрица и есть заявление о том, в каких размерах смотрим.
+    """
     try:
         from playwright.sync_api import sync_playwright
+
+        from ..matrix import launch
     except ImportError:
         print("Playwright is required:  python run.py setup")
         return 1
 
+    from ..matrix import Variant
+
     cfg = VisTestConfig.load()
-    platform = platform_key(browser, cfg.capture.device_scale_factor)
-    service = CheckService(cfg, platform=platform, browser=browser,
-                           run_dir=cfg.runs_path() / "snap")
+    variants = list(variants or [Variant(browser=browser, viewport=None,
+                                         scale=cfg.capture.device_scale_factor,
+                                         base=True)])
 
     created = skipped = failed = 0
+    roots = []
 
     with sync_playwright() as p:
-        btype = getattr(p, browser)
-        br = btype.launch(headless=True)
-        state = _maybe_auth(br, cfg, targets)
-        try:
-            for t in targets:
-                name = t.get("name") or "snapshot.png"
-                if not name.endswith(".png"):
-                    name += ".png"
+        for v in variants:
+            service = CheckService(cfg, platform=v.platform, browser=v.browser,
+                                   run_dir=cfg.runs_path() / "snap" / v.slug)
+            roots.append(str(service.store.root))
+            if len(variants) > 1:
+                print(f"\n{C['b']}{v.label}{C['0']}  →  {v.platform}")
 
-                if service.store.exists(name) and not update:
-                    print(f"{C['y']}skipped{C['0']}  {name} — baseline already exists "
-                          f"(use --update to overwrite)")
-                    skipped += 1
-                    continue
+            br = launch(p, v.browser, headless=True)
+            shots = [dict(t, viewport=v.viewport) if v.viewport else t
+                     for t in targets]
+            state = _maybe_auth(br, cfg, shots)
+            try:
+                for t in shots:
+                    name = t.get("name") or "snapshot.png"
+                    if not name.endswith(".png"):
+                        name += ".png"
 
-                try:
-                    rgb, dom, unstable = _shoot(br, cfg, _no_relogin(t, cfg, state),
-                                                state)
-                except Exception as e:
-                    print(f"{C['r']}error{C['0']}    {name}: {type(e).__name__}: {e}")
-                    failed += 1
-                    continue
+                    if service.store.exists(name) and not update:
+                        print(f"{C['y']}skipped{C['0']}  {name} — baseline already "
+                              f"exists (use --update to overwrite)")
+                        skipped += 1
+                        continue
 
-                service.check(name, rgb, unstable=unstable, dom=dom,
-                              update_baseline=True, render=False,
-                              meta={"url": t.get("url"),
-                                    "selector": t.get("selector"),
-                                    "viewport": t.get("viewport"),
-                                    "wait": t.get("wait")})
-                h, w = rgb.shape[:2]
-                print(f"{C['g']}created{C['0']}  {name}  {w}×{h}  {t.get('url', '')}")
-                created += 1
-        finally:
-            br.close()
+                    try:
+                        rgb, dom, unstable = _shoot(
+                            br, cfg, _no_relogin(t, cfg, state), state)
+                    except Exception as e:
+                        print(f"{C['r']}error{C['0']}    {name}: "
+                              f"{type(e).__name__}: {e}")
+                        failed += 1
+                        continue
+
+                    service.check(name, rgb, unstable=unstable, dom=dom,
+                                  update_baseline=True, render=False,
+                                  meta={"url": t.get("url"),
+                                        "selector": t.get("selector"),
+                                        "viewport": t.get("viewport"),
+                                        "wait": t.get("wait")})
+                    h, w = rgb.shape[:2]
+                    print(f"{C['g']}created{C['0']}  {name}  {w}×{h}  "
+                          f"{t.get('url', '')}")
+                    created += 1
+            finally:
+                br.close()
 
     print(f"\nCreated: {created}, skipped: {skipped}, failed: {failed}")
-    print(f"Baselines: {service.store.root}")
+    for root in dict.fromkeys(roots):
+        print(f"Baselines: {root}")
     return 1 if failed else 0
 
 

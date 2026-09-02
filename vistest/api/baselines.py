@@ -1,11 +1,3 @@
-# VisTest - self-hosted visual regression testing.
-# Copyright (C) 2026 Kirill Kulagin
-# SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
-# the trademark and commercial-licensing terms. Removing this header does not
-# remove those obligations.
-
 """Baseline management from the UI: listing, URL binding, capture, running checks.
 
 Why this lives in the interface and not only in the CLI: creating and maintaining
@@ -31,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -177,7 +170,7 @@ GLOBAL_SCOPE = "global"
 
 
 def parse_scope(scope: str | None) -> tuple[str, str | None]:
-    """`"project:acme"` → `("vistest", "acme")`; anything empty → global."""
+    """`"project:aeron"` → `("vistest", "aeron")`; anything empty → global."""
     text = (scope or "").strip()
     if not text or text == GLOBAL_SCOPE:
         return GLOBAL_SCOPE, None
@@ -364,6 +357,9 @@ def baselines_detail(request: Request,
                 "scope_label": _scope_label(scope),
                 "root": str(root), "flows": [], "auth_flow": ""}
 
+    # Проект набора: снимок без записанного источника ищет свой тест в коде
+    # ЭТОГО проекта, а не во всех подряд.
+    scope_project = parse_scope(scope)[1] or ""
     out = []
     for pdir in sorted(root.iterdir()):
         if not pdir.is_dir() or (platform and pdir.name != platform):
@@ -399,9 +395,9 @@ def baselines_detail(request: Request,
                          f"&name={quote(name)}&w=320{_scope_q(scope)}",
                 "full": f"/api/baselines/image?platform={quote(pdir.name)}"
                         f"&name={quote(name)}{_scope_q(scope)}",
-                "source": _source_view(meta),
+                "source": _source_view(meta, name, scope_project),
                 "runnable": bool(meta.get("url")) or _source.runnable_by_test(
-                    meta.get("source")),
+                    _source_view(meta, name, scope_project)),
                 "scope": scope or GLOBAL_SCOPE,
             })
         projects = sorted({i["project"] for i in items})
@@ -705,6 +701,12 @@ def set_boxes(request: Request, body: dict = Body(...)):
 
     Список передаётся целиком, а не по одной зоне: интерфейс рисует их мышью,
     и «удалить вторую из четырёх» через добавление не выражается.
+
+    Зона может держаться за ЭЛЕМЕНТ (`selector` + `match`), а не за
+    прямоугольник, — и тогда она переезжает вместе с ним. Координаты при этом
+    обязательны всё равно: элемент может исчезнуть, и тогда прямоугольник —
+    единственное, что от зоны останется. Разбор формата и опознание — в
+    `vistest/zones.py`.
     """
     platform = body.get("platform")
     name = body.get("name")
@@ -715,26 +717,15 @@ def set_boxes(request: Request, body: dict = Body(...)):
     if not _store(platform, scope).exists(name):
         raise HTTPException(404, "baseline not found")
 
-    raw = body.get("boxes")
-    if not isinstance(raw, list):
-        raise HTTPException(400, "boxes must be a list")
+    from ..zones import normalize_all
 
-    boxes = []
-    for i, item in enumerate(raw):
-        if not isinstance(item, dict):
-            raise HTTPException(400, f"boxes[{i}] is not an object")
-        try:
-            box = {k: int(item[k]) for k in ("x", "y", "w", "h")}
-        except (KeyError, TypeError, ValueError):
-            raise HTTPException(
-                400, f"boxes[{i}]: x, y, w and h are required, as integers") from None
-        if box["w"] <= 0 or box["h"] <= 0:
-            raise HTTPException(400, f"boxes[{i}]: a zone must have a non-zero size")
-        if box["x"] < 0 or box["y"] < 0:
-            raise HTTPException(400, f"boxes[{i}]: a zone starts inside the frame")
-        if item.get("reason"):
-            box["reason"] = str(item["reason"])[:200]
-        boxes.append(box)
+    try:
+        boxes = normalize_all(body.get("boxes"))
+    except ValueError as e:
+        # Разбор формата живёт в одном месте, а не копией на каждый роут: копия
+        # разошлась бы с движком, и зона, принятая интерфейсом, оказалась бы
+        # для сравнения невидимой.
+        raise HTTPException(400, str(e)) from None
 
     _write_meta(platform, name, {"ignore_boxes": boxes}, scope)
 
@@ -742,9 +733,13 @@ def set_boxes(request: Request, body: dict = Body(...)):
     from .main import db
 
     who = current_user(db, request.cookies.get("vistest_session"))["login"]
+    from ..zones import held_by
+
+    by_element = sum(1 for z in boxes if held_by(z) == "element")
     audit(db, who, "baseline.ignore_boxes", name,
-          platform=platform, scope=scope or GLOBAL_SCOPE, count=len(boxes))
-    return {"ok": True, "boxes": boxes}
+          platform=platform, scope=scope or GLOBAL_SCOPE, count=len(boxes),
+          by_element=by_element)
+    return {"ok": True, "boxes": boxes, "by_element": by_element}
 
 
 @router.get("/api/baselines/card")
@@ -810,16 +805,151 @@ def baseline_card(request: Request, platform: str, name: str,
             "thumb": f"/api/baselines/image?{q}&w=480",
             "has_mask": (directory / "stability.png").exists(),
         },
-        "ignore_boxes": meta.get("ignore_boxes", []),
+        "ignore_boxes": _zone_view(meta.get("ignore_boxes", []), directory),
         # Чем снят снимок и чем его можно повторить. `runnable` раньше означал
         # «есть адрес» — и ровно поэтому кнопки появлялись у страниц за входом,
         # где адрес сам по себе даёт форму логина.
-        "source": _source_view(meta),
+        "source": _source_view(meta, name, parse_scope(scope)[1] or ""),
         "runnable": bool(meta.get("url")) or _source.runnable_by_test(
-            meta.get("source")),
+            _source_view(meta, name, parse_scope(scope)[1] or "")),
         "flows": sorted(_cfg_fresh().flows.keys()),
         "history": _snapshot_history(name, platform),
     }
+
+
+def _zone_view(zones: list, directory) -> list[dict]:
+    """Зоны снимка + чем каждая держится и находит ли ещё свою цель.
+
+    Считается на сервере по тем же правилам, что и при сравнении. Разбирать
+    лесенку опознания на клиенте значило бы завести второе место, где живёт
+    ответ «маска работает или уже нет», — и разойтись с первым молча, а именно
+    молчания здесь и надо избежать.
+    """
+    from ..capture import dom as domcap
+    from ..zones import find_nodes, held_by
+
+    snapshot = domcap.load(Path(directory) / "dom.json") or {}
+    out = []
+    for zone in (zones or []):
+        if not isinstance(zone, dict):
+            continue
+        row = dict(zone)
+        row["held_by"] = held_by(zone)
+        if row["held_by"] == "element":
+            hits = find_nodes(snapshot, zone) if snapshot.get("nodes") else []
+            # Снепшота нет вовсе — это не «цель потеряна». Про такую зону мы
+            # просто ничего не знаем: старый эталон снят без DOM, и врать про
+            # него «маска сломана» значило бы отправить человека чинить
+            # работающее.
+            row["matches"] = len(hits) if snapshot.get("nodes") else None
+            row["lost"] = bool(snapshot.get("nodes")) and not hits
+        else:
+            row["matches"] = None
+            row["lost"] = False
+        out.append(row)
+    return out
+
+
+@router.post("/api/baselines/element-at")
+def element_at(request: Request, body: dict = Body(...)):
+    """Какой элемент человек обвёл мышью — и чем за него можно зацепиться.
+
+    body: {platform, name, scope?, x, y, w, h}
+
+    Без этого зона по селектору осталась бы функцией для тех, кто готов сам
+    открыть DevTools и списать путь. Человек в этот момент делает ровно одно
+    движение — обводит блок на картинке, — и ответ должен приехать оттуда же.
+
+    Возвращается не один узел, а лесенка: сам элемент и его родители. Обвести
+    ровно нужный уровень мышью почти невозможно — промахнулся на два пикселя и
+    попал в `<span>` внутри кнопки, — а выбрать из списка «span → button →
+    form» человек может осмысленно.
+    """
+    platform = body.get("platform")
+    name = body.get("name")
+    scope = body.get("scope")
+    _require(request, "viewer", _rights_key(scope))
+    if not platform or not name:
+        raise HTTPException(400, "platform and name are required")
+
+    store = _store(platform, scope)
+    if not store.exists(name):
+        raise HTTPException(404, "baseline not found")
+
+    from ..capture import dom as domcap
+
+    snapshot = domcap.load(store.dir_for(name) / "dom.json") or {}
+    nodes = snapshot.get("nodes") or []
+    if not nodes:
+        # Честный ответ вместо пустого списка: снимок снят без DOM, и это
+        # состояние, а не сбой. Интерфейсу надо сказать «зацепиться не за что,
+        # остаются координаты», а не показать пустое меню.
+        return {"nodes": [], "reason": "no DOM snapshot was captured with this baseline"}
+
+    try:
+        box = {k: int(body.get(k) or 0) for k in ("x", "y", "w", "h")}
+    except (TypeError, ValueError):
+        raise HTTPException(400, "x, y, w and h must be integers") from None
+
+    ranked = _rank_nodes(nodes, box)
+    return {"nodes": ranked[:8], "total": len(nodes)}
+
+
+def _rank_nodes(nodes: list[dict], box: dict) -> list[dict]:
+    """Узлы по тому, насколько они похожи на обведённое.
+
+    Мера — пересечение к объединению (IoU) прямоугольников, та же, что у
+    attribution: она одинаково наказывает и за промах мимо, и за «обвёл кнопку,
+    а предложили body». Ноль площади у выделения (одиночный клик) означает
+    «самый маленький узел под точкой» — и это отдельная ветка, потому что IoU
+    там вырождается в ноль для всех.
+    """
+    x0, y0 = box["x"], box["y"]
+    x1, y1 = x0 + max(box["w"], 0), y0 + max(box["h"], 0)
+    area = max(0, x1 - x0) * max(0, y1 - y0)
+
+    scored = []
+    for n in nodes:
+        try:
+            nx, ny = int(n["x"]), int(n["y"])
+            nw, nh = int(n["w"]), int(n["h"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if nw <= 0 or nh <= 0:
+            continue
+        ix0, iy0 = max(x0, nx), max(y0, ny)
+        ix1, iy1 = min(x1, nx + nw), min(y1, ny + nh)
+        inter = max(0, ix1 - ix0) * max(0, iy1 - iy0)
+        if area:
+            union = area + nw * nh - inter
+            score = inter / union if union else 0.0
+            if score <= 0:
+                continue
+        else:
+            # Клик без протяжки: подходит всё, что накрывает точку, а лучший —
+            # самый маленький из них.
+            if not (nx <= x0 <= nx + nw and ny <= y0 <= ny + nh):
+                continue
+            score = 1.0 / (nw * nh)
+        scored.append((score, n))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [{
+        "selector": n.get("selector"),
+        "testid": n.get("testid"),
+        "id": n.get("id"),
+        "tag": n.get("tag"),
+        "cls": n.get("cls"),
+        "text": n.get("text"),
+        "x": int(n["x"]), "y": int(n["y"]), "w": int(n["w"]), "h": int(n["h"]),
+        "score": round(score, 4),
+        # Чем зона за него зацепится, если выбрать именно этот узел. Показывать
+        # это надо до выбора: `data-testid` переживёт перестройку вёрстки, а
+        # путь из шести тегов — нет, и человек имеет право знать разницу.
+        "holds_by": ("data-testid" if n.get("testid") else
+                     "id" if n.get("id") else
+                     "css path"),
+    } for score, n in scored]
 
 
 def _threshold_view(meta: dict, project_key: str = "") -> dict:
@@ -849,13 +979,23 @@ def _threshold_view(meta: dict, project_key: str = "") -> dict:
             "editable": base["editable"]}
 
 
-def _source_view(meta: dict) -> dict:
-    """Источник снимка для интерфейса — с подписью, а не голыми полями."""
+def _source_view(meta: dict, name: str = "", project_key: str = "") -> dict:
+    """Источник снимка для интерфейса — с подписью, а не голыми полями.
+
+    Если записи нет, ответ ищется в коде: тест, который этот снимок объявляет,
+    и есть его источник. Раньше здесь честно стояло «not recorded», и для
+    целого набора, снятого чужими тестами до появления записи, это означало
+    отсутствие любой связи — при том что связь написана в их же файлах прямым
+    текстом.
+    """
     src = dict((meta or {}).get("source") or {})
     if not src:
-        # Снимки, снятые до появления этой записи. Врать про них «captured by
-        # URL» нельзя: половина из них снята тестами, и предложить человеку
-        # проверить их адресом значит предложить снять форму входа.
+        src = declared_source(name, project_key)
+    if not src:
+        # Снимки, снятые до появления этой записи, о которых и код молчит.
+        # Врать про них «captured by URL» нельзя: половина из них снята
+        # тестами, и предложить человеку проверить их адресом значит
+        # предложить снять форму входа.
         return {"kind": "unknown", "label": "not recorded",
                 "test": "", "project_key": "", "runnable": False}
     src["label"] = _source.label(src)
@@ -1023,6 +1163,81 @@ def capture_config_for(capture, target: dict):
     return dataclasses.replace(capture, full_page=bool(target["full_page"]))
 
 
+def _variants_from(body: dict, *, browser: str | None = None):
+    """Варианты для этого запроса: тело сильнее конфига, конфиг сильнее умолчания.
+
+    `browser` отдельным полем остаётся ради совместимости: интерфейс и клиенты
+    посылали его с самого начала, и ломать это ради красоты нельзя. Он значит
+    «матрица из одного браузера» и проигрывает явному `matrix.browsers`.
+    """
+    from ..matrix import MatrixError, from_config
+
+    raw = body.get("matrix")
+    if raw is True:
+        # «Матрица как в конфиге» — самая частая просьба, и писать ради неё
+        # копию списков в теле запроса значит завести второе место, где они
+        # живут, и разойтись с ним при первой же правке `vistest.yaml`.
+        try:
+            return from_config(_cfg_fresh())
+        except MatrixError as e:
+            raise HTTPException(400, str(e)) from None
+    raw = raw or {}
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "matrix must be true or an object "
+                                 "{browsers: [...], viewports: [...]}")
+    browsers = raw.get("browsers")
+    if browsers is None and browser:
+        browsers = [browser]
+    try:
+        return from_config(_cfg_fresh(), browsers=browsers,
+                           viewports=raw.get("viewports"),
+                           base_viewport=raw.get("base_viewport"))
+    except MatrixError as e:
+        # Ошибка описания матрицы — это 400, а не 500: человек опечатался в
+        # размере окна, а не сломал сервис.
+        raise HTTPException(400, str(e)) from None
+
+
+@router.get("/api/matrix")
+def matrix_preview(request: Request):
+    """Во что раскрывается матрица этой инсталляции — до того, как её запустят.
+
+    Список из шести строк в конфиге превращается в восемнадцать прогонов и
+    восемнадцать наборов эталонов, и увидеть это заранее дешевле, чем узнать
+    из счёта за время. Заодно отвечает на «а где лежат эталоны варианта»:
+    ключ хранения виден прямо здесь.
+    """
+    _require(request, "viewer")
+    from ..matrix import BROWSERS, INSTALLED, from_config, installed_browsers
+
+    cfg = _cfg_fresh()
+    variants = from_config(cfg)
+    # Что из этого здесь ЕСТЬ, а не только поддерживается.
+    #
+    # `known_browsers` — список того, что умеет Playwright. Интерфейс показывал
+    # его как список того, во что можно прогнать, и человек выбирал движок,
+    # которого в образе нет. Дальше всё выглядело как поломка VisTest: пустой
+    # набор эталонов, отказ «набор ещё не снят», круг.
+    #
+    # Отвечаем обоими списками сразу. Прятать неустановленные было бы хуже:
+    # «почему у меня только chromium» — вопрос, на который экран обязан
+    # отвечать сам, а не молчанием.
+    state = installed_browsers()
+    return {
+        # Браузеры, которые вообще можно назвать. Список приезжает с сервера, а
+        # не зашит в интерфейс: движки поддерживает Playwright, и знать про них
+        # обязан тот, кто его запускает.
+        "known_browsers": list(BROWSERS),
+        "browser_state": state,
+        "installed_browsers": [b for b in BROWSERS if state.get(b) == INSTALLED],
+        "declared": bool(cfg.matrix.browsers or cfg.matrix.viewports),
+        "browsers": list(cfg.matrix.browsers or ()),
+        "viewports": list(cfg.matrix.viewports or ()),
+        "base_viewport": next((v.viewport for v in variants if v.base), None),
+        "variants": [v.as_dict() for v in variants],
+    }
+
+
 @router.post("/api/baselines/snap")
 def snap(request: Request, body: dict = Body(...)):
     """Capture baseline(s) by address. Returns the id of a background job.
@@ -1054,13 +1269,17 @@ def snap(request: Request, body: dict = Body(...)):
     update = bool(body.get("update"))
     scope = body.get("scope")
     parse_scope(scope)                      # validate before starting a job
+    variants = _variants_from(body, browser=browser)
     title = (targets[0].get("name") or targets[0]["url"]) if len(targets) == 1 \
         else f"{len(targets)} pages"
+    if len(variants) > 1:
+        title += f" · {len(variants)} variants"
 
     job = runner.submit("snap", f"Baseline capture: {title}",
-                        lambda j: _run_snap(j, targets, browser, update, scope),
+                        lambda j: _run_snap(j, targets, variants, update, scope),
                         owner=user["login"], lock_key=f"snap:{scope or 'global'}")
-    return {"job_id": job.id, "scope": scope or GLOBAL_SCOPE}
+    return {"job_id": job.id, "scope": scope or GLOBAL_SCOPE,
+            "variants": [v.as_dict() for v in variants]}
 
 
 @router.post("/api/baselines/resnap")
@@ -1110,77 +1329,187 @@ def resnap(request: Request, body: dict = Body(...)):
                  " — bind one first, then re-capture")
 
     title = names[0] if len(targets) == 1 else f"{len(targets)} baselines"
+    # Пересъёмка идёт ровно в тот вариант, из которого её попросили: `platform`
+    # уже назвал и браузер, и размер окна. Раскрывать здесь матрицу значило бы
+    # по кнопке «переснять» у одного снимка переписать эталоны ещё пяти
+    # вариантов, о которых человек не просил.
+    variants = _variants_of_platform(platform, browser)
     job = runner.submit("snap", f"Recapture: {title}",
-                        lambda j: _run_snap(j, targets, browser, True, scope),
+                        lambda j: _run_snap(j, targets, variants, True, scope),
                         owner=user["login"], lock_key=f"snap:{scope or 'global'}")
     return {"job_id": job.id, "count": len(targets), "skipped": without_url,
             "scope": scope or GLOBAL_SCOPE}
 
 
-def _run_snap(job: Job, targets: list[dict], browser: str, update: bool,
+def _variants_of_platform(platform: str, browser: str = "chromium"):
+    """Один вариант, восстановленный из ключа платформы.
+
+    Нужен там, где человек уже выбрал конкретный набор («переснять ЭТОТ
+    снимок», «прогнать ЭТУ платформу»): ключ содержит и браузер, и размер, и
+    подменять их матрицей нельзя.
+    """
+    from ..matrix import Variant, variant_of_platform
+
+    info = variant_of_platform(platform)
+    return [Variant(browser=info.get("browser") or browser,
+                    viewport=info.get("viewport"),
+                    scale=info.get("scale") or 1.0,
+                    # Ключ уже готов и правдивее вычисленного: эталоны могли
+                    # быть сняты в docker, а сервис работает на Windows.
+                    key=platform)]
+
+
+def _target_for(t: dict, variant) -> dict:
+    """Цель под конкретный вариант матрицы.
+
+    Размер окна варианта ПЕРЕКРЫВАЕТ размер из паспорта снимка, и это осознанно.
+    Матрица — заявление про весь набор («снимаем на 1440, 768 и 390»), а
+    паспорт — про один снимок. Если бы паспорт побеждал, половина набора
+    молча снималась бы не в тех размерах, а человек считал бы, что проверил
+    мобильную вёрстку. Расхождения при этом называются вслух — см.
+    `_viewport_conflicts`.
+    """
+    if not variant.viewport:
+        return t
+    out = dict(t)
+    out["viewport"] = variant.viewport
+    return out
+
+
+def _viewport_conflicts(targets: list[dict], variants) -> list[str]:
+    """Снимки, у которых в паспорте свой размер, не совпадающий с базовым.
+
+    Это единственное место, где матрица меняет смысл уже снятого эталона:
+    базовый вариант хранится под прежним ключом, но снимается теперь в размере
+    матрицы. Промолчать нельзя — человек получит пачку падений и решит, что
+    сломался движок. Назвать вслух достаточно: набор всё равно надо привести к
+    одному размеру, и это его решение, а не наше.
+    """
+    from ..matrix import normalize_viewport
+
+    base = next((v.viewport for v in variants if v.base and v.viewport), None)
+    if not base:
+        return []
+    out = []
+    for t in targets:
+        own = t.get("viewport")
+        if not own:
+            continue
+        try:
+            if normalize_viewport(own) != base:
+                out.append(f"{t.get('name') or t.get('url')} ({normalize_viewport(own)})")
+        except Exception:
+            continue
+    return out
+
+
+def _run_snap(job: Job, targets: list[dict], variants, update: bool,
+              scope: str | None = None) -> dict:
+    """Обёртка ради одного: отсутствующий движок — это отказ, а не поломка.
+
+    `BrowserMissing` уже несёт в себе готовый ответ с командой установки.
+    Пропустить его наверх как есть значило бы показать питоновский трейс —
+    двадцать строк, из которых человек должен сам выудить, что не хватает
+    браузера, и догадаться, какого именно.
+    """
+    from ..matrix import BrowserMissing
+
+    try:
+        return _snap_all(job, targets, variants, update, scope)
+    except BrowserMissing as e:
+        job.say(str(e), "error")
+        raise JobFailure(str(e)) from None
+
+
+def _snap_all(job: Job, targets: list[dict], variants, update: bool,
               scope: str | None = None) -> dict:
     from playwright.sync_api import sync_playwright
 
+    from ..matrix import is_matrix, launch
     from ..service import CheckService
 
     cfg = _cfg_fresh()
-    platform = platform_key(browser, cfg.capture.device_scale_factor)
-    svc = CheckService(cfg, platform=platform, browser=browser,
-                       run_dir=cfg.runs_path() / "ui-snap",
-                       store=_store(platform, scope))
-
     created, skipped, failed = [], [], []
-    job.say(f"platform {platform}, pages: {len(targets)} · {_scope_label(scope)}")
+    total = len(targets) * max(len(variants), 1)
+    done = 0
+
+    if is_matrix(variants):
+        job.say(f"matrix: {len(variants)} "
+                f"{'variant' if len(variants) == 1 else 'variants'} × "
+                f"{len(targets)} pages · {_scope_label(scope)}")
+        for v in variants:
+            job.say(f"  · {v.label} → {v.platform}")
+    else:
+        job.say(f"platform {variants[0].platform}, pages: {len(targets)} · "
+                f"{_scope_label(scope)}")
+
+    for conflict in _viewport_conflicts(targets, variants)[:5]:
+        job.say(f"у снимка задан свой размер окна, матрица его перекроет: {conflict}",
+                "warn")
 
     with sync_playwright() as p:
-        br = getattr(p, browser).launch(headless=True)
-        state = _auth_state(br, cfg, targets, job)
-        try:
-            for i, t in enumerate(targets):
-                if job.cancelled:
-                    break
-                job.progress = i / max(len(targets), 1)
-                name = _norm_name(t.get("name") or t["url"])
+        for v in variants:
+            if job.cancelled:
+                break
+            svc = CheckService(cfg, platform=v.platform, browser=v.browser,
+                               run_dir=cfg.runs_path() / "ui-snap" / v.slug,
+                               store=_store(v.platform, scope))
+            shots = [_target_for(t, v) for t in targets]
+            br = launch(p, v.browser, headless=True)
+            state = _auth_state(br, cfg, shots, job)
+            try:
+                for t in shots:
+                    if job.cancelled:
+                        break
+                    done += 1
+                    job.progress = done / max(total, 1)
+                    name = _norm_name(t.get("name") or t["url"])
+                    tag = f"{name} [{v.label}]" if is_matrix(variants) else name
 
-                if svc.store.exists(name) and not update:
-                    job.say(f"{name}: baseline already exists, skipping", "warn")
-                    skipped.append(name)
-                    continue
+                    if svc.store.exists(name) and not update:
+                        job.say(f"{tag}: baseline already exists, skipping", "warn")
+                        skipped.append(name)
+                        continue
 
-                job.say(f"{name}: opening {t['url']}")
-                try:
-                    rgb, dom, unstable = _shoot(
-                        br, cfg, _strip_auth_flow(t, cfg, bool(state)), job, state)
-                except Exception as e:
-                    job.say(f"{name}: {type(e).__name__}: {e}", "error")
-                    failed.append({"name": name, "error": str(e)})
-                    continue
+                    job.say(f"{tag}: opening {t['url']}")
+                    try:
+                        rgb, dom, unstable = _shoot(
+                            br, cfg, _strip_auth_flow(t, cfg, bool(state)), job, state)
+                    except Exception as e:
+                        job.say(f"{tag}: {type(e).__name__}: {e}", "error")
+                        failed.append({"name": name, "variant": v.label,
+                                       "error": str(e)})
+                        continue
 
-                # Источник указывается явно, а не угадывается: сервис живёт в
-                # своём процессе, и если он сам запущен под pytest (а в нашем
-                # прогоне так и есть), автоопределение приписало бы снимку
-                # совершенно посторонний тест — и выглядело бы это убедительно.
-                #
-                # `source` не затирает уже записанный: снимок, снятый когда-то
-                # тестом, при пересъёмке по адресу теряет связь с тестом, и
-                # «перепроверить» для него снова начинает означать «снять форму
-                # входа». Сохранённая связь важнее свежей записи о способе.
-                previous = (_meta(platform, name, scope).get("source")
-                            if svc.store.exists(name) else None)
-                svc.check(name, rgb, unstable=unstable, dom=dom,
-                          update_baseline=True, render=False,
-                          meta=snapshot_meta(t, previous))
-                h, w = rgb.shape[:2]
-                job.say(f"{name}: saved {w}×{h}", "ok")
-                created.append(name)
-        finally:
-            br.close()
+                    # Источник указывается явно, а не угадывается: сервис живёт
+                    # в своём процессе, и если он сам запущен под pytest (а в
+                    # нашем прогоне так и есть), автоопределение приписало бы
+                    # снимку совершенно посторонний тест — и выглядело бы это
+                    # убедительно.
+                    #
+                    # `source` не затирает уже записанный: снимок, снятый
+                    # когда-то тестом, при пересъёмке по адресу теряет связь с
+                    # тестом, и «перепроверить» для него снова начинает
+                    # означать «снять форму входа». Сохранённая связь важнее
+                    # свежей записи о способе.
+                    previous = (_meta(v.platform, name, scope).get("source")
+                                if svc.store.exists(name) else None)
+                    svc.check(name, rgb, unstable=unstable, dom=dom,
+                              update_baseline=True, render=False,
+                              meta=snapshot_meta(t, previous))
+                    h, w = rgb.shape[:2]
+                    job.say(f"{tag}: saved {w}×{h}", "ok")
+                    created.append(name)
+            finally:
+                br.close()
 
     job.progress = 1.0
     job.say(f"done: created {len(created)}, skipped {len(skipped)}, "
             f"errors {len(failed)}", "ok" if not failed else "warn")
     return {"created": created, "skipped": skipped, "failed": failed,
-            "platform": platform, "scope": scope or GLOBAL_SCOPE}
+            "platform": variants[0].platform,
+            "variants": [v.as_dict() for v in variants],
+            "scope": scope or GLOBAL_SCOPE}
 
 
 def _shoot(browser, cfg, target: dict, job: Job, storage_state=None):
@@ -1395,7 +1724,8 @@ def run_baseline(request: Request, body: dict = Body(...)):
 def run_suite(request: Request, body: dict = Body(default={})):
     """Run checks over baselines that have a url set.
 
-    body: {platform?, names?: [...], browser?, scope?}
+    body: {platform?, names?: [...], browser?, scope?,
+           matrix?: {browsers: [...], viewports: [...], base_viewport?}}
 
     This is «run the tests» without a single line of code: addresses are already
     bound to snapshots, the comparison engine is the same one, and the result
@@ -1406,14 +1736,29 @@ def run_suite(request: Request, body: dict = Body(default={})):
     that set are now enumerable here, and a run over them lands in the history
     tagged with the store it compared against, so an approval afterwards goes
     back to the same place.
+
+    Матрица. `matrix` (или матрица из `vistest.yaml`) прогоняет каждый снимок
+    по всем вариантам «браузер × размер окна» в ОДНОМ прогоне. Список снимков
+    при этом берётся из набора БАЗОВОГО варианта — там лежат уже снятые
+    эталоны, и они же отвечают, что вообще входит в набор. У остальных
+    вариантов на первом прогоне эталонов ещё нет, и они запишутся как новые;
+    это ожидаемо и видно в прогоне как `new`, а не как падение.
     """
     user = _require(request, "reviewer")
-    platform = body.get("platform") or platform_key()
     names = body.get("names")
     browser = body.get("browser", "chromium")
     scope = body.get("scope")
     _, project_key = parse_scope(scope)
 
+    variants = _variants_from(body, browser=browser)
+    # Явно названная платформа сильнее — но только если матрицу не просили.
+    # Человек выбрал набор на экране и жмёт «Check all» именно по нему;
+    # подменять этот выбор матрицей значило бы запустить восемнадцать прогонов
+    # вместо одного. А вот если матрицу попросили явно, она и есть просьба.
+    if body.get("platform") and not body.get("matrix"):
+        variants = _variants_of_platform(body["platform"], browser)
+
+    platform = variants[0].platform
     store = _store(platform, scope)
     targets = []
     for name in (names or store.list_names()):
@@ -1433,18 +1778,37 @@ def run_suite(request: Request, body: dict = Body(default={})):
             "Set a url on a snapshot — or capture a new baseline by address."
         )
 
-    job = runner.submit("suite", f"Checking {len(targets)} snapshots",
-                        lambda j: _run_suite(j, targets, platform, browser,
+    title = f"Checking {len(targets)} snapshots"
+    if len(variants) > 1:
+        title += f" × {len(variants)} variants"
+    job = runner.submit("suite", title,
+                        lambda j: _run_suite(j, targets, variants,
                                              scope, project_key),
                         owner=user["login"])
     return {"job_id": job.id, "count": len(targets),
+            "variants": [v.as_dict() for v in variants],
+            "checks": len(targets) * len(variants),
             "scope": scope or GLOBAL_SCOPE}
 
 
-def _run_suite(job: Job, targets: list[dict], platform: str, browser: str,
+def _run_suite(job: Job, targets: list[dict], variants,
                scope: str | None = None, project_key: str | None = None) -> dict:
+    """Прогон по всем вариантам матрицы — ОДИН прогон и один вердикт.
+
+    Вариант — это пара «браузер × размер окна», и у каждого свой эталон: кадр
+    firefox при 390 не с чем сравнивать в наборе chromium при 1440. А вот
+    вопрос человеку один: «эта страница сломалась?» — поэтому все варианты
+    попадают в один прогон, в одну историю и в одну очередь решений, где
+    причина соберёт варианты одного сдвига в один вопрос.
+
+    Артефакты каждого варианта лежат в своём подкаталоге прогона. Иначе
+    второй вариант затирал бы картинки первого: каталог берётся по имени
+    снимка, а имя у вариантов общее — и разбор показал бы кадр firefox под
+    подписью chromium.
+    """
     from playwright.sync_api import sync_playwright
 
+    from ..matrix import is_matrix, launch
     from ..runner import git_info
     from ..service import CheckService
 
@@ -1453,99 +1817,153 @@ def _run_suite(job: Job, targets: list[dict], platform: str, browser: str,
     # «куда ставить порог», ползунок его ставит, а вердикты остаются прежними —
     # и человек делает вывод, что настройка не работает вовсе.
     cfg = _cfg_with_thresholds(project_key)
-    run_id = time.strftime("ui-%Y%m%d-%H%M%S")
+    # Секунды не хватает на идентификатор прогона.
+    #
+    # `run_key` уникален, и приём прогона сделан на `INSERT OR REPLACE`:
+    # перезапуск упавшей задачи в CI — нормальное дело, и второй раз тот же
+    # прогон должен заменить первый, а не удвоиться. Обратная сторона: два
+    # РАЗНЫХ прогона, начатых в одну и ту же секунду, тоже считаются одним, и
+    # второй молча стирает первый вместе со всеми его сравнениями.
+    #
+    # Раньше в это было трудно попасть: прогон занимал секунды. Матрица делает
+    # набор мельче и быстрее — «прогнать один снимок» стало обычным действием,
+    # — и попадание из теоретического становится будничным. Четыре шестнадцатеричных
+    # знака стоят ничего и закрывают вопрос.
+    run_id = time.strftime("ui-%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
     git = git_info()
+    base_run_dir = cfg.runs_path() / run_id
+    matrix = is_matrix(variants)
 
-    # Ветка накладывается и на сам прогон, а не только на апрув после него.
-    # Сравнить с main, а принять в ветку — это два разных эталона в одном
-    # действии; человек увидел бы дифф с одной картинкой, а заменил бы другую.
-    store, store_dir, branch = _branch_store(
-        _store(platform, scope), _baselines_root(scope) / platform,
-        platform=platform, scope=scope, project_key=project_key,
-        branch=git.get("branch") or "")
+    results, comparisons, errored = [], [], []
+    total = len(targets) * max(len(variants), 1)
+    done = 0
 
-    svc = CheckService(cfg, platform=platform, browser=browser,
-                       run_dir=cfg.runs_path() / run_id, store=store)
-
-    results = []
-    job.say(f"run {run_id}, platform {platform} · {_scope_label(scope)} · "
-            f"fail at severity {cfg.diff.fail_severity:g}"
-            + (f" · branch «{branch}»" if branch else ""))
+    if matrix:
+        job.say(f"run {run_id} · матрица из {len(variants)} вариантов × "
+                f"{len(targets)} снимков · {_scope_label(scope)} · "
+                f"fail at severity {cfg.diff.fail_severity:g}")
+    for conflict in _viewport_conflicts(targets, variants)[:5]:
+        job.say(f"у снимка задан свой размер окна, матрица его перекроет: {conflict}",
+                "warn")
 
     with sync_playwright() as p:
-        br = getattr(p, browser).launch(headless=True)
-        state = _auth_state(br, cfg, targets, job)
-        try:
-            for i, t in enumerate(targets):
-                if job.cancelled:
-                    break
-                job.progress = i / max(len(targets), 1)
-                name = t["name"]
-                job.say(f"{name}: {t['url']}")
-                try:
-                    rgb, dom, unstable = _shoot(
-                        br, cfg, _strip_auth_flow(t, cfg, bool(state)), job, state)
-                except Exception as e:
-                    job.say(f"{name}: could not capture — {e}", "error")
-                    results.append({"name": name, "verdict": "error", "error": str(e)})
-                    continue
+        for v in variants:
+            if job.cancelled:
+                break
+            # Ветка накладывается и на сам прогон, а не только на апрув после
+            # него. Сравнить с main, а принять в ветку — это два разных эталона
+            # в одном действии; человек увидел бы дифф с одной картинкой, а
+            # заменил бы другую. Наложение считается на КАЖДЫЙ вариант: у них
+            # разные наборы, и общее наложение увело бы половину не туда.
+            store, _store_dir, branch = _branch_store(
+                _store(v.platform, scope), _baselines_root(scope) / v.platform,
+                platform=v.platform, scope=scope, project_key=project_key,
+                branch=git.get("branch") or "")
 
-                try:
-                    # Пересъёмка при падении: страница загружается заново тем же
-                    # способом. Здесь это дороже, чем у теста (браузер уже увёл
-                    # страницу дальше), но платится только за упавшее — и
-                    # взамен прогон по адресам перестаёт краснеть от анимации.
-                    res = svc.check(
-                        name, rgb, unstable=unstable, dom=dom,
-                        recapture=lambda t=t: _shoot(
-                            br, cfg, _strip_auth_flow(t, cfg, bool(state)),
-                            job, state)[0])
-                except Exception as e:
-                    # The comparison engine crashed on ONE snapshot — previously
-                    # this brought down the whole run (svc.check was not wrapped),
-                    # and the rest of the snapshots were not checked. Now the
-                    # snapshot is marked as an error with a message, and the run
-                    # goes on and reaches the history.
-                    job.say(f"{name}: comparison engine crashed — {e}", "error")
-                    results.append({"name": name, "verdict": "error",
-                                    "error": f"{type(e).__name__}: {e}"})
-                    continue
-                level = {"pass": "ok", "fail": "error"}.get(res.verdict.value, "warn")
-                detail = (f"severity {res.max_severity:.0f}, "
-                          f"changed {res.changed_area_pct:.3f}%"
-                          if res.verdict is Verdict.FAIL else "")
-                job.say(f"{name}: {res.verdict.value} {detail}", level)
-                results.append({
-                    "name": name,
-                    "verdict": res.verdict.value,
-                    "max_severity": round(res.max_severity, 1),
-                    "changed_area_pct": round(res.changed_area_pct, 4),
-                    "regions": len(res.regions),
-                    "artifacts": res.artifacts,
-                })
-        finally:
-            br.close()
+            svc = CheckService(cfg, platform=v.platform, browser=v.browser,
+                               run_dir=base_run_dir / v.slug, store=store)
+            shots = [_target_for(t, v) for t in targets]
+
+            job.say(f"{v.label} → {v.platform}"
+                    + (f" · branch «{branch}»" if branch else ""))
+
+            br = launch(p, v.browser, headless=True)
+            state = _auth_state(br, cfg, shots, job)
+            try:
+                for t in shots:
+                    if job.cancelled:
+                        break
+                    done += 1
+                    job.progress = done / max(total, 1)
+                    name = t["name"]
+                    tag = f"{name} [{v.label}]" if matrix else name
+                    job.say(f"{tag}: {t['url']}")
+                    try:
+                        rgb, dom, unstable = _shoot(
+                            br, cfg, _strip_auth_flow(t, cfg, bool(state)), job, state)
+                    except Exception as e:
+                        job.say(f"{tag}: could not capture — {e}", "error")
+                        row = {"name": name, "verdict": "error", "error": str(e)}
+                        results.append({**row, "variant": v.label})
+                        errored.append({**row, "platform": v.platform,
+                                        "browser": v.browser,
+                                        "viewport": v.viewport})
+                        continue
+
+                    try:
+                        # Пересъёмка при падении: страница загружается заново
+                        # тем же способом. Здесь это дороже, чем у теста
+                        # (браузер уже увёл страницу дальше), но платится
+                        # только за упавшее — и взамен прогон по адресам
+                        # перестаёт краснеть от анимации.
+                        # `br` и `state` привязываются значением: теперь это
+                        # переменные ВНЕШНЕГО цикла по вариантам, и замыкание
+                        # по имени взяло бы браузер следующего варианта — то
+                        # есть пересняло бы кадр не тем браузером, молча и
+                        # правдоподобно.
+                        res = svc.check(
+                            name, rgb, unstable=unstable, dom=dom,
+                            recapture=lambda t=t, br=br, state=state: _shoot(
+                                br, cfg, _strip_auth_flow(t, cfg, bool(state)),
+                                job, state)[0])
+                    except Exception as e:
+                        # Движок упал на ОДНОМ снимке — раньше это роняло весь
+                        # прогон, и остальные снимки не проверялись. Теперь
+                        # снимок помечается ошибкой с текстом, а прогон идёт
+                        # дальше и доезжает до истории.
+                        job.say(f"{tag}: comparison engine crashed — {e}", "error")
+                        row = {"name": name, "verdict": "error",
+                               "error": f"{type(e).__name__}: {e}"}
+                        results.append({**row, "variant": v.label})
+                        errored.append({**row, "platform": v.platform,
+                                        "browser": v.browser,
+                                        "viewport": v.viewport})
+                        continue
+
+                    level = {"pass": "ok", "fail": "error"}.get(res.verdict.value, "warn")
+                    detail = (f"severity {res.max_severity:.0f}, "
+                              f"changed {res.changed_area_pct:.3f}%"
+                              if res.verdict is Verdict.FAIL else "")
+                    job.say(f"{tag}: {res.verdict.value} {detail}", level)
+                    results.append({
+                        "name": name,
+                        "variant": v.label,
+                        "platform": v.platform,
+                        "verdict": res.verdict.value,
+                        "max_severity": round(res.max_severity, 1),
+                        "changed_area_pct": round(res.changed_area_pct, 4),
+                        "regions": len(res.regions),
+                        "artifacts": res.artifacts,
+                    })
+            finally:
+                br.close()
+
+            # Результаты варианта забираются сразу и помечаются его платформой.
+            # Собирать их в конце общим обходом каталога значило бы гадать,
+            # какому варианту принадлежит найденный `result.json`, — а от
+            # этого зависит, с каким эталоном сравнят при следующем прогоне и
+            # куда уедет «принять как эталон».
+            comparisons.extend(_collect_comparisons(svc.run_dir, v))
 
     checked = [r for r in results if r["verdict"] != "error"]
-    errored = [r for r in results if r["verdict"] == "error"]
+    bad = [r for r in results if r["verdict"] == "error"]
 
-    # Not a single snapshot could be captured, but there were errors — this is
-    # not a «clean» run, it is a failure. Previously such a run went into the
-    # history as «clean · 0 snapshots», and the cause remained only in the job
-    # log — the person saw a green zero and did not understand why «the run does
-    # not start». Now we fail with the text of the first error: it will surface
-    # in a toast and in the job status.
-    if not checked and errored:
-        first = errored[0].get("error") or "unknown error"
+    # Не сняли ни одного снимка, но ошибки были — это не «чисто», это провал.
+    # Раньше такой прогон уходил в историю как «clean · 0 snapshots», а причина
+    # оставалась только в логе задачи: человек видел зелёный ноль и не понимал,
+    # почему «прогон не запускается».
+    if not checked and bad:
+        first = bad[0].get("error") or "unknown error"
         raise RuntimeError(
-            f"could not capture a single baseline out of {len(errored)}. "
+            f"could not capture a single baseline out of {len(bad)}. "
             f"Reason: {first}"
         )
 
+    base = variants[0]
     payload = {
         "run_id": run_id,
-        "platform": platform,
-        "browser": browser,
+        "platform": base.platform,
+        "browser": base.browser,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "git": git,
         "totals": {
@@ -1554,44 +1972,75 @@ def _run_suite(job: Job, targets: list[dict], platform: str, browser: str,
             "failed": sum(r["verdict"] == "fail" for r in checked),
             "new": sum(r["verdict"] == "new_baseline" for r in checked),
         },
-        "comparisons": [],
+        "comparisons": comparisons,
+        # Варианты записываются в сам прогон: список прогонов обязан отличать
+        # «упало на одном браузере» от «упало везде», а по одному ключу
+        # платформы этого не видно.
+        "variants": [v.as_dict() for v in variants],
         # Recorded so an approval on this run finds the same store again.
         "project_key": project_key,
         "baseline_scope": "vistest" if project_key else "global",
         # Каталог БАЗОВОГО набора, а не наложения ветки: наложение
         # пересобирается из ветки прогона (`store_for_run`), и записывать сюда
         # его путь значило бы зафиксировать ветку дважды и в двух видах.
-        "baseline_dir": str(_baselines_root(scope) / platform),
+        "baseline_dir": str(_baselines_root(scope) / base.platform),
     }
-    _ingest(payload, svc, run_id, errored=errored, project_key=project_key)
+    _ingest(payload, run_id, errored=errored, project_key=project_key)
 
     failed = [r["name"] for r in results if r["verdict"] == "fail"]
     job.progress = 1.0
-    tail = f", not captured {len(errored)}" if errored else ""
+    tail = f", not captured {len(bad)}" if bad else ""
     job.say(f"done: failed {len(failed)} of {len(checked)}{tail}",
-            "error" if failed or errored else "ok")
+            "error" if failed or bad else "ok")
     return {"run_id": run_id, "results": results,
-            "failed": failed, "errored": [r["name"] for r in errored]}
+            "variants": [v.as_dict() for v in variants],
+            "failed": failed, "errored": [r["name"] for r in bad]}
 
 
-def _ingest(payload: dict, svc, run_id: str, errored: list | None = None,
+def _collect_comparisons(run_dir, variant) -> list[dict]:
+    """Результаты одного варианта — с его платформой в каждой строке.
+
+    Платформа кладётся здесь, а не при записи в базу: только здесь ещё известно,
+    какой вариант это снимал. Дальше по дороге остаётся один прогон и общий
+    ключ на всех, и восстановить принадлежность будет неоткуда.
+    """
+    out = []
+    for result_file in sorted(run_dir.glob("*/result.json")):
+        try:
+            comp = json.loads(result_file.read_text("utf-8"))
+        except Exception:
+            continue
+        comp["platform"] = variant.platform
+        comp["browser"] = variant.browser
+        comp["viewport"] = variant.viewport
+        comp["variant"] = variant.label
+        out.append(comp)
+    return out
+
+
+def _ingest(payload: dict, run_id: str, errored: list | None = None,
             project_key: str | None = None) -> None:
-    """Put the run into the DB so it shows up on the «Runs» tab.
+    """Положить прогон в базу, чтобы он появился на вкладке «Runs».
 
-    errored — snapshots where capture or the engine crashed. We put them into
-    the run too (verdict=error with the cause text), so that the runs page shows
-    not «clean» but the specific error for each snapshot.
+    Сравнения приходят уже собранными и уже помеченными платформой варианта.
+    Раньше они собирались здесь обходом каталога прогона — и это работало ровно
+    до матрицы: варианты кладут `result.json` под одним и тем же именем снимка,
+    и по найденному файлу нельзя сказать, чей он.
+
+    errored — снимки, на которых упал захват или движок. Их тоже кладём в
+    прогон (verdict=error с текстом причины), чтобы на странице прогона стояло
+    не «чисто», а конкретная ошибка по каждому.
     """
     try:
-        run_dir = svc.run_dir
-        comparisons = []
-        for result_file in sorted(run_dir.glob("*/result.json")):
-            comparisons.append(json.loads(result_file.read_text("utf-8")))
+        comparisons = list(payload.get("comparisons") or [])
         for e in (errored or []):
             comparisons.append({
                 "name": e.get("name", "?"),
                 "verdict": "error",
                 "error": e.get("error") or "unknown error",
+                "platform": e.get("platform") or payload.get("platform"),
+                "browser": e.get("browser") or payload.get("browser"),
+                "viewport": e.get("viewport"),
             })
         payload["comparisons"] = comparisons
 
@@ -1966,6 +2415,111 @@ def _project_tests(key: str = "") -> list[dict]:
     return _project_test_scan(key)[0]
 
 
+# Как снимок называют в коде теста. Оба написания встречаются в одном наборе:
+# метод фикстуры и голая функция из адаптера.
+_ASSERT_SHOT = re.compile(
+    r"assert_screenshot\s*\(\s*(?:f?)([\"'])(.+?)\1", re.S)
+_DEF_LINE = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(")
+
+
+def declaration_key(name: str) -> str:
+    """Ключ, по которому имя из кода сходится с именем эталона.
+
+    В коде пишут `assert_screenshot("login")`, а в хранилище снимок лежит как
+    `shop.example/login.png`: расширение дописывает рантайм, префикс проекта —
+    фикстура. Сравнивать это как строки бессмысленно, поэтому сравниваются
+    последний сегмент без расширения и без регистра.
+    """
+    text = str(name or "").replace("\\", "/").strip()
+    tail = text.rsplit("/", 1)[-1]
+    if tail.lower().endswith(".png"):
+        tail = tail[:-4]
+    return tail.lower()
+
+
+def declared_in(text: str) -> list[dict]:
+    """Снимки, которые ОБЪЯВЛЯЕТ этот файл теста, и функции, которые их снимают.
+
+    Связь снимка с тестом до сих пор существовала только в двух видах: её
+    записывал прогон (в момент съёмки) или сборка (для собственных тестов).
+    Оба вида требуют события. А набор, который уже снят чужими тестами, стоит
+    и молчит: код прямым текстом говорит, какой тест какой снимок снимает, —
+    и никто этого текста не читает.
+
+    Читается он ровно так, как написан: имя снимка берётся первым строковым
+    аргументом `assert_screenshot`, а тест — ближайшим `def` выше. Имя, которое
+    собирают из переменной, здесь не разбирается и не угадывается: догадка
+    привязала бы снимок не к тому тесту, а это хуже, чем не привязать.
+    """
+    out: list[dict] = []
+    func = ""
+    for line in text.splitlines():
+        m = _DEF_LINE.match(line)
+        if m:
+            func = m.group(1)
+        for shot in _ASSERT_SHOT.finditer(line):
+            name = shot.group(2)
+            if not name or "{" in name:
+                continue                    # f-строка: имя собирается на лету
+            out.append({"name": name, "test": func})
+    return out
+
+
+_DECL_CACHE: dict[str, tuple[tuple, dict]] = {}
+
+
+def project_declarations(key: str = "") -> dict[str, list[dict]]:
+    """Карта «снимок → тесты, которые его снимают» по коду подключённых проектов.
+
+    Считается по файлам, а не по прогону: прогона могло не быть ни разу, а
+    вопрос «какой тест снимает этот экран» человек задаёт до него, а не после.
+
+    Результат кэшируется по временам файлов — правка теста видна сразу,
+    а двадцать чтений на каждый заход на экран не делаются.
+    """
+    files, _ = _project_test_scan(key)
+    signature = tuple(sorted((f["path"], f["mtime"]) for f in files))
+    cached = _DECL_CACHE.get(key)
+    if cached and cached[0] == signature:
+        return cached[1]
+
+    found: dict[str, list[dict]] = {}
+    for item in files:
+        try:
+            text = Path(item["path"]).read_text("utf-8", errors="replace")
+        except OSError:                                     # pragma: no cover
+            continue
+        for decl in declared_in(text):
+            found.setdefault(declaration_key(decl["name"]), []).append(
+                {"file": item["name"], "test": decl["test"],
+                 "project_key": item["project"], "declared": decl["name"]})
+    _DECL_CACHE[key] = (signature, found)
+    return found
+
+
+def declared_source(name: str, project_key: str = "") -> dict:
+    """Паспорт источника, собранный по коду, — если код о снимке говорит.
+
+    Возвращается в том же виде, в каком его записал бы прогон: снимок,
+    объявленный тестом, СНИМАЕТСЯ этим тестом, и «перепроверить» для него
+    означает «прогнать этот тест», а не «сходить по адресу». Разница не
+    косметическая: для страницы за входом второе означает снять форму логина.
+    """
+    if not project_key:
+        return {}
+    hits = project_declarations(project_key).get(declaration_key(name)) or []
+    hits = [h for h in hits if h.get("test")]
+    # Два теста на один снимок — это не связь, а вопрос, какой из них главный.
+    # Отвечать на него догадкой нельзя.
+    if len(hits) != 1:
+        return {}
+    hit = hits[0]
+    return {"kind": "test", "file": hit["file"],
+            "test": f"{hit['file']}::{hit['test']}",
+            "case": hit["test"], "project_key": hit["project_key"],
+            "from_code": True}
+
+
 def same_test_file(recorded: str, wanted: str) -> bool:
     """Один ли это файл теста — при том что записан он мог быть иначе.
 
@@ -2038,10 +2592,17 @@ def _snapshots_of(test_file: str, project_key: str = "") -> list[dict]:
                 # какой тест его теперь снимает. Показываются оба — собранный
                 # тест связан со своими эталонами с момента сборки, а не с
                 # первого прогона.
+                # Третий ответ на тот же вопрос — код. Снимок, о котором
+                # прогон ничего не записал, всё равно назван в тексте теста;
+                # не прочитать этого значило бы отвечать «связи нет» там, где
+                # она написана прямым текстом.
+                dec = declared_source(name, project_key) if project_key else {}
                 if same_test_file(src.get("file"), test_file):
                     via, case = "captured", src.get("test") or ""
                 elif same_test_file(gen.get("file"), test_file):
                     via, case = "generated", gen.get("test") or ""
+                elif same_test_file(dec.get("file"), test_file):
+                    via, case = "declared", dec.get("test") or ""
                 else:
                     continue
                 if via == "captured" and project_key \
@@ -2094,8 +2655,16 @@ def get_test_source(request: Request, name: str = Query(...),
         for item in _project_tests(project):
             if item["name"] == name:
                 path = Path(item["path"])
+                # Можно ли этому проекту назвать браузер. Меню выбора на
+                # экране «Tests» обязано знать это ДО показа: пункт, который
+                # заведомо ответит отказом, — не строгость, а неправда.
+                proj = _project_for(project)
                 return {**item, "text": path.read_text("utf-8"),
                         "project": project,
+                        "browser_control": (proj.browser_control() if proj
+                                            else "none"),
+                        "browser_refusal": (proj.browser_refusal() if proj
+                                            else ""),
                         "snapshots": _snapshots_of(name, project)}
         raise HTTPException(404, "Test not found in this project")
     p = _resolve_test(name)
@@ -2199,24 +2768,91 @@ def _pytest_path(value: str) -> str:
 
 @router.post("/api/tests/run")
 def run_pytest(request: Request, body: dict = Body(default={})):
-    """Run the ordinary pytest suite (if tests are written as code)."""
+    """Прогнать наш собственный набор pytest.
+
+    body: {path?, args?, browser? | browsers?: [...], mode?: separate|together}
+
+    Браузер здесь доезжает надёжнее, чем к чужому проекту: тесты собраны нами,
+    `page` в них — фикстура pytest-playwright, а она понимает `--browser`.
+    Поэтому спрашивать, чем управлять, не надо, и отказываться не от чего.
+
+    Два вида, как и у проектов. `separate` — по прогону на браузер: каждый со
+    своим ключом сериализации, то есть параллельно. `together` — один прогон,
+    браузеры подряд, один общий ответ.
+    """
     _guard_tests(request, "reviewer")
     path = _pytest_path(body.get("path") or "")
     extra = _pytest_args(body.get("args") or [])
 
-    job = runner.submit("pytest", f"pytest {path}",
-                        lambda j: _run_pytest(j, path, extra))
-    return {"job_id": job.id}
+    from .projects import parse_run_browsers
+
+    browsers, mode = parse_run_browsers(body)
+
+    if browsers and mode == "separate":
+        jobs = []
+        for name in browsers:
+            job = runner.submit(
+                "pytest", f"pytest {path} · {name}",
+                (lambda b: lambda j: _run_pytest(j, path, extra, b))(name),
+                lock_key=f"pytest:{path}:{name}")
+            jobs.append({"browser": name, "job_id": job.id})
+        return {"mode": "separate", "jobs": jobs,
+                "job_id": jobs[0]["job_id"] if jobs else None, "parallel": True}
+
+    if browsers and mode == "together":
+        def work_all(job: Job) -> dict:
+            out = []
+            for i, name in enumerate(browsers):
+                if job.cancelled:
+                    break
+                job.progress = i / max(len(browsers), 1)
+                job.say(f"── {name} ──")
+                # Упавший браузер не отменяет остальные: «прогон во всех»,
+                # который останавливается на первом красном, — это «прогон в
+                # первом», и хуже всего то, что выглядит он как полный отчёт.
+                #
+                # Красный pytest сюда и так не бросает — он возвращает код
+                # выхода. А вот не запустившийся браузер бросает, и ловить это
+                # надо здесь: иначе отсутствие webkit в образе отменяет
+                # chromium, который отработал.
+                try:
+                    out.append({"browser": name,
+                                **_run_pytest(job, path, extra, name)})
+                except Exception as e:
+                    job.say(f"{name}: {type(e).__name__}: {e}", "error")
+                    out.append({"browser": name, "exit_code": -1,
+                                "error": f"{type(e).__name__}: {e}"})
+            job.progress = 1.0
+            failed = [r["browser"] for r in out if r.get("exit_code")]
+            if failed:
+                job.say("failed in: " + ", ".join(failed), "error")
+            return {"browsers": browsers, "runs": out, "failed": failed}
+
+        job = runner.submit("pytest", f"pytest {path} · {len(browsers)} browsers",
+                            work_all)
+        return {"mode": "together", "job_id": job.id, "browsers": browsers}
+
+    one = browsers[0] if browsers else ""
+    job = runner.submit("pytest", f"pytest {path}" + (f" · {one}" if one else ""),
+                        lambda j: _run_pytest(j, path, extra, one))
+    return {"job_id": job.id, "browser": one or None}
 
 
-def _run_pytest(job: Job, path: str, extra: list[str]) -> dict:
+def _run_pytest(job: Job, path: str, extra: list[str], browser: str = "") -> dict:
     cmd = [sys.executable, "-m", "pytest", path, "-v", "--color=no", *extra]
+    env = {**os.environ, "VISTEST_ROOT": str(ROOT), "PYTHONUNBUFFERED": "1"}
+    if browser:
+        # `--browser` вводит pytest-playwright, а `page` в наших собранных
+        # тестах — его фикстура. Переменная выставляется рядом с флагом: за
+        # неё цепляются тесты, написанные руками и берущие браузер сами.
+        env["VISTEST_BROWSER"] = browser
+        if not any(str(a).startswith("--browser") for a in extra):
+            cmd += ["--browser", browser]
     job.say("$ " + " ".join(cmd))
 
     proc = subprocess.Popen(
         cmd, cwd=str(Path.cwd()), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
-        env={**os.environ, "VISTEST_ROOT": str(ROOT), "PYTHONUNBUFFERED": "1"},
+        text=True, encoding="utf-8", errors="replace", bufsize=1, env=env,
     )
     try:
         for line in proc.stdout:

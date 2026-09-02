@@ -66,7 +66,12 @@ def test_run_refuses_when_nothing_was_captured(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = VisTestConfig.load()
 
-    with pytest.raises(RuntimeError, match="have not been captured"):
+    from vistest.external import ExternalRunRefused
+
+    # Отдельный тип, а не голый RuntimeError: на объяснённом отказе задача не
+    # дописывает в лог питоновский трейс — он говорил бы «инструмент сломался»
+    # там, где инструмент отработал как задумано.
+    with pytest.raises(ExternalRunRefused, match="has not been captured"):
         run_project(_project(tmp_path), cfg=cfg, log=lambda _t: None)
 
 

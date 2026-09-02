@@ -189,6 +189,15 @@ def render_digest(items: list[dict], *, base_url: str = "") -> str:
 #  Отправка
 # --------------------------------------------------------------------------- #
 def _post(url: str, payload: dict) -> None:
+    # Схема проверяется и здесь, а не только при сохранении. `urlopen` умеет не
+    # только http: `file://` и `ftp://` для него такие же адреса, и вебхук —
+    # единственное место, где строку из настроек отдают сетевой библиотеке. В
+    # базу значение могло попасть до появления проверки в `configure()` или из
+    # старого дампа; проверка на выходе не зависит от того, как оно туда легло.
+    from urllib.parse import urlparse
+
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError("webhook must be an http(s) URL")
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, method="POST",

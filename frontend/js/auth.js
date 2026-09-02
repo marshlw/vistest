@@ -40,9 +40,12 @@ function setLoginMode(mode){
     : 'Review access to runs and baselines.';
   $('#lgSubmit').textContent=setup?'Create the administrator'
     :reg?'Send the request':'Sign in';
-  $('#lgNameField').style.display=(setup||reg)?'':'none';
-  $('#lgTokenField').style.display=
-    (setup&&authState.setup_token_required)?'':'none';
+  /* `hidden` вместо `style.display`: поле, спрятанное инлайновым стилем,
+     остаётся в порядке обхода Tab и в дереве доступности — человек с
+     клавиатуры попадал курсором в невидимое поле «SETUP TOKEN» между логином и
+     паролем и не понимал, куда делся фокус. */
+  $('#lgNameField').hidden=!(setup||reg);
+  $('#lgTokenField').hidden=!(setup&&authState.setup_token_required);
   $('#lgPass').autocomplete=(setup||reg)?'new-password':'current-password';
   /* Переключатель прячется там, где выбирать не из чего: на пустой
      инсталляции второго варианта нет, а при закрытой регистрации — тем более.
@@ -66,11 +69,28 @@ async function showLogin(msg){
 }
 function hideLogin(){$('#login').classList.add('hidden');}
 
+/* Единственная дверь в приложение — и после входа, и на старте.
+
+   До этого таких дверей было две: `boot()` со своей цепочкой и `enterApp()`
+   со своей. Расходились они молча и уже расходились: правку в одной забывали
+   перенести в другую, и «после логина» вело себя не так, как «после
+   перезагрузки страницы».
+
+   Сначала — экран (`route()`), потом всё остальное. Порядок здесь не про
+   скорость: пока `route()` стоял последним, любая осечка выше означала, что
+   человек не увидит НИЧЕГО, и отличить это от повисшего сервиса было нельзя.
+   Каждый шаг-украшение обёрнут `safely`: он может не получиться, но не может
+   отменить экран. */
 async function enterApp(me){
-  state.me=me;hideLogin();paintUser();
-  applyTeam(await api('/api/team').catch(()=>null));
+  state.me=me;hideLogin();
+  safely('paintUser',paintUser);
   if(!location.hash||location.hash.startsWith('#/join'))location.hash='#/runs';
-  await refreshCounts();loadRig();route();startCollab();initPalette();
+  route();
+  safely('team',async()=>applyTeam(await api('/api/team').catch(()=>null)));
+  safely('counts',refreshCounts);
+  safely('rig',loadRig);
+  safely('collab',startCollab);
+  safely('palette',initPalette);
 }
 
 $('#loginForm').onsubmit=async e=>{
@@ -166,8 +186,21 @@ $('#avatar').onclick=e=>{
   }
   document.body.append(m);stopClose(m);
 };
-function mkItem(label,fn,disabled){const b=el('button',null,esc(label));if(disabled)b.disabled=true;else b.onclick=()=>{closeMenus();fn&&fn();};return b;}
-function mkDiv(){return el('div','divider');}
+/* Пункт меню и разделитель.
+
+   Классы здесь не украшение. В стилях с самого начала описаны `.menu .mi`,
+   `.menu .mi.off` и `.menu .div`, а собирались пункты голыми `<button>` и
+   `<div class="divider">` — то есть ни одно из этих правил не применялось ни
+   разу. Меню выходило столбиком системных кнопок с чужим шрифтом, без
+   подсветки под курсором и без единого видимого разделителя между «прогнать
+   в firefox» и «прогнать во всех». */
+function mkItem(label,fn,disabled){
+  const b=el('button','mi',esc(label));
+  if(disabled){b.disabled=true;b.classList.add('off');}
+  else b.onclick=()=>{closeMenus();fn&&fn();};
+  return b;
+}
+function mkDiv(){return el('div','div');}
 async function doLogout(){try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload();}
 async function changePassword(){
   const oldp=prompt('Current password');if(oldp==null)return;const np=prompt('New password');if(!np)return;

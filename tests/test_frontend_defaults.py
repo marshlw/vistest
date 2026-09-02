@@ -1,11 +1,3 @@
-# VisTest - self-hosted visual regression testing.
-# Copyright (C) 2026 Kirill Kulagin
-# SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
-# the trademark and commercial-licensing terms. Removing this header does not
-# remove those obligations.
-
 """Умолчания интерфейса: какой набор эталонов открывается, если не выбирали.
 
 Экран «Baselines» открывался в собственном наборе сервиса всегда. У человека,
@@ -33,7 +25,9 @@ from pathlib import Path
 
 import pytest
 
-JS = Path(__file__).resolve().parents[1] / "frontend" / "js" / "screen-baselines.js"
+# Функция живёт в общем файле, а не на экране: её зовут два экрана, и вызов
+# через границу экрана держится только на том, что оба файла доехали.
+JS = Path(__file__).resolve().parents[1] / "frontend" / "js" / "shared.js"
 
 
 def _extract(name: str) -> str:
@@ -69,19 +63,19 @@ def _scope(key, *counts):
 
 def test_an_empty_default_gives_way_to_a_non_empty_set():
     """Та самая жалоба: свой набор пуст, у проекта — одиннадцать."""
-    scopes = [_scope("global", 0), _scope("project:acme", 11)]
-    assert _call(scopes, "global") == "project:acme"
+    scopes = [_scope("global", 0), _scope("project:aeron", 11)]
+    assert _call(scopes, "global") == "project:aeron"
 
 
 def test_a_non_empty_default_is_kept_even_next_to_a_fuller_one():
     """Иначе экран уезжает в чужой набор у человека, который ничего не нажимал."""
-    scopes = [_scope("global", 3), _scope("project:acme", 11)]
+    scopes = [_scope("global", 3), _scope("project:aeron", 11)]
     assert _call(scopes, "global") == "global"
 
 
 def test_everything_empty_stays_on_the_default():
     """Пустой экран своего набора хотя бы объясняет, что делать дальше."""
-    scopes = [_scope("global", 0), _scope("project:acme", 0)]
+    scopes = [_scope("global", 0), _scope("project:aeron", 0)]
     assert _call(scopes, "global") == "global"
 
 
@@ -116,3 +110,48 @@ def test_the_navigation_counter_covers_the_whole_installation():
     assert "scopes" in line or "sc.scopes" in shell
     assert not re.search(r"api\('/api/baselines/detail'\)", shell), \
         "счётчик снова считает один набор вместо всей установки"
+
+
+# --------------------------------------------------------------------------- #
+#  Живое обновление не подменяет открытый экран
+# --------------------------------------------------------------------------- #
+COLLAB = JS.parent / "collab.js"
+
+
+def _live(view, hash_):
+    node = shutil.which("node")
+    if not node:                                            # pragma: no cover
+        pytest.skip("node не установлен — проверять нечем")
+    text = COLLAB.read_text(encoding="utf-8")
+    start = text.index("function liveShouldRepaintRuns(")
+    end = text.index("\n}\n", start) + len("\n}\n")
+    script = (text[start:end]
+              + f"\nprocess.stdout.write(String(liveShouldRepaintRuns("
+                f"{json.dumps(view)}, {json.dumps(hash_)})));\n")
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    return out.stdout == "true"
+
+
+def test_the_run_list_is_refreshed_while_it_is_open():
+    """Ради этого обновление и существует: новый прогон виден сам."""
+    assert _live("runs", "#/runs")
+    assert _live("runs", "")
+    assert _live("runs", "#/runs/")
+
+
+def test_an_open_run_is_never_replaced_by_the_list():
+    """Жалоба: сидишь в разборе прогона, и тебя выбрасывает обратно.
+
+    `state.view` — первый сегмент адреса, и у `#/runs/42` он тоже `runs`. На
+    странице прогона строк списка нет ни одной, обновление считало это
+    расхождением со свежими данными и рисовало список поверх открытого
+    прогона — раз в двенадцать секунд, без единого действия человека.
+    """
+    assert not _live("runs", "#/runs/42")
+    assert not _live("runs", "#/runs/ui-smoke-1")
+
+
+def test_other_screens_are_left_alone():
+    assert not _live("baselines", "#/baselines")
+    assert not _live("compare", "#/compare/7")

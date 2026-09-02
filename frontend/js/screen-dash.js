@@ -10,8 +10,10 @@
 /* Экран «Metrics»: гистограмма severity, ложные падения, шум, дорогие снимки. */
 SCREENS.dash=async function(){
   loadingScreen();
+  const here=pageGuard();
   const days=state.dashDays||30;
   let m;try{m=await api('/api/metrics/summary?days='+days+'&project='+encodeURIComponent(state.project));}catch(e){return errScreen(e);}
+  if(!here())return;
   const t=m.totals||{};
   const s=$('#screen');s.innerHTML='';
   const page=el('div','page mid');s.append(page);

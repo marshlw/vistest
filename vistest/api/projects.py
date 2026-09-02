@@ -145,6 +145,12 @@ def list_projects(request: Request):
             for b in p.baselines
         }
         d["baseline_status"] = baseline_status(p, cfg)
+        # Можно ли этому проекту назвать браузер — и если нет, то почему.
+        # Интерфейс обязан знать это ДО того, как показать пункт «во всех
+        # браузерах»: пункт, который отвечает отказом, — не строгость, а
+        # неправда на экране.
+        d["browser_control"] = p.browser_control()
+        d["browser_refusal"] = p.browser_refusal()
         out.append(d)
     return {"projects": out}
 
@@ -338,6 +344,47 @@ def delete_project(key: str, request: Request):
 
 
 # --------------------------------------------------------------------------- #
+def parse_run_browsers(payload: dict) -> tuple[list[str], str]:
+    """Что за прогон просят: список браузеров и его вид.
+
+    Три формы, потому что три разных вопроса у человека:
+
+      `{}`                                  — как было: браузер выбирает их код;
+      `{browser: "firefox"}`                — «прогони в firefox»;
+      `{browsers: [...], mode: separate}`   — «по одному прогону на браузер»;
+      `{browsers: [...], mode: together}`   — «один прогон, все браузеры».
+
+    Разница между двумя последними не косметическая. `separate` — это N
+    прогонов в истории: каждый со своим вердиктом, своим статус-чеком в CI и
+    своим ключом сериализации, то есть они идут ПАРАЛЛЕЛЬНО. `together` — один
+    прогон и один вопрос «эта страница сломалась?», как у матрицы.
+    """
+    from ..matrix import MatrixError, normalize_browser
+
+    raw = payload.get("browsers")
+    if raw is None and payload.get("browser"):
+        raw = [payload["browser"]]
+    if raw is None:
+        return [], ""
+    if not isinstance(raw, list):
+        raise HTTPException(400, "browsers must be a list")
+    try:
+        names = [normalize_browser(b) for b in raw if str(b).strip()]
+    except MatrixError as e:
+        raise HTTPException(400, str(e)) from None
+    names = list(dict.fromkeys(names))
+    if not names:
+        return [], ""
+
+    mode = str(payload.get("mode") or "").strip().lower()
+    if mode not in ("separate", "together"):
+        # Один браузер — вида нет вовсе, это обычный прогон. Несколько без
+        # явного вида — «общий»: человек, который перечислил три браузера и не
+        # сказал больше ничего, спрашивает про страницу, а не про три отчёта.
+        mode = "together" if len(names) > 1 else ""
+    return names, mode
+
+
 @router.post("/api/projects/{key}/run")
 def run_project_endpoint(key: str, request: Request, payload: dict = Body(None)):
     # Running a run should be available to the person who works with the tests,
@@ -355,20 +402,7 @@ def run_project_endpoint(key: str, request: Request, payload: dict = Body(None))
     if problems:
         raise HTTPException(400, "Run is not possible: " + "; ".join(problems))
 
-    # Different projects run in parallel — they write to different baselines.
-    # The same project is serialized: two runs into one storage would clobber
-    # each other. We tell the person about it rather than refusing silently.
     lock_key = f"project:{key}"
-    busy = runner.busy(lock_key)
-    if busy:
-        raise HTTPException(409, {
-            "error": "This project is already running",
-            "message": (f"Started by {busy.owner or 'someone'}, "
-                        f"status {busy.status}. Two runs of one project "
-                        "write to the same baselines, so we wait for it to finish."),
-            "job_id": busy.id,
-        })
-
     cfg = VisTestConfig.load()
     env_overrides = {str(k): str(v) for k, v in (payload.get("env") or {}).items()}
     update = bool(payload.get("update_baselines"))
@@ -386,20 +420,85 @@ def run_project_endpoint(key: str, request: Request, payload: dict = Body(None))
         baseline_source = None
     ci = bool(payload.get("ci"))
 
-    def work(job):
-        from ..external import run_project
+    browsers, mode = parse_run_browsers(payload)
+
+    # Different projects run in parallel — they write to different baselines.
+    # The same project is serialized: two runs into one storage would clobber
+    # each other. We tell the person about it rather than refusing silently.
+    #
+    # У прогонов «по одному на браузер» ключ свой на каждый: наборы эталонов
+    # разные, и занятость соседнего браузера их не касается. Проверять их одним
+    # общим ключом значило бы отвечать «проект уже гоняется» на просьбу
+    # запустить ровно то, что и просили запустить одновременно.
+    shared_write = update and baseline_source != "vistest"
+    if browsers and mode == "separate" and not shared_write:
+        keys = [f"{lock_key}:{b}" for b in browsers]
+    else:
+        keys = [lock_key]
+    for candidate in keys:
+        busy = runner.busy(candidate)
+        if busy:
+            raise HTTPException(409, {
+                "error": "This project is already running",
+                "message": (f"Started by {busy.owner or 'someone'}, "
+                            f"status {busy.status}. Two runs of one project "
+                            "write to the same baselines, so we wait for it "
+                            "to finish."),
+                "job_id": busy.id,
+            })
+
+    # Про пустые наборы человек узнаёт ДО запуска, а не после полутора минут
+    # первого браузера. Прогон это не блокирует — остальные браузеры отработают,
+    # и в этом весь смысл, — но начинать полторы минуты ожидания, уже зная, чем
+    # кончится второй, значит тратить чужое время молча.
+    #
+    # Считается только там, где сравнение идёт с НАШИМ набором: у PNG проекта
+    # каталог один на все браузеры, и вопроса «а снят ли он для firefox» там нет.
+    missing: list[str] = []
+    own_set = (baseline_source == "vistest"
+               or (baseline_source is None and project.uses_own_baselines()))
+    if browsers and own_set and not update:
+        from ..external import browsers_with_baselines
+
+        try:
+            have = browsers_with_baselines(project, cfg)
+            missing = [b for b in browsers if have.get(b) is False]
+        except Exception:
+            # Не смогли посмотреть — не повод не запускать: это подсказка, а не
+            # проверка доступа.
+            missing = []
+
+    if browsers:
+        # Отказ, а не три одинаковых прогона chromium. Прогон «во всех
+        # браузерах», который на деле гоняет один, — худший исход: он пишет
+        # три набора эталонов, показывает по ним зелёное и создаёт уверенность
+        # в покрытии, которого нет.
+        refusal = project.browser_refusal()
+        if refusal:
+            raise HTTPException(400, refusal)
+
+    def work(job, browser: str = ""):
+        from ..external import ExternalRunRefused, run_project
 
         src_label = {"project": "project baselines", "vistest": "VisTest baselines"}.get(
             baseline_source, "baselines per the project setting")
         job.say(f"project: {project.name} ({project.key}) · {src_label}"
+                + (f" · {browser}" if browser else "")
                 + (" · CI mode" if ci else ""))
-        run = run_project(
-            project, cfg=cfg, env_overrides=env_overrides,
-            update_baselines=update, extra_args=extra, only=only,
-            baseline_source=baseline_source, ci=ci,
-            log=lambda t: job.say(t),
-            should_stop=lambda: job.cancelled,
-        )
+        try:
+            run = run_project(
+                project, cfg=cfg, env_overrides=env_overrides,
+                update_baselines=update, extra_args=extra, only=only,
+                baseline_source=baseline_source, browser=browser, ci=ci,
+                log=lambda t: job.say(t),
+                should_stop=lambda: job.cancelled,
+            )
+        except ExternalRunRefused as e:
+            # Причина уже сформулирована для человека. `JobFailure` отличается
+            # от обычного исключения ровно тем, что не тащит за собой
+            # питоновский трейс: на объяснённом отказе трейс говорит
+            # «инструмент сломался» там, где инструмент отработал как задумано.
+            raise JobFailure(str(e)) from None
         s = run.summary()
         # Snapshots and tests are counted separately on purpose. «9 snapshots»
         # for eleven tests is a normal outcome (two tests broke before the
@@ -481,11 +580,96 @@ def run_project_endpoint(key: str, request: Request, payload: dict = Body(None))
 
     who = current_user(_db(), request.cookies.get("vistest_session"))["login"]
     audit(_db(), who, "project.run", project.key,
-          update_baselines=update, env=env_overrides)
+          update_baselines=update, env=env_overrides,
+          browsers=browsers or None, mode=mode or None)
 
-    job = runner.submit("project", f"Run {project.name}", work,
+    # ------- один прогон на браузер -------
+    if browsers and mode == "separate":
+        # Ключ сериализации на браузер, а не на проект: наборы эталонов у них
+        # разные (браузер входит в ключ платформы), писать друг другу они не
+        # могут — и потому идут параллельно, в пределах общего предела задач.
+        # Ровно это человек и просит, когда говорит «одновременно во всех».
+        #
+        # Кроме одного случая: пересъёмка эталонов проекта пишет в ИХ общий
+        # каталог PNG, один на все браузеры. Там параллель — это гонка записи,
+        # и прогон снова сериализуется по проекту.
+        jobs = []
+        for name in browsers:
+            key_for = lock_key if shared_write else f"{lock_key}:{name}"
+            job = runner.submit(
+                "project", f"Run {project.name} · {name}",
+                (lambda b: lambda j: work(j, b))(name),
+                owner=who, lock_key=key_for)
+            jobs.append({"browser": name, "job_id": job.id,
+                         "queued": job.status == "queued"})
+        return {"mode": "separate", "jobs": jobs,
+                "missing_baselines": missing,
+                # Первый — чтобы старые клиенты, ждущие один `job_id`, всё ещё
+                # за чем-то следили, а не считали, что ничего не запустилось.
+                "job_id": jobs[0]["job_id"] if jobs else None,
+                "parallel": not shared_write}
+
+    # ------- один прогон, все браузеры подряд -------
+    if browsers and mode == "together":
+        def work_all(job):
+            if missing:
+                job.say(
+                    f"{', '.join(missing)} has no VisTest baseline set yet — "
+                    "these browsers will refuse; capture their set with "
+                    "«⋯ → Snap VisTest baselines» through the «▾» menu", "warn")
+            results, failures = [], []
+            for i, name in enumerate(browsers):
+                if job.cancelled:
+                    break
+                job.progress = i / max(len(browsers), 1)
+                job.say(f"── {name} ──")
+                try:
+                    results.append({"browser": name, **work(job, name)})
+                except Exception as e:
+                    # Один браузер упал — остальные обязаны досчитаться.
+                    # Иначе «прогон во всех браузерах» означает «в первом, а
+                    # дальше как повезёт», и хуже всего то, что выглядит это
+                    # как полный отчёт.
+                    #
+                    # Ловится ЛЮБОЕ исключение, а не только `JobFailure`.
+                    # Здесь стояло `except JobFailure`, и на первом же реальном
+                    # прогоне это выстрелило: у firefox не оказалось набора
+                    # эталонов, `run_project` бросил `RuntimeError` — задача
+                    # умерла целиком, webkit не запустился вовсе, а обещание
+                    # «остальные досчитаются» осталось только в комментарии.
+                    reason = str(e) if isinstance(e, JobFailure) \
+                        else f"{type(e).__name__}: {e}"
+                    job.say(f"{name}: {reason}", "error")
+                    failures.append({"browser": name, "error": reason})
+            job.progress = 1.0
+            if failures and not results:
+                raise JobFailure(
+                    "not a single browser produced a result: "
+                    + "; ".join(f"{f['browser']} — {f['error']}" for f in failures))
+            if failures:
+                # Итог отдельной строкой в конце, а не только ошибками по
+                # дороге: лог к этому моменту в сотни строк чужого pytest, и
+                # «в скольких браузерах прогон на самом деле состоялся» — это
+                # то, ради чего человек в него и полезет.
+                job.say(f"the run happened in {len(results)} of "
+                        f"{len(browsers)} browsers; did not finish: "
+                        + ", ".join(f["browser"] for f in failures), "warn")
+            return {"browsers": browsers, "runs": results, "failed": failures}
+
+        job = runner.submit(
+            "project", f"Run {project.name} · {len(browsers)} browsers",
+            work_all, owner=who, lock_key=lock_key)
+        return {"mode": "together", "job_id": job.id, "browsers": browsers,
+                "missing_baselines": missing, "queued": job.status == "queued"}
+
+    # ------- как было -------
+    one = browsers[0] if browsers else ""
+    job = runner.submit("project",
+                        f"Run {project.name}" + (f" · {one}" if one else ""),
+                        lambda j: work(j, one),
                         owner=who, lock_key=lock_key)
-    return {"job_id": job.id, "queued": job.status == "queued"}
+    return {"job_id": job.id, "browser": one or None,
+            "queued": job.status == "queued"}
 
 
 @router.post("/api/projects/{key}/check")

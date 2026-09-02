@@ -56,10 +56,21 @@ def publish_external_run(db, artifacts_root: Path, run: dict, *,
     if scope not in ("project", "vistest"):
         scope = "project"
 
+    # Браузер и платформа берутся у САМОГО прогона, если он их назвал.
+    #
+    # Аргументы этой функции были единственным источником, и оба со значениями
+    # по умолчанию: `platform=""` → платформа машины сервиса, `browser`
+    # → «chromium». Прогон в firefox уезжал в историю как chromium, а
+    # эталоны при этом писались в набор firefox — то есть строка `snapshot` в
+    # базе и каталог на диске расходились, и «принять как эталон» из такого
+    # прогона переписывало чужой набор.
+    run_browser = (run.get("browser") or "").strip() or browser
+    run_platform = platform or run.get("platform") or _platform(run_browser)
+
     payload = {
         "run_id": Path(run.get("run_dir") or "").name or _new_key(),
-        "platform": platform or _platform(),
-        "browser": browser,
+        "platform": run_platform,
+        "browser": run_browser,
         "created_at": datetime.now(timezone.utc).isoformat(),
         # Branch and commit of THEIR repository, taken at the moment of the
         # run. An empty dict stood here, so the whole history of connected
@@ -156,10 +167,10 @@ def _copy_artifacts(db, artifacts_root: Path, run_id: int,
                    (json.dumps(uris, ensure_ascii=False), ids.pop(0)))
 
 
-def _platform() -> str:
+def _platform(browser: str = "") -> str:
     from ..config import platform_key
 
-    return platform_key()
+    return platform_key(browser or "chromium")
 
 
 def _new_key() -> str:

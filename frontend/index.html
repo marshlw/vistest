@@ -14,20 +14,52 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VisTest — visual regressions</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  Шрифты НЕ подтягиваются со стороны. Это не про вкус: продукт продаётся
+  обещанием «no cloud, no telemetry, no required outbound traffic; installs on
+  a machine without internet access» (README), а <link> на fonts.googleapis.com
+  — ровно исходящий запрос на каждый заход в интерфейс. В закрытом контуре он
+  не проходит вовсе, и браузер держит отрисовку текста, пока ждёт ответа: на
+  таймаут это секунды белого экрана в единственном месте, где человек ещё
+  ничего не сделал и не понимает, чего ждёт.
+  Стек подстановки уже описан в ui.css (--sans / --mono): системный шрифт есть
+  везде, а Geist подхватится сам, если он в системе установлен.
+-->
 <link rel="stylesheet" href="ui.css">
+<!--
+  Иконка вкладки. Файла на диске нет и не будет: `/favicon.ico` в закрытом
+  контуре — это ещё один запрос, который некому обслужить, и в логе сервиса он
+  выглядел 404-й на каждый заход. SVG в data-URI отдаётся вместе со страницей,
+  повторяет метку в шапке один в один и перекрашивается вместе с ней
+  (`applyTeam()` переписывает этот же <link>, когда у команды свой цвет).
+  16×16 без мелких деталей: в размере вкладки читается только шахматка.
+-->
+<link rel="icon" id="favicon" type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2316171A'/%3E%3Crect x='8' width='8' height='8' fill='%23C2410C'/%3E%3Crect y='8' width='8' height='8' fill='%23C2410C'/%3E%3C/svg%3E">
 </head>
 <body>
 <div id="app">
   <aside id="sidebar">
-    <div class="brand">
-      <div class="mark"><i></i><i></i><i></i><i></i></div>
-      <div class="name">VISTEST</div>
-      <div class="ver" id="ver">2.4</div>
-    </div>
-    <nav class="nav" id="nav"></nav>
+    <!-- Шапка сайдбара — ссылка на первый экран, а не украшение: щелчок по
+         логотипу «домой» ждут везде, и до сих пор он не работал нигде.
+         `data-tip` вместо `title`: подсказки в интерфейсе теперь одни и те же
+         и появляются без секундной паузы браузера. -->
+    <a class="brand" href="#/decisions" data-tip="VisTest · to the decisions queue">
+      <!-- Метка. Четыре клетки — это разметка, а не картинка: они красятся
+           переменными, а значит переживают смену цвета команды, тёмную тему и
+           масштабирование текста. `aria-hidden` — рядом уже есть слово
+           VISTEST, и читать метку второй раз незачем. -->
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="name">VISTEST</span>
+      <!-- Имя команды. Узел обязан существовать в разметке, а не появляться
+           «когда понадобится»: `applyTeam()` писал в `.brand .sub`, которого
+           здесь не было, падал на `null` и уносил с собой весь остаток
+           загрузки — интерфейс оставался на «Loading…» у любой команды,
+           заполнившей своё имя. -->
+      <span class="sub" id="teamName"></span>
+      <span class="ver" id="ver">2.4</span>
+    </a>
+    <nav class="nav" id="nav" aria-label="Sections"></nav>
     <!-- Шум стенда внизу сайдбара, а не на отдельной вкладке: это то число,
          которое обесценивает все остальные, и видеть его надо не тогда, когда
          за ним пришли, а всегда. -->
@@ -42,19 +74,25 @@
          увела бы человека на другой экран. Кнопка переводит фокус. -->
     <button class="skip" id="skipLink">Skip to content</button>
     <div id="topbar">
-      <div class="proj-pill" id="projPill">
+      <!-- Переключатель набора — <button>, а не <div> с onclick: он открывает
+           меню, и об этом надо уметь сказать клавиатуре и скринридеру. -->
+      <button class="proj-pill" id="projPill" type="button" aria-haspopup="menu"
+              aria-expanded="false"
+              data-tip="Which set of runs and baselines everything below is about. A cause never spans two projects, so the queue follows this choice.">
         <span class="pd"></span><span id="projName">all projects</span>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5l4 4 4-4"/></svg>
-      </div>
+      </button>
       <div class="crumb"><span id="crumb">decisions</span></div>
       <div class="topbar-right">
-        <div class="cell search">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg>
-          <input id="search" placeholder="Jump to snapshot, run, test">
-          <span class="kbd">⌘K</span>
-        </div>
+        <!-- Поиск — <label>, чтобы щелчок по лупе ставил курсор в поле, и с
+             именем для скринридера: placeholder именем не является. -->
+        <label class="cell search" data-tip="Search across snapshots, runs and tests. ⌘K opens it from anywhere.">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="search" placeholder="Jump to snapshot, run, test" aria-label="Search snapshots, runs and tests">
+          <span class="kbd" aria-hidden="true">⌘K</span>
+        </label>
         <div class="cell online" id="onlineChip"></div>
-        <div class="cell"><span class="avatar" id="avatar">?</span></div>
+        <div class="cell"><button class="avatar" id="avatar" type="button" aria-haspopup="menu">?</button></div>
       </div>
     </div>
     <div id="screen"><div class="loading-wrap"><span class="spin"></span> Loading…</div></div>
@@ -65,6 +103,18 @@
      скринридера их не существует вовсе. -->
 <div id="toast" role="status" aria-live="polite" aria-atomic="false"></div>
 
+<!-- Одна подсказка на весь интерфейс.
+
+     `title=""` браузера здесь не годится по трём причинам, и все три
+     наблюдаемые: он ждёт секунду с лишним, прежде чем показаться (за это время
+     человек уже увёл мышь и решил, что объяснения нет), он не появляется от
+     клавиатуры вовсе, и он рисуется системой — то есть шрифтом и цветом чужой
+     операционной системы посреди плотной приборной сетки.
+
+     Узел один, а не по одному на элемент: подсказки висят на сотнях ячеек,
+     которые перерисовываются на каждом обновлении счётчиков. -->
+<div id="tip" role="tooltip" aria-hidden="true"></div>
+
 <div id="login" class="hidden">
   <div class="box">
     <!-- Три состояния одной коробки: вход, заявка на доступ и «занять
@@ -73,31 +123,44 @@
     <h3 id="lgTitle" style="font-size:17px">Sign in to VisTest</h3>
     <div class="faint" id="lgSub" style="font-size:12.5px;margin-top:4px">Review access to runs and baselines.</div>
 
-    <div class="lg-tabs" id="lgTabs">
-      <button class="lg-tab on" data-tab="signin" type="button">Sign in</button>
-      <button class="lg-tab" data-tab="register" type="button">Request access</button>
+    <div class="lg-tabs" id="lgTabs" role="tablist">
+      <button class="lg-tab on" data-tab="signin" type="button" role="tab" aria-selected="true">Sign in</button>
+      <button class="lg-tab" data-tab="register" type="button" role="tab" aria-selected="false">Request access</button>
     </div>
 
-    <form id="loginForm">
-      <div class="field" id="lgNameField" style="display:none">
-        <label class="flabel">NAME</label>
+    <!-- Поля связаны с подписями через `for`/`id`, а не соседством в разметке.
+         Соседства достаточно глазу и недостаточно ничему другому: щелчок по
+         подписи не ставил курсор, скринридер называл поле «edit text», а
+         менеджер паролей не понимал, что заполняет. -->
+    <form id="loginForm" novalidate>
+      <div class="field" id="lgNameField" hidden>
+        <label class="flabel" for="lgName">Name</label>
         <input class="inp" id="lgName" autocomplete="name" placeholder="how colleagues will see you">
       </div>
-      <div class="field"><label class="flabel">LOGIN</label><input class="inp mono" id="lgLogin" autocomplete="username"></div>
-      <div class="field"><label class="flabel">PASSWORD</label><input class="inp mono" id="lgPass" type="password" autocomplete="current-password"></div>
-      <div class="field" id="lgTokenField" style="display:none">
-        <label class="flabel">SETUP TOKEN</label>
-        <input class="inp mono" id="lgToken" autocomplete="off">
+      <div class="field">
+        <label class="flabel" for="lgLogin">Login</label>
+        <input class="inp mono" id="lgLogin" autocomplete="username" required autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="flabel" for="lgPass">Password</label>
+        <input class="inp mono" id="lgPass" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="field" id="lgTokenField" hidden>
+        <label class="flabel" for="lgToken">Setup token</label>
+        <input class="inp mono" id="lgToken" autocomplete="off" spellcheck="false">
         <div class="fhint">From <code>VISTEST_SETUP_TOKEN</code> — the value this service was started with.</div>
       </div>
-      <div class="msg" id="lgMsg"></div>
-      <div class="msg ok" id="lgOk"></div>
+      <!-- `aria-live` на обоих: сообщение об ошибке входа появляется без
+           перезагрузки, и без этого его не существует для скринридера. -->
+      <div class="msg" id="lgMsg" role="alert" aria-live="assertive"></div>
+      <div class="msg ok" id="lgOk" aria-live="polite"></div>
       <button class="btn dark wide" id="lgSubmit" type="submit" style="margin-top:10px">Sign in</button>
     </form>
   </div>
 </div>
 
 <script src="js/core.js"></script>
+<script src="js/tip.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/shell.js"></script>
 <script src="js/shared.js"></script>
