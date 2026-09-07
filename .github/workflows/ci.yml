@@ -8,6 +8,10 @@
 # ловятся чтением файлов: страница загружается, навигация рисуется, а первого
 # экрана нет — и выглядит это как повисший сервис. Пятнадцать секунд в jsdom
 # закрывают этот класс целиком.
+#
+# Там же гоняются клиенты для чужих наборов (npm-пакет и файл для JVM): в
+# питоновской работе нет ни node, ни java, и их проверки там пропускались бы —
+# то есть были бы зелёными, ничего не проверив.
 
 name: CI
 
@@ -48,6 +52,108 @@ jobs:
           --ignore=tests/e2e
           --ignore=tests/test_benchmark.py
 
+  # Уязвимости в зависимостях. Отдельной работой, а не шагом в основной:
+  # красный `pip-audit` — это «есть CVE», а не «код сломан», и смешивать эти
+  # два сигнала в одном статусе значит однажды перестать смотреть на оба.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -c constraints-service.txt ".[service]"
+          pip install pip-audit
+      - name: Известные уязвимости в зависимостях
+        run: pip-audit --strict --desc
+
+  # Миграции на базе ПРОШЛОЙ версии.
+  #
+  # Схема догоняется списком `MIGRATIONS`, и до появления `PRAGMA user_version`
+  # проверить это было нечем: тесты всегда создают базу с нуля, то есть путь
+  # обновления не проходил вообще никогда. А ломается именно он — на
+  # инсталляции, которая работает полгода.
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e ".[service,dev]" numpy opencv-python-headless pillow
+
+      - name: База прошлого релиза открывается этим кодом
+        run: |
+          set -e
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-parse HEAD~1)
+          echo "Предыдущая версия: $PREV"
+          git worktree add /tmp/prev "$PREV"
+          # Базу создаёт СТАРЫЙ код — иначе мы бы снова проверяли создание с нуля.
+          PYTHONPATH=/tmp/prev python -c "
+          from vistest.api.db import Database
+          db = Database('/tmp/old.db')
+          db.execute(\"INSERT INTO project(name) VALUES('shop')\")
+          print('старая база создана')
+          "
+          # А открывает — новый, вместе с миграциями.
+          python -c "
+          from vistest.api.db import Database, SCHEMA_VERSION
+          db = Database('/tmp/old.db')
+          assert db.schema_version() == SCHEMA_VERSION, db.schema_version()
+          assert db.one(\"SELECT name FROM project WHERE name='shop'\")
+          print('миграции применились, данные на месте')
+          "
+
+  # Интерфейс в настоящем браузере. Тяжелее остального, поэтому отдельно и
+  # только на pull request'ах: смысл этих тестов — поймать экран, который
+  # перестал рисоваться, а такое приезжает именно с правками интерфейса.
+  e2e:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -e ".[full,dev]"
+          python -m playwright install --with-deps chromium
+      - name: Интерфейс в Chromium
+        run: pytest tests/e2e -q
+
+  # Образ должен собираться и подниматься. Проверка дешёвая, а ловит целый
+  # класс поломок, которых не видно из исходников: не поехал файл в COPY,
+  # разошлись версии, сервис не стартует под непривилегированным пользователем.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Сборка
+        run: docker build -f docker/Dockerfile.api -t vistest-api:ci .
+      - name: Сервис отвечает
+        run: |
+          set -e
+          docker run -d --name vistest-ci -p 8420:8420 vistest-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8420/api/health >/dev/null; then
+              echo "поднялся за ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "не ответил за 30 секунд"; docker logs vistest-ci; exit 1
+      - name: Логи
+        if: always()
+        run: docker logs vistest-ci || true
+
   interface:
     runs-on: ubuntu-latest
     steps:
@@ -70,20 +176,19 @@ jobs:
       - name: Файлы интерфейса сходятся
         run: pytest tests/test_frontend_modules.py tests/test_frontend_defaults.py -q
 
-      - name: Интерфейс доходит до первого экрана
-        run: node tests/ui/boot_smoke.mjs frontend
+      # Циклом, а не строкой на файл. Список по одному рос и отставал:
+      # экран добавляли, строку в CI забывали — и проверка, написанная ради
+      # него же, молча не гонялась. Каталог не забывает.
+      - name: Экраны интерфейса в jsdom
+        run: |
+          set -e
+          for f in tests/ui/*.mjs; do
+            echo "── $f"
+            node "$f" frontend
+          done
 
-      - name: Матрица показана как один снимок с вариантами
-        run: node tests/ui/matrix_view.mjs frontend
-
-      - name: Редактор зон показывает, чем зона держится
-        run: node tests/ui/zones_view.mjs frontend
-
-      - name: Меню запуска различает три вида прогона
-        run: node tests/ui/run_menu_view.mjs frontend
-
-      - name: Токен CI показывается один раз и не остаётся на странице
-        run: node tests/ui/ci_tokens_view.mjs frontend
-
-      - name: Карточка проекта — меню, кнопки и выбор набора
-        run: node tests/ui/project_card_menu.mjs frontend
+      # Клиенты для чужих наборов проверяются здесь, а не в питоновской
+      # работе: там нет ни node, ни jsdom, и обе проверки просто пропускались
+      # бы — то есть выглядели бы зелёными, ничего не проверив.
+      - name: Клиенты для чужих наборов
+        run: pytest tests/test_clients_js.py tests/test_clients_java.py -q

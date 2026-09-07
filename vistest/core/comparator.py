@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 import numpy as np
@@ -22,6 +23,39 @@ from . import classify as _cls
 from . import color as _color
 from . import segment as _seg
 from . import structure as _struct
+
+
+class ImageTooLarge(ValueError):
+    """Кадр больше того, что мы согласны разложить в памяти."""
+
+
+#  Сколько пикселей мы беремся сравнивать.
+#
+#  Считать надо не в байтах PNG, а здесь: сравнение разворачивает кадр в
+#  несколько массивов float32 размером H×W (и H×W×3 для Lab). Полностраничный
+#  снимок 1440×20000 — это 28 Мпикс, то есть под каждый Lab-массив уходит около
+#  350 МБ, а их в каскаде два, плюс карта ΔE, плюс карта SSIM. Три таких
+#  сравнения параллельно (`MAX_PARALLEL` у фоновых задач ровно три) — и машина
+#  уходит в своп или процесс убивает OOM-killer.
+#
+#  Убитый по памяти процесс — худший из возможных отказов: он не пишет в лог
+#  ничего, прогон просто исчезает, и человек ищет причину где угодно, кроме
+#  размера снимка. Поэтому предел явный, а сообщение называет и размер, и
+#  переменную.
+#
+#  80 Мпикс — это 1920×41666: полная страница любой разумной высоты проходит,
+#  а «случайно сняли карту тайлов на 200 мегапикселей» — нет.
+MAX_PIXELS = int(os.getenv("VISTEST_ENGINE_MAX_PIXELS", str(80_000_000)))
+
+
+def _check_size(image: np.ndarray, what: str) -> None:
+    h, w = image.shape[:2]
+    if MAX_PIXELS and h * w > MAX_PIXELS:
+        raise ImageTooLarge(
+            f"{what} is {w}×{h} = {h * w // 1_000_000} Mpx, and the engine "
+            f"limit is {MAX_PIXELS // 1_000_000} Mpx. Comparing it would need "
+            "gigabytes of memory. Capture a smaller area, or raise "
+            "VISTEST_ENGINE_MAX_PIXELS deliberately.")
 
 
 def compare(
@@ -43,6 +77,10 @@ def compare(
     """
     t0 = time.perf_counter()
     cfg = cfg or DiffConfig()
+
+    # До первого выделения памяти: дальше по каскаду отказ уже поздний.
+    _check_size(expected_rgb, "the baseline")
+    _check_size(actual_rgb, "the screenshot")
 
     res = CompareResult(name=name, verdict=Verdict.PASS)
     res.size_expected = (int(expected_rgb.shape[1]), int(expected_rgb.shape[0]))

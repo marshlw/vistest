@@ -6,6 +6,7 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
+from .hooks import RegionAnnotator, get_annotator, set_annotator
 from .pipeline import AIPipeline
 
-__all__ = ["AIPipeline"]
+__all__ = ["AIPipeline", "RegionAnnotator", "get_annotator", "set_annotator"]

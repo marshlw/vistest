@@ -186,3 +186,24 @@ def test_masks_of_different_shape_do_not_crash():
         masks=[np.zeros(base.shape[:2], bool), np.zeros(taller.shape[:2], bool)],
     ), cfg=CFG)
     assert rep.pairs == 1
+
+
+# --------------------------------------------------------------------------- #
+#  Чем инсталляция способна запустить чужой набор
+# --------------------------------------------------------------------------- #
+def test_the_environment_report_names_the_runtimes():
+    """Подключение с собственной командой выполняет её ВНУТРИ нашего контейнера.
+
+    Пока этого списка не было, ответ на «почему `npx` не найден» находился
+    только в логе упавшего прогона — то есть после того, как человек всё
+    настроил и нажал запуск. Вопрос обязан решаться до.
+    """
+    pytest.importorskip("fastapi")
+
+    from vistest.api.doctor import env_report
+
+    names = [r["name"] for r in env_report()["runtimes"]]
+
+    assert {"node", "npx", "java", "mvn", "dotnet"} <= set(names)
+    for entry in env_report()["runtimes"]:
+        assert set(entry) == {"name", "path"}

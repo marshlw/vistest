@@ -438,18 +438,45 @@ class FileBaselineStore(BaselineStore):
         return sorted({split_project(n)[0] for n in self.list_names()})
 
     def add_ignore_box(self, name: str, box: dict) -> None:
+        """Добавить вечную ignore-зону в паспорт снимка.
+
+        Под тем же замком и той же атомарной записью, что и `save()`, и по
+        тем же двум причинам.
+
+        Первая очевидная: «прочитал список → дописал → записал» двумя людьми
+        одновременно теряет одну зону. Кнопка «Ignore area» стоит на карточке
+        региона, регионов у падения бывает десяток, и жмут их подряд — то есть
+        гонка здесь не редкость, а обычный вторник.
+
+        Вторая дороже. Обрыв на середине `write_text` оставлял **битый**
+        meta.json, и дальше всё шло тихо: `_baseline_state` не мог его
+        разобрать и возвращал `version: 0`, то есть защита от конкурентного
+        утверждения молча выключалась, а следующий `save()` не видел
+        `prev_meta`, начинал нумерацию заново с единицы и уносил с собой
+        историю зон. Паспорт эталона — не то место, где можно позволить себе
+        полузапись.
+        """
         from ..zones import normalize
 
+        # `normalize` до замка: разбирать ввод, держа каталог запертым, незачем,
+        # а ошибка в зоне должна прилетать вызывающему, а не оставлять замок.
+        zone = normalize(box)
+
         d = self.dir_for(name)
-        path = d / "meta.json"
-        meta = json.loads(path.read_text("utf-8")) if path.exists() else {}
-        boxes = meta.setdefault("ignore_boxes", [])
-        # Через `normalize`, а не через выборку четырёх чисел: зона, пришедшая
-        # из разбора падения, знает СЕЛЕКТОР найденного региона, и терять его
-        # здесь значило бы записывать прямоугольник там, где был элемент.
-        boxes.append(normalize(box))
         d.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        path = d / "meta.json"
+        with _dir_lock(d):
+            meta = {}
+            if path.exists():
+                try:
+                    meta = json.loads(path.read_text("utf-8"))
+                except (OSError, ValueError):
+                    # Разобрать не удалось — но затирать паспорт целиком нельзя:
+                    # в нём версия, по которой работает защита от гонки решений.
+                    raise
+            meta.setdefault("ignore_boxes", []).append(zone)
+            _write_atomic_text(
+                path, json.dumps(meta, indent=2, ensure_ascii=False))
 
     # ------------------------------------------------------------------ #
     def ignore_mask(self, name: str, shape: tuple[int, int]) -> np.ndarray | None:
