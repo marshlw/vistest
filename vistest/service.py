@@ -323,7 +323,7 @@ class CheckService:
 
     def _make_ai(self, dom_expected, dom_actual):
         ai = self.cfg.ai
-        if not (ai.attribution_enabled or ai.perceptual_enabled or ai.captioner_enabled):
+        if not (ai.attribution_enabled or ai.gate_enabled or ai.perceptual_enabled):
             return None
         from .ai import AIPipeline
 

@@ -13,7 +13,16 @@
 SCREENS.tests=async function(arg){
   loadingScreen();
   const here=pageGuard();
-  let data;try{data=await api('/api/tests');}catch(e){return errScreen(e);}
+  /* Тесты — закреплённого проекта, а не всех подключённых разом.
+
+     Роут без `project` сканирует каждое подключение, и на экране оказывались
+     файлы чужого репозитория вперемешку со своими: список, по которому нельзя
+     сказать, чей он. Свои файлы сервиса приезжают всегда — они не принадлежат
+     ни одному подключению и редактируются только здесь. */
+  const key=(currentProject()||{}).kind==='project'?state.project:'';
+  let data;
+  try{data=await api('/api/tests?project='+encodeURIComponent(key));}
+  catch(e){return errScreen(e);}
   const tests=data.tests||[];
   /* Тесты подключённых проектов — только чтение. Вкладка показывала ровно то,
      что сгенерировали мы сами, и для подключённого набора отвечала «0» при
@@ -25,7 +34,7 @@ SCREENS.tests=async function(arg){
   const page=el('div','page');s.append(page);
   const head=el('div','head');
   const left0=el('div','grow');
-  left0.innerHTML=`<div class="eyebrow">LIBRARY</div>
+  left0.innerHTML=`<div class="eyebrow">LIBRARY · ${esc(projectLabel())}</div>
     <h1 class="h1">Tests</h1>
     <div class="lede">Our own files are editable — plain pytest, assembled from
       baselines and mouse recording. Files from connected projects are read-only:
@@ -149,7 +158,7 @@ async function assembleDialog(){
   }
   /* Предвыбор — непустое: тот же выбор, что делает экран «Baselines», и по
      той же причине. Пустой набор по умолчанию не ответ ни там, ни здесь. */
-  let scope=nonEmptyScope(sets,state.scope||'global');
+  let scope=nonEmptyScope(sets,currentScope()||'global');
   let platform='';
   const plats=el('div');
   const setBox=el('div');
@@ -368,11 +377,15 @@ function renderEditor(d){
      чужого корня и с их conftest. Браузер туда доходит тем же способом, что и
      при прогоне всего проекта, и может не дойти вовсе: об этом честно скажет
      сам роут, а меню покажет причину в подсказке. */
+  /* Как это называется в подписи. Подключённый набор может гоняться чем
+     угодно — `npx playwright test`, `mvn test`, — и слово «pytest» над
+     живым логом чужого инструмента просто неверно. */
+  const how_run=(d.runner==='command')?(d.suite||'run'):'pytest';
   const fire=(how={})=>d.project
     ? followRun(api(`/api/projects/${encodeURIComponent(d.project)}/run`,
         {method:'POST',headers:{'Content-Type':'application/json'},
          body:JSON.stringify({only:d.name,...how})}),
-        {title:'pytest '+(d.short||d.name)})
+        {title:how_run+' '+(d.short||d.name)})
     : followRun(api('/api/tests/run',{method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({path:d.path||('tests/'+d.name),...how})}),
@@ -384,8 +397,10 @@ function renderEditor(d){
     ? runJobLog(api(`/api/projects/${encodeURIComponent(d.project)}/run`,
         {method:'POST',headers:{'Content-Type':'application/json'},
          body:JSON.stringify({only:d.name})}),
-        {title:'pytest '+(d.short||d.name),
-         sub:'Runs in the project '+d.project+', with its own interpreter and conftest.'})
+        {title:how_run+' '+(d.short||d.name),
+         sub:d.runner==='command'
+           ? 'Runs in the project '+d.project+', by its own command.'
+           : 'Runs in the project '+d.project+', with its own interpreter and conftest.'})
     : runJobLog(api('/api/tests/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:d.path||('tests/'+d.name)})}),
         {title:'pytest '+d.name,sub:'Runs on the service machine.'});
   runpick.onclick=e=>runBrowserMenu(e,{

@@ -22,12 +22,24 @@ class ApiClient:
         self.cfg = cfg
         self.base = (cfg.api_url or "").rstrip("/")
 
+    def headers(self) -> dict:
+        """Токен приёма, если он задан.
+
+        Без него прогон из CI упирался в 401 на инсталляции с пользователями,
+        и выглядело это как «сервис недоступен»: клиент устроен offline-first
+        и молча откладывал прогон в `.pending`. То есть история просто не
+        наполнялась, и никто не знал почему.
+        """
+        token = (getattr(self.cfg, "token", "") or "").strip()
+        return {"X-VisTest-Token": token} if token else {}
+
     def _post(self, path: str, *, json_body=None, files=None):
         import requests
 
         url = f"{self.base}{path}"
         try:
             r = requests.post(url, json=json_body, files=files,
+                              headers=self.headers(),
                               timeout=self.cfg.timeout_s)
             r.raise_for_status()
             return r.json() if r.content else {}
@@ -52,7 +64,12 @@ class ApiClient:
     def _upload_artifacts(self, run_id, payload: dict, run_dir: Path) -> None:
         import requests
 
+        run_platform = payload.get("platform") or ""
         for comp in payload.get("comparisons", []):
+            # Платформа сравнения, а не прогона: в прогоне по матрице у
+            # каждого варианта своя, и без неё артефакты шести вариантов
+            # ложились в один каталог на сервисе.
+            comp_platform = comp.get("platform") or run_platform
             for kind, p in (comp.get("artifacts") or {}).items():
                 f = Path(p)
                 if not f.exists() or f.stat().st_size > 25 * 1024 * 1024:
@@ -61,8 +78,10 @@ class ApiClient:
                     with f.open("rb") as fh:
                         requests.post(
                             f"{self.base}/api/runs/{run_id}/artifacts",
-                            data={"snapshot": comp["name"], "kind": kind},
+                            data={"snapshot": comp["name"], "kind": kind,
+                                  "platform": comp_platform},
                             files={"file": (f.name, fh, "image/png")},
+                            headers=self.headers(),
                             timeout=self.cfg.timeout_s,
                         )
                 except Exception as e:

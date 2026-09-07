@@ -175,20 +175,133 @@ The connected suite runs in **VisTest's environment** — pytest, Playwright and
 the browsers are already there — while your code is imported as-is, with the
 repository root added to `PYTHONPATH`.
 
+### Suites that are not in Python
+
+A suite started by its own command is connected the same way; set `runner` and
+the command, and VisTest judges the run by the pictures it leaves behind:
+
+```yaml
+projects:
+  web-e2e:
+    runner: command
+    command: [npx, playwright, test]
+    root: /srv/web-e2e
+    suite: auto            # or playwright | cypress | jest-image-snapshot | …
+```
+
+`suite` is the **profile** — the one place that knows what a tool does on disk.
+It answers three questions and nothing else: how the suite is started, which
+folders it writes pictures to, and how it names them. Playwright leaves
+`login-actual.png`, `login-expected.png` and `login-diff.png` in
+`test-results`; Cypress writes `login.actual.png`; jest-image-snapshot writes
+`login-received.png` beside `login-snap.png`; BackstopJS keeps two parallel
+folders. All of that is one declarative profile each.
+
+Recognised out of the box: **Playwright**, **Cypress**, **jest-image-snapshot**,
+**BackstopJS**, **WebdriverIO**, **pytest**, and command shapes for **Maven**,
+**Gradle** and **dotnet test**. `auto` picks one by the markers in your
+repository — `playwright.config.ts`, `cypress.config.js`, `backstop.json`,
+`pom.xml`, `conftest.py`. Nothing recognised means the widest set of rules, not
+a guess.
+
+When a suite's layout matches no profile — and on the JVM that is the normal
+case, since there is no dominant convention — describe it instead of forking
+anything. One regular expression per kind, the snapshot name in a `name` group:
+
+```yaml
+    search_dirs: [target/screenshots]
+    naming:
+      actual:   'snap_(?P<name>.+)_new\.png'
+      expected: 'snap_(?P<name>.+)_base\.png'
+      diff:     'snap_(?P<name>.+)_diff\.png'
+```
+
+Two limits worth knowing before you connect, because neither is fixable from
+our side. Interception — the comparison replaced inside your test, with DOM
+attribution — is a pytest plugin and cannot exist in a Node or JVM process; a
+foreign suite is always judged by its finished pictures. And Playwright writes
+those pictures **only for a failed comparison**, so a green Playwright run
+leaves nothing to review.
+
+Adding the next tool is a `SuiteProfile` in `vistest/suites/builtin.py` and a
+line in `PROFILES`. Nothing in the runner or the collector needs to know it
+exists.
+
 Secrets are never stored in the project description. Values are referenced by
 name (`${YOUR_APP_PASSWORD}`) and resolved from the environment or from
 `.vistest/secrets.env`; see `.vistest/secrets.env.example`. If a variable is
 missing, the run fails with a clear message instead of submitting an empty
 password.
 
-Other stacks can post a ready screenshot over HTTP:
+### Three ways in, and how to pick one
+
+|  | What it costs you | What you get |
+|---|---|---|
+| **We run your suite** — `runner: command` | Your tool must exist in the VisTest image: for Node that means `docker/Dockerfile.node` and the project mounted with its `node_modules` | One button, the full verdict, nothing added to your CI |
+| **You run it, we read the result** — `vistest project ingest` | Nothing. No runtime of yours in our image at all | The same verdict, and the only sane option for a JVM or .NET suite |
+| **Your test calls us** — `POST /api/check` | One line in the test | The verdict inside the test, and a snapshot that passed is a result too |
+
+The second one is the one to reach for first when the suite is not in Python:
 
 ```bash
-curl -F image=@shot.png -F name=checkout.png \
+# their CI, right after the suite has run
+vistest project ingest web-e2e --dir test-results --browser chromium
+```
+
+Nothing is started; VisTest reads the pictures the run left behind, judges them
+with its engine and records a run in the shared history. The same action lives
+in the interface under «⋯ → Read ready artifacts».
+
+The third one is a single call from any language:
+
+```bash
+curl -H "X-VisTest-Token: $VISTEST_TOKEN" \
+     -F image=@shot.png -F name=checkout.png -F project=web-e2e \
      http://127.0.0.1:8420/api/check
 ```
 
-A Node client and the API contract for other languages live in `clients/`.
+The Node client (`clients/`, published as `vistest-client`) takes the snapshot
+with your own driver, stabilizes the page with the same script the Python runner
+uses, and closes the run with one call:
+
+```js
+const vt = new VisTest({ apiUrl, project: 'web-e2e', runKey: process.env.CI_JOB_ID });
+await vt.checkPage(page, 'checkout.png');
+await vt.finish();          // one run in the history, not a scatter of checks
+```
+
+For a Playwright suite nobody is going to touch, there is a reporter — zero
+lines in the tests:
+
+```ts
+reporter: [['list'], ['vistest-client/playwright-reporter',
+                      { apiUrl, project: 'web-e2e' }]]
+```
+
+It picks the `expected / actual / diff` triple out of Playwright's own report,
+seeds the baseline from *their* expected picture the first time, and sends the
+actual one for judging. The limit is worth knowing before you wire it up:
+Playwright attaches those pictures **only for a failed comparison**, so a green
+run leaves nothing to review.
+
+Cypress has no such limit — `after:screenshot` is a point it provides itself and
+it fires for every snapshot, passed ones included:
+
+```js
+setupNodeEvents(on, config) { vistest(on, config, { project: 'web-e2e' }); }
+```
+
+For the JVM there is `clients/java/VisTest.java` — one class on
+`java.net.http`, Java 11+, no dependency to add to anyone's `pom.xml`. It runs
+straight from a shell too: `java VisTest.java <url> <project> <name> <file.png>`.
+There is deliberately no Java agent: one that replaces the comparison inside
+somebody else's suite is the least verifiable thing on the roadmap, and for a
+JVM suite the first choice is `vistest project ingest` anyway.
+
+**Access.** On a single-user installation everything above just works. A shared
+one needs a token — a per-project one from «CI tokens», or `VISTEST_INGEST_TOKEN`
+— in `X-VisTest-Token`; the clients read it from `VISTEST_TOKEN`. «Not
+configured» must not mean «open».
 
 ---
 
@@ -335,6 +448,92 @@ python run.py docker [up|test|down] run in a container
 
 `python -m vistest.cli` exposes the same commands plus `serve` and `user`.
 
+### Signing in through a corporate directory
+
+LDAP and Active Directory, configured in **Settings → Corporate directory**.
+
+```bash
+pip install "vistest[ldap]"          # ldap3, pure Python, installs offline
+VISTEST_LDAP_BIND_PASSWORD=…         # the service account password
+```
+
+Then, in the interface: the server (`ldaps://dc.company.local`), the base DN,
+the service account DN, and a mapping from groups to roles, one per line:
+
+```
+CN=QA Leads,OU=Groups,DC=company,DC=local=admin
+CN=QA,OU=Groups,DC=company,DC=local=reviewer
+```
+
+**Test the connection** answers step by step — connected, service account
+signed in, person found, role that person would get — because «it does not
+work» is not something anyone can act on.
+
+Three things worth knowing before you turn it on:
+
+- **Local accounts keep working.** The directory is asked second. If it is
+  unreachable, an administrator with a local password still gets in and can
+  turn the integration off.
+- **People appear on first sign-in.** No import, no sync job. The role is
+  recalculated from group membership at every sign-in, so leaving a group takes
+  effect immediately — except a role you raised by hand in VisTest, which is
+  kept.
+- **A directory account cannot be opened with a local password**, so disabling
+  someone in the directory really does mean they cannot sign in.
+
+### Moving baselines between installations
+
+Different from a backup: a subset, merged into an installation that already has
+its own baselines. For dev → staging, for a contractor handing work over, for a
+team that splits in two.
+
+```bash
+# take one project's set
+python -m vistest.cli baselines export shop.tar.gz --project shop
+
+# see what an import would do, and change nothing
+python -m vistest.cli baselines import shop.tar.gz --mode update --dry-run
+
+# merge it in
+python -m vistest.cli baselines import shop.tar.gz --mode update
+```
+
+Three modes, because «this snapshot already exists here» has three sensible
+answers: `new` keeps what is here and takes only what is missing (the default);
+`update` brings the incoming picture in as a **new version**, so the previous
+one stays in the history and can be rolled back to from the interface;
+`replace` lets the incoming set win, history included.
+
+The same thing is available over the API (`GET /api/baselines/export`,
+`POST /api/baselines/import`) for a reviewer.
+
+Approval history does not travel. A signature under «I looked at this and it is
+correct» belongs to the person who gave it, in the installation where they gave
+it.
+
+### Backups
+
+```bash
+# Baselines, the database and the list of connected projects, in one archive.
+python -m vistest.cli backup vistest-2026-09-05.tar.gz
+
+# What is inside, without unpacking it
+python -m vistest.cli restore vistest-2026-09-05.tar.gz --show
+
+# Into an empty data volume; --force to restore over a live installation
+python -m vistest.cli restore vistest-2026-09-05.tar.gz
+```
+
+The database is snapshotted with `VACUUM INTO`, so the backup can be taken
+while the service is running — copying `vistest.db` by hand under WAL gives a
+file that opens, sometimes.
+
+`secrets.env` is **not** included unless you pass `--with-secrets`: a backup
+travels to file shares and tickets, and stand credentials should not travel
+with it silently. Run artifacts are left out too — they are recreated by the
+next run, and the point of the backup is the baselines, which are not
+recreated by anything: they are accumulated human decisions.
+
 ---
 
 ## Project layout
@@ -345,7 +544,7 @@ vistest/service.py     single check entry point for pytest / HTTP / CLI / record
 vistest/capture/       stabilisation, N-shot capture, DOM snapshot
 vistest/integrations/  universal driver (Playwright/Selenium) and suite adapters
 vistest/record/        mouse recording, snap by URL, code generation
-vistest/ai/            attribution / perceptual / captioner
+vistest/ai/            attribution / learned gate / perceptual filter
 vistest/render/        difference visualisation
 vistest/api/           FastAPI + SQLite + metrics + /api/check + users and team
 vistest/storage/       versioned baselines
@@ -377,6 +576,141 @@ metrics are identical no matter where a screenshot came from.
   same sensitivity as that system, and do not push it to a public repository.
 - The variable editor in the UI is limited to localhost by default
   (`VISTEST_SECRETS_UI=local`); `off` disables it, `all` opens it deliberately.
+
+### Behind a reverse proxy
+
+VisTest does **not** trust `X-Forwarded-*` from anyone by default, and this is
+not paranoia — it is the difference between a boundary and a decoration.
+
+Several actions are restricted to «from the service machine only»: connecting a
+project (which starts an arbitrary process), editing and running tests, the
+variable editor, mouse recording. That check reads the address of the
+connection. If the process is started with uvicorn's `--forwarded-allow-ips *`,
+that address is taken from the **first** element of `X-Forwarded-For` — a value
+the caller writes themselves, because a proxy *appends* its own address rather
+than replacing the header. One request header then opens every one of those
+actions.
+
+So: run without `--proxy-headers` (the shipped images already do), and name
+your proxy explicitly.
+
+```bash
+# The address or subnet of your nginx/Caddy/Traefik. A name works too — in
+# docker-compose it is usually the service name.
+VISTEST_TRUSTED_PROXIES=10.0.0.5,172.18.0.0/16
+
+# TLS is terminated in front, and you would rather not depend on headers at all:
+VISTEST_COOKIE_SECURE=1
+```
+
+With the variable unset nothing is trusted: the connection address is used as
+is, and the session cookie gets `Secure` only over real HTTPS or when
+`VISTEST_COOKIE_SECURE=1` says so. With it set, `X-Forwarded-Proto` from that
+proxy decides the cookie flag, and the client address in the audit log and in
+the sign-in throttling is taken from the forwarded chain — but «local» still
+means the connection itself, never the header.
+
+### The API schema
+
+`/docs`, `/redoc` and `/openapi.json` are closed. They list every route, every
+request body and every field name, which is a study aid for whoever is looking
+at the service from outside. Turn them on while you need them:
+
+```bash
+VISTEST_DOCS=on
+```
+
+### Intake limits
+
+The entry point for foreign test suites (`POST /api/check`) accepts a
+screenshot from any CI, so it has ceilings — all overridable:
+
+| Variable | Default | What it limits |
+|---|---|---|
+| `VISTEST_MAX_ARTIFACT_MB` | 40 | one uploaded image or artifact |
+| `VISTEST_MAX_FRAMES` | 8 | extra frames per check |
+| `VISTEST_MAX_PIXELS` | 60000000 | pixels after decoding — a small PNG can unpack into gigabytes |
+| `VISTEST_MAX_BODY_MB` | 64 | any other request body (uploads have their own, stricter limits) |
+| `VISTEST_ENGINE_MAX_PIXELS` | 80000000 | what the comparison engine agrees to hold in memory |
+
+### The API path
+
+Routes are reachable both as `/api/...` and as `/api/v1/...`. Clients in other
+languages should use the versioned form: when the contract changes one day,
+`/api/v2` will be a separate thing and `/api/v1` will keep working.
+
+A project archive (`POST /api/projects/upload`) is capped at 200 MB, 2 GB
+unpacked and 50 000 entries.
+
+---
+
+## Licensing
+
+Two things share the word «licence» here, and mixing them up causes trouble, so
+they are separated on purpose:
+
+- **The source licence is AGPL-3.0-or-later.** That is what governs the code:
+  read it, modify it, run it, and if you run a modified version as a network
+  service, publish your changes. Nothing below takes that away.
+- **A commercial licence key** is what a paying customer receives. It states
+  who bought it, until when, and how many projects and users it covers.
+
+### Editions
+
+| | Free tier | With a key |
+|---|---|---|
+| Engine, UI, CI integration, clients | everything | everything |
+| Connected projects | 2 | as bought |
+| Active users | 5 | as bought |
+| Support and updates | community | as agreed |
+
+The free tier is not a crippled demo: the engine, the review flow and every
+integration are the same. The limits are the whole difference.
+
+### Installing a key
+
+Three places, checked in this order — the environment wins so that a container
+is configured the way containers are configured:
+
+```bash
+VISTEST_LICENSE="eyJlZGl0aW9uIjoicHJvIiw…"   # environment
+.vistest/license.key                          # the data volume
+```
+
+…or paste it into **Settings → Licence** in the interface. It is verified on
+the spot and saved to the data volume.
+
+Verification is entirely offline: the key carries an RSA signature, the public
+half is compiled into VisTest, and checking it needs no network and no extra
+package. An installation inside a closed perimeter never has to reach anything.
+
+### When a term ends
+
+Nothing is taken away from the customer. Baselines stay readable, history stays
+readable, review keeps working — those are your data and your decisions.
+
+For thirty days after the end date the installation works normally and says so
+on every screen. After that, and only then, **new runs are refused** with a 402
+and an explanation. Installing a current key restores everything immediately.
+
+### Issuing keys (for the vendor)
+
+```bash
+python scripts/issue_license.py --new-key ~/.vistest-signing/private.pem
+python scripts/issue_license.py --key ~/.vistest-signing/private.pem \
+    --customer "ACME GmbH" --expires 2027-09-01 --projects 10 --users 25
+```
+
+The private half never goes into the repository, a backup that leaves your
+machine, or a support ticket.
+
+### An honest note about enforcement
+
+The source is open, so anyone can delete the check and rebuild. That is a
+property of the AGPL, not a hole to be plugged, and no amount of obfuscation
+would change it. What the key does is make the terms explicit and checkable —
+so that an honest customer knows what they bought, and a renewal is a
+conversation rather than an audit.
 
 ---
 

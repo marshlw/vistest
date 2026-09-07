@@ -105,6 +105,22 @@ SCREENS.doctor=async function(){
     d.present?'ok':(d.required?'required':'optional'),
     !!d.present||!d.required)));
   page.append(et);
+
+  /* Чем эта инсталляция способна запустить ЧУЖОЙ набор.
+
+     Подключение с собственной командой выполняет её внутри нашего
+     контейнера. Пока этого списка не было, ответ на «почему npx не найден»
+     находился только в логе упавшего прогона — то есть уже после того, как
+     человек всё настроил и нажал запуск. */
+  const rts=env.runtimes||[];
+  if(rts.length){
+    page.append(sectionHead('Runtimes for connected suites',
+      'a suite started by its own command runs inside this container — its tool has to be here'));
+    const rt=el('div','panel');
+    rts.forEach(r=>rt.append(envFactRow(
+      r.name,r.path||'not found',r.path?'ok':'optional',true)));
+    page.append(rt);
+  }
 };
 
 /* Имя нарочно не `envRow`: так называется строка редактора секретов в

@@ -1,0 +1,46 @@
+# Сервис ревью плюс рантайм для наборов на Node.
+#
+# Отличие от `team.compose.yml` ровно одно и оно принципиальное: чужой проект
+# монтируется в контейнер вместе со своими `node_modules`. Команда набора
+# (`npx playwright test`) выполняется здесь, а не у них, — значит здесь должно
+# лежать всё, что ей нужно.
+#
+# Если ставить их зависимости в контейнере не хочется (а хотеть этого не за
+# что: это чужой lock-файл, чужие постскрипты и чужой размер образа), есть
+# третий вход — их CI гоняет тесты у себя, а сюда приезжает каталог с
+# картинками:
+#
+#   vistest project ingest web-e2e --dir test-results --browser chromium
+#
+# Он не требует ни Node в образе, ни этого файла вообще.
+name: vistest
+
+services:
+  vistest:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+      args:
+        # Собрать сначала «толстый» образ:
+        #   docker build -f docker/Dockerfile.full -t vistest-full:latest .
+        VISTEST_IMAGE: vistest-full:latest
+    ports:
+      - "8420:8420"
+    volumes:
+      - vistest-data:/data
+      # Чужой набор — вместе с его node_modules. Read-only здесь НЕ ставится:
+      # их прогон пишет `test-results` в собственный корень, и запрет на
+      # запись означал бы прогон без единого артефакта.
+      - ${PROJECT_PATH:-./web-e2e}:/projects/web-e2e
+    environment:
+      VISTEST_ROOT: /data
+      # Приём прогонов из внешнего CI. Без токена сетевая инсталляция
+      # отвечает на приём 401 — и это правильно, «не настроил» не должно
+      # означать «открыто».
+      VISTEST_INGEST_TOKEN: ${VISTEST_INGEST_TOKEN:-}
+    shm_size: 1gb
+    ipc: host
+    restart: unless-stopped
+
+volumes:
+  vistest-data:

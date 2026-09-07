@@ -84,9 +84,22 @@ function hideLogin(){$('#login').classList.add('hidden');}
 async function enterApp(me){
   state.me=me;hideLogin();
   safely('paintUser',paintUser);
+  /* Список проектов — единственное «украшение», которое обязано случиться ДО
+     первого экрана, и потому единственное, которого здесь ждут.
+
+     Проект закреплён в шапке, и каждый экран строится про него: без него
+     «Runs» пошёл бы за прогонами с пустым `project=`, а «Decisions» — за
+     очередью, которой не бывает без набора. Запрос всё равно один и уходит
+     параллельно трём своим (`loadProjects`), а падать ему нечем: каждый из
+     трёх ловит свою ошибку сам. */
+  await safely('projects',loadProjects);
   if(!location.hash||location.hash.startsWith('#/join'))location.hash='#/runs';
   route();
   safely('team',async()=>applyTeam(await api('/api/team').catch(()=>null)));
+  /* Полоса про лицензию. После маршрутизации и через `safely`: она сообщает о
+     сроке и лимитах, но не может быть причиной, по которой человек не попал
+     в интерфейс. */
+  safely('license',licenseBanner);
   safely('counts',refreshCounts);
   safely('rig',loadRig);
   safely('collab',startCollab);

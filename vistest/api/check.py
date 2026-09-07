@@ -31,7 +31,7 @@ import os
 from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from ..capture import dom as _dom
@@ -47,24 +47,192 @@ ARTIFACTS = ROOT / "artifacts"
 _cfg = VisTestConfig.load()
 
 
+def _who(request: Request, project: str | None) -> str:
+    """Проверка доступа тем же путём, что и приём прогонов.
+
+    Мягко к одиночной установке (пользователей нет — пускаем, как и везде) и
+    строго к сетевой: там нужен токен проекта, `VISTEST_INGEST_TOKEN` или
+    сессия ревьюера. Импорт внутри функции — `main` импортирует этот модуль,
+    и обратная ссылка на уровне модуля замкнула бы круг.
+    """
+    from .main import require_ingest
+
+    return require_ingest(request, project or "")
+
+
+#  Имя проекта по умолчанию. Это placeholder из конфигурации, а не проект:
+#  им подписана одиночная установка, где проектов просто нет.
+DEFAULT_PROJECT = "default"
+
+
+def scoped(name: str, project: str | None) -> str:
+    """`checkout.png` + проект `shop` → `shop/checkout.png`.
+
+    Поле `project` до сих пор возвращалось в ответе и участвовало в порогах, но
+    в ХРАНЕНИИ не участвовало никак: имя уходило в общий набор по платформе как
+    есть. Две команды, приславшие `checkout.png`, делили один эталон и молча
+    переписывали друг друга — а по вердикту это выглядит как регресс, которого
+    в приложении нет.
+
+    Хранилище разделение по проектам умеет с самого начала: слэш в имени и есть
+    проект (`split_project`). Оставалось им воспользоваться.
+
+    Два случая имя не трогают, и оба намеренно. `default` — не проект, а
+    подпись одиночной установки: там проектов нет, и префикс создал бы каталог
+    на пустом месте. Слэш в имени означает, что вызывающий назвал проект сам, —
+    спорить с ним нельзя, иначе получится `shop/shop/…`.
+    """
+    project = (project or "").strip()
+    if not project or project == DEFAULT_PROJECT:
+        return name
+    if "/" in str(name).replace("\\", "/"):
+        return name
+    return f"{project}/{name}"
+
+
+# --------------------------------------------------------------------------- #
+#  Пределы приёма
+#
+#  Это вход для чужих наборов на любом языке: сюда стучится CI, у которого нет
+#  ни сессии, ни браузера, — и до сих пор он мог прислать что угодно и сколько
+#  угодно. Файл читался в память целиком (`await image.read()`), число кадров
+#  не ограничивалось, а PIL разворачивал картинку любого разрешения. Один
+#  запрос с десятком файлов клал процесс, и выглядело это как «сервис
+#  подвисает», то есть причину искали не там.
+#
+#  Числа те же, что у приёма артефактов прогона (`VISTEST_MAX_ARTIFACT_MB`):
+#  два разных потолка на две двери, ведущие в один каталог, разошлись бы на
+#  первой же правке.
+# --------------------------------------------------------------------------- #
+MAX_IMAGE_BYTES = int(os.getenv("VISTEST_MAX_ARTIFACT_MB", "40")) * 1024 * 1024
+# Кадры нужны для распознавания анимации: два-три достаточно, десяток — это
+# уже не динамика, а способ занять память.
+MAX_FRAMES = int(os.getenv("VISTEST_MAX_FRAMES", "8"))
+# Пиксели, а не байты: PNG в 2 МБ разворачивается в гигабайты. Ограничение
+# считается ДО `convert("RGB")`, то есть до выделения памяти.
+MAX_PIXELS = int(os.getenv("VISTEST_MAX_PIXELS", str(60_000_000)))
+
+
+async def _read_limited(upload, what: str = "image") -> bytes:
+    """Прочитать загруженный файл, не дав ему стать больше потолка.
+
+    `Content-Length` здесь не проверяется намеренно: его пишет вызывающий, и
+    верить ему — значит не иметь предела вовсе.
+    """
+    chunks, total = [], 0
+    while chunk := await upload.read(1024 * 1024):
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            raise HTTPException(
+                413, f"{what} is larger than "
+                     f"{MAX_IMAGE_BYTES // (1024 * 1024)} MB")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _decode(data: bytes) -> np.ndarray:
     from PIL import Image
 
     try:
-        return np.array(Image.open(io.BytesIO(data)).convert("RGB"))
+        image = Image.open(io.BytesIO(data))
+        # `Image.open` читает только заголовок — размер известен, пиксели ещё
+        # не разложены. Это единственное место, где отказ ничего не стоит.
+        width, height = image.size
+        if width * height > MAX_PIXELS:
+            raise HTTPException(
+                413, f"the image is {width}×{height} = "
+                     f"{width * height // 1_000_000} Mpx, the limit is "
+                     f"{MAX_PIXELS // 1_000_000} Mpx "
+                     "(VISTEST_MAX_PIXELS raises it)")
+        return np.array(image.convert("RGB"))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(400, f"could not read the image: {e}") from e
 
 
-_ALLOWED_OVERRIDES = {
-    "delta_e_threshold", "ssim_threshold", "fail_severity",
-    "max_changed_area_pct", "min_region_px", "max_align_shift_px",
-    "detect_moved", "ignore_kinds", "fail_on_size_change", "moved_severity_scale",
+#  Что вызывающий вправе поменять на один вызов — и в каких пределах.
+#
+#  Проверялись только ИМЕНА: `{"min_region_px": "abc"}` доезжал до движка и
+#  падал пятисоткой в середине сравнения, а `{"fail_severity": -5}` тихо
+#  превращал проверку в «всё красное». Ни то, ни другое не ошибка вызывающего
+#  в том смысле, в каком её можно было понять по ответу: там было «internal
+#  error» и идентификатор запроса.
+#
+#  Границы взяты по смыслу величины, а не «на всякий случай»: ΔE00 больше ста
+#  не существует, доля площади измеряется в процентах, севериность
+#  нормирована на сто. Верхняя граница `min_region_px` — миллион пикселей: это
+#  уже «не смотреть ни на что», и такой порог стоит поставить осознанно, а не
+#  промахнувшись на три нуля.
+_OVERRIDES: dict[str, tuple] = {
+    #  имя                     тип     минимум  максимум
+    "delta_e_threshold":      (float,  0.0,     100.0),
+    "ssim_threshold":         (float,  0.0,     1.0),
+    "fail_severity":          (float,  0.0,     100.0),
+    "max_changed_area_pct":   (float,  0.0,     100.0),
+    "min_region_px":          (int,    0,       1_000_000),
+    "max_align_shift_px":     (float,  0.0,     10_000.0),
+    "moved_severity_scale":   (float,  0.0,     10.0),
+    "detect_moved":           (bool,   None,    None),
+    "fail_on_size_change":    (bool,   None,    None),
+    "ignore_kinds":           (list,   None,    None),
 }
+_ALLOWED_OVERRIDES = frozenset(_OVERRIDES)
+
+
+def _clean_overrides(raw: dict) -> dict:
+    """Разобрать `options` запроса в значения, которые движок переживёт."""
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "options must be an object: name → value")
+
+    unknown = set(raw) - _ALLOWED_OVERRIDES
+    if unknown:
+        raise HTTPException(
+            400, f"unknown options: {sorted(unknown)}; "
+                 f"allowed: {sorted(_ALLOWED_OVERRIDES)}")
+
+    out: dict = {}
+    for name, value in raw.items():
+        kind, low, high = _OVERRIDES[name]
+
+        if kind is bool:
+            if not isinstance(value, bool):
+                raise HTTPException(400, f"{name} must be true or false")
+            out[name] = value
+            continue
+
+        if kind is list:
+            # Классы изменений: список строк, и каждая должна быть известной —
+            # опечатка здесь молча отключала бы не тот класс.
+            from ..models import ChangeKind
+
+            if not isinstance(value, list):
+                raise HTTPException(400, f"{name} must be a list of change kinds")
+            known = {k.value for k in ChangeKind}
+            bad = [v for v in value if v not in known]
+            if bad:
+                raise HTTPException(
+                    400, f"unknown change kinds: {bad}; known: {sorted(known)}")
+            out[name] = list(value)
+            continue
+
+        # bool — подкласс int, и `True` прошло бы как единица. Для порога это
+        # почти наверняка не то, что имел в виду вызывающий.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise HTTPException(400, f"{name} must be a number")
+        number = kind(value)
+        if number != number or number in (float("inf"), float("-inf")):
+            raise HTTPException(400, f"{name} must be a finite number")
+        if not (low <= number <= high):
+            raise HTTPException(
+                400, f"{name} must be between {low} and {high} (got {number})")
+        out[name] = number
+    return out
 
 
 @router.post("/api/check")
 async def check(
+    request: Request,
     name: str = Form(..., description="snapshot name, for example checkout.png"),
     image: UploadFile = File(..., description="current PNG screenshot"),
     frames: list[UploadFile] = File(
@@ -89,8 +257,22 @@ async def check(
           "review_url": "/ui/"
         }
     """
-    rgb = _decode(await image.read())
-    extra = [_decode(await f.read()) for f in frames if f is not None]
+    # Кто прислал. Спрашивается ПЕРВЫМ и здесь, а не в общем страже: токен
+    # выдаётся на проект, а имя проекта лежит в теле формы — прочитать его
+    # раньше разбора тела нельзя.
+    #
+    # До этого роут требовал сессионную куку, то есть браузер. У раннера в CI
+    # браузера нет, и вход, объявленный входом «для тестов на любом языке»,
+    # отвечал им всем 401 — на любой инсталляции, где заведены пользователи.
+    _who(request, project)
+
+    rgb = _decode(await _read_limited(image, "the screenshot"))
+    real_frames = [f for f in frames if f is not None]
+    if len(real_frames) > MAX_FRAMES:
+        raise HTTPException(
+            413, f"no more than {MAX_FRAMES} extra frames at a time "
+                 f"(received {len(real_frames)})")
+    extra = [_decode(await _read_limited(f, "a frame")) for f in real_frames]
     all_frames = [rgb, *extra] if extra else None
 
     dom_data = None
@@ -106,10 +288,7 @@ async def check(
             raw = json.loads(options)
         except Exception as e:
             raise HTTPException(400, f"options did not parse as JSON: {e}") from e
-        unknown = set(raw) - _ALLOWED_OVERRIDES
-        if unknown:
-            raise HTTPException(400, f"unknown options: {sorted(unknown)}")
-        overrides = raw
+        overrides = _clean_overrides(raw)
 
     # Порядок здесь и есть ответ на «чей порог сильнее»: пресет или конфиг —
     # основа, поверх ложится то, что выставили в интерфейсе, и только сверху —
@@ -124,11 +303,26 @@ async def check(
     run_dir = ARTIFACTS / "checks" / (slug(run_key) if run_key else "adhoc")
     svc = CheckService(cfg, platform=platform, browser=browser, run_dir=run_dir)
 
+    # Ключ, под которым снимок живёт в хранилище и в истории.
+    scoped_name = scoped(name, project or cfg.service.project)
+    stored = scoped_name
+    notes: list[str] = []
+    if stored != name and not svc.store.exists(stored) and svc.store.exists(name):
+        # Эталон, снятый до разделения по проектам. Молча завести новый и
+        # объявить снимок новым значило бы потерять точку отсчёта у всех, кто
+        # уже пользуется этим входом. Работаем со старым и говорим, что он
+        # переедет при следующем апруве.
+        stored = name
+        notes.append(
+            "The baseline is a legacy one, kept without the project prefix. "
+            f"The next accepted change will store it as «{scoped_name}».")
+
     res = svc.check(
-        name, rgb,
+        stored, rgb,
         frames=all_frames, dom=dom_data,
         diff_overrides=overrides or None,
         update_baseline=update_baseline or None,
+        notes=notes or None,
     )
 
     body = res.to_dict()
@@ -163,6 +357,7 @@ async def put_baseline(
     platform: str | None = Form(default=None),
     browser: str = Form(default="chromium"),
     url: str | None = Form(default=None),
+    project: str | None = Form(default=None),
 ):
     """Record a baseline directly, without comparison.
 
@@ -170,9 +365,51 @@ async def put_baseline(
     recreated and checked from the UI with a single button.
     """
     svc = CheckService(_cfg, platform=platform, browser=browser)
-    svc.save_baseline(name, _decode(await image.read()),
+    # Тот же ключ, что и у проверки: эталон, записанный мимо проекта, потом не
+    # находится проверкой этого проекта — и выглядит это как «загрузка не
+    # сработала».
+    stored = scoped(name, project or _cfg.service.project)
+    svc.save_baseline(stored, _decode(await _read_limited(image, "the screenshot")),
                       meta={"approved_by": "api", "url": url})
-    return {"ok": True, "name": name, "platform": svc.platform}
+    return {"ok": True, "name": stored, "platform": svc.platform}
+
+
+@router.post("/api/baselines/seed")
+async def seed_baseline(
+    request: Request,
+    name: str = Form(...),
+    image: UploadFile = File(...),
+    platform: str | None = Form(default=None),
+    browser: str = Form(default="chromium"),
+    project: str | None = Form(default=None),
+):
+    """Записать эталон, ТОЛЬКО если его ещё нет. Иначе 409.
+
+    Ради одного сценария, и он важнее, чем кажется. Репортёр Playwright
+    забирает из их отчёта тройку `expected / actual / diff` — их собственный
+    эталон приезжает вместе с фактом. Первый прогон без этого отвечал бы
+    «новый эталон» на каждый снимок и не сравнивал бы ничего: день первый
+    выглядел бы как «инструмент не работает».
+
+    Но перезаписывать НАШ эталон их картинкой нельзя ни при каких условиях.
+    Их `expected` приезжает на каждом падении, и «просто записать» означало бы
+    принимать регресс автоматически — ровно то, ради чего инструмент и стоит.
+    Поэтому 409 здесь не ошибка, а штатный ответ, и вызывающий его ждёт.
+    """
+    who = _who(request, project)
+    svc = CheckService(_cfg, platform=platform, browser=browser)
+    stored = scoped(name, project or _cfg.service.project)
+    if svc.store.exists(stored):
+        raise HTTPException(409, {
+            "error": "baseline already exists",
+            "name": stored,
+            "message": "A baseline for this snapshot is already recorded. "
+                       "Changing it is an approval, and an approval is made by "
+                       "a person in the review screen.",
+        })
+    svc.save_baseline(stored, _decode(await _read_limited(image, "the screenshot")),
+                      meta={"approved_by": who, "seeded": True})
+    return {"ok": True, "name": stored, "platform": svc.platform}
 
 
 @router.get("/api/stabilize.js", response_class=PlainTextResponse)

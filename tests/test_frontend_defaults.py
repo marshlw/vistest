@@ -96,20 +96,97 @@ def test_counts_are_summed_across_platforms():
     assert _call(scopes, "global") == "project:a"
 
 
-def test_the_navigation_counter_covers_the_whole_installation():
-    """Счётчик в меню отвечает на «есть ли эталоны вообще», а не «что открыто».
+def test_the_navigation_counter_follows_the_pinned_project():
+    """Счётчик эталонов в меню отвечает про ЗАКРЕПЛЁННЫЙ проект.
 
-    Он считался по `/api/baselines/detail` без параметров — то есть по одному
-    собственному набору сервиса, — и рядом с подключённым проектом на
-    одиннадцать эталонов в меню стоял ноль.
+    Он переезжал дважды, и оба раза по одной и той же причине — число в
+    навигации не сходилось ни с одним экраном.
+
+    Сначала он считался по `/api/baselines/detail` без параметров, то есть по
+    собственному набору сервиса: рядом с подключённым проектом на одиннадцать
+    эталонов в меню стоял ноль. Тогда его развернули на всю установку.
+
+    После того как проект закрепился в шапке, «вся установка» стала неправдой
+    с другой стороны: человек выбрал один проект, а в меню — сумма по всем.
+    Считаем по тому набору, который открывается щелчком по самому пункту.
     """
     shell = (JS.parent / "shell.js").read_text(encoding="utf-8")
     line = next(ln for ln in shell.splitlines()
                 if "state.counts.baselines=" in ln.replace(" ", ""))
     assert "/api/baselines/scopes" in shell
-    assert "scopes" in line or "sc.scopes" in shell
-    assert not re.search(r"api\('/api/baselines/detail'\)", shell), \
-        "счётчик снова считает один набор вместо всей установки"
+    assert "currentScope()" in shell, \
+        "счётчик снова не знает про закреплённый проект"
+    assert "scopeTotal" in line, \
+        "счётчик снова суммирует наборы вместо одного открытого"
+    assert not re.search(r"api\('/api/baselines/detail'\)", shell)
+
+
+# --------------------------------------------------------------------------- #
+#  Ключ платформы разбирается на вопросы, а не показывается как есть
+# --------------------------------------------------------------------------- #
+def _platform(name: str, *args) -> str:
+    """Чистая функция из `shared.js`, выполненная node — как и `nonEmptyScope`.
+
+    Копировать правило в тест нельзя по той же причине: копия разойдётся с
+    оригиналом молча и начнёт подтверждать то, чего в браузере уже нет.
+    """
+    node = shutil.which("node")
+    if not node:                                            # pragma: no cover
+        pytest.skip("node не установлен — проверять нечем")
+    src = "".join(_extract(f) for f in ("parsePlatform", "viewportLabel",
+                                        "viewportKind"))
+    call = ", ".join(json.dumps(a) for a in args)
+    script = (src + f"\nprocess.stdout.write(JSON.stringify({name}({call})));\n")
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def test_the_storage_key_splits_into_machine_engine_and_window():
+    """`docker-chromium-1x-390x844` — четыре ответа в одной строке.
+
+    Спрашивают их по одному, поэтому и переключателя на экране два.
+    """
+    got = _platform("parsePlatform", "linux-chromium-1x-390x844")
+    assert got["parsed"] and got["os"] == "linux"
+    assert got["browser"] == "chromium" and got["scale"] == "1x"
+    assert got["viewport"] == "390x844" and got["w"] == 390
+
+
+def test_the_base_window_size_has_no_suffix_and_that_is_not_an_omission():
+    """Под ключом без суффикса лежит всё, что снято до появления матрицы.
+
+    См. `vistest/matrix.py`: переезд обесценил бы эти эталоны разом. Значит
+    пустой `viewport` — это «базовый размер», а не «размер неизвестен».
+    """
+    got = _platform("parsePlatform", "docker-firefox-1x")
+    assert got["parsed"] and got["browser"] == "firefox"
+    assert got["viewport"] == "" and got["w"] == 0
+    assert _platform("viewportLabel", "", "1440x900") == "1440\u00d7900"
+    assert _platform("viewportLabel", "", "") == "base size"
+
+
+def test_an_unparsed_key_is_shown_as_it_is_rather_than_guessed():
+    """Ключ мог быть записан версией, знавшей другой набор движков.
+
+    Отвечать «не знаю» на собственные данные — худшее из поведений; показать
+    строку как есть — всегда правда.
+    """
+    got = _platform("parsePlatform", "нечто-непонятное")
+    assert got["parsed"] is False and got["raw"] == "нечто-непонятное"
+    assert got["browser"] == ""
+
+
+def test_a_window_size_is_also_named_in_words():
+    """«390x844» ничего не говорит тому, кто держит в голове «телефон».
+
+    А решение «нужен ли мне этот вариант» принимается именно в этих словах.
+    """
+    assert _platform("viewportKind", 390) == "phone"
+    assert _platform("viewportKind", 768) == "tablet"
+    assert _platform("viewportKind", 1440) == "laptop"
+    assert _platform("viewportKind", 1920) == "desktop"
+    assert _platform("viewportKind", 0) == ""
 
 
 # --------------------------------------------------------------------------- #

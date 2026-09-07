@@ -37,27 +37,52 @@ import numpy as np
 from ..capture.playwright_capture import _write_png, read_png
 from ..core import noise as _noise
 from .base import BaselineRecord, BaselineStore
-
-
-def _safe(name: str) -> str:
-    """Имя снимка → имя файла. Пути наружу вырезаются."""
-    stem = str(name).replace("\\", "/").removesuffix(".png")
-    parts = [p for p in stem.split("/") if p.strip(" .")]
-    cleaned = "_".join(
-        "".join(c if c.isalnum() or c in "-_." else "_" for c in p).strip("._")
-        for p in parts
-    )
-    return cleaned or "snapshot"
+from .fs import _safe
 
 
 class ExternalBaselineStore(BaselineStore):
-    def __init__(self, snapshots_dir: str | Path, sidecar_dir: str | Path):
+    """Эталоны чужого проекта.
+
+    `variants` — токены, по которым выбирается вариант файла, когда инструмент
+    пишет платформу в имя. Playwright хранит эталон как
+    `login-chromium-linux.png`, а снимок при этом называется `login`: браузер
+    и операционная система — это ключ платформы, то есть наше измерение, а не
+    часть имени. Без подсказки, какой из вариантов относится к этому прогону,
+    выбор между chromium и firefox был бы монеткой — а монетка здесь означает
+    «сравнили с эталоном другого движка и показали регресс, которого нет».
+    """
+
+    def __init__(self, snapshots_dir: str | Path, sidecar_dir: str | Path,
+                 variants: tuple[str, ...] = ()):
         self.root = Path(snapshots_dir)
         self.sidecar = Path(sidecar_dir)
+        self.variants = tuple(v.lower() for v in variants if v)
 
     # ------------------------------------------------------------------ #
     def png_for(self, name: str) -> Path:
-        return self.root / f"{_safe(name)}.png"
+        direct = self.root / f"{_safe(name)}.png"
+        if direct.exists() or not direct.parent.exists():
+            return direct
+        found = self._variant(direct)
+        return found or direct
+
+    def _variant(self, direct: Path) -> Path | None:
+        """`login.png` отсутствует — может быть, есть `login-chromium-linux.png`.
+
+        Неоднозначность разрешается только подсказкой прогона. Если её нет и
+        вариантов несколько, честнее не выбрать ничего: отсутствующий эталон
+        виден в отчёте одной строкой, а сравнение не с тем — не видно вовсе.
+        """
+        matches = sorted(p for p in direct.parent.glob(f"{direct.stem}-*.png")
+                         if p.is_file())
+        if not matches:
+            return None
+        if self.variants:
+            for token in self.variants:
+                hit = [p for p in matches if token in p.stem.lower()]
+                if len(hit) == 1:
+                    return hit[0]
+        return matches[0] if len(matches) == 1 else None
 
     def dir_for(self, name: str) -> Path:
         """Каталог служебных данных VisTest. В чужой репозиторий не попадает."""
@@ -121,9 +146,19 @@ class ExternalBaselineStore(BaselineStore):
             json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def list_names(self) -> list[str]:
+        """Имена эталонов, включая вложенные каталоги.
+
+        Плоский `glob("*.png")` не видел ни `__screenshots__/checkout/…`
+        Playwright, ни раскладку BackstopJS — а «эталонов нет» вместо «они
+        лежат на уровень ниже» отправляет искать ошибку не туда.
+        """
         if not self.root.exists():
             return []
-        return sorted(p.name for p in self.root.glob("*.png") if p.is_file())
+        out = []
+        for p in self.root.rglob("*.png"):
+            if p.is_file():
+                out.append(p.relative_to(self.root).as_posix())
+        return sorted(out)
 
     # ------------------------------------------------------------------ #
     #  Версии

@@ -37,6 +37,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException, Request
 
 from ..config import VisTestConfig
+from . import net
 
 router = APIRouter()
 
@@ -52,7 +53,8 @@ HEADER = """# VisTest environment variables.
 # Scenario steps reference these names: ${VISTEST_USER}, ${VISTEST_PASSWORD}.
 """
 
-LOOPBACK = {"127.0.0.1", "::1", "localhost", "testclient"}
+#  «Локально» живёт в `api/net.py`: считается по адресу соединения,
+#  который заголовком не подделать.
 
 
 def _mode() -> str:
@@ -73,12 +75,12 @@ def _guard(request: Request) -> None:
             403, "The variable editor is turned off (VISTEST_SECRETS_UI=off)")
     if mode == "all":
         return
-    host = (request.client.host if request.client else "") or ""
-    if host not in LOOPBACK:
+    if not net.is_loopback(request):
         raise HTTPException(
             403,
-            f"Variables can be edited only from the local machine (request from {host}). "
-            "To deliberately open to the outside: VISTEST_SECRETS_UI=all",
+            "Variables can be edited only from the local machine (request from "
+            f"{net.client_ip(request)}). To deliberately open to the outside: "
+            "VISTEST_SECRETS_UI=all",
         )
 
 

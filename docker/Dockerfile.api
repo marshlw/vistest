@@ -15,10 +15,19 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md constraints-service.txt ./
 COPY vistest ./vistest
 COPY frontend ./frontend
-RUN pip install -e ".[service]"
+# Обычная установка, не editable, и по зафиксированным версиям.
+#
+# `-e` в образе означало, что пакет «установлен» ссылкой на /app: работает, но
+# состояние образа перестаёт быть его содержимым — достаточно смонтировать
+# другой /app, и внутри едет другой код при том же теге. Плюс `pip install -e`
+# тянет сборочные зависимости в рантайм-образ.
+#
+# `-c constraints-service.txt` фиксирует и транзитивные версии: две сборки
+# одного коммита, разнесённые на неделю, обязаны давать одно и то же.
+RUN pip install --no-cache-dir -c constraints-service.txt ".[service]"
 
 VOLUME /data
 EXPOSE 8420
@@ -32,7 +41,16 @@ USER vistest
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 \
   CMD curl -fsS http://localhost:8420/api/health || exit 1
 
-# --proxy-headers обязателен: без него за TLS-терминатором схема запроса
-# видится как http и кука сессии остаётся без флага Secure.
-CMD ["uvicorn", "vistest.api.main:app", "--host", "0.0.0.0", "--port", "8420", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Без --proxy-headers, и это решение, а не упущение.
+#
+# `--forwarded-allow-ips *` включает в uvicorn always_trust, а тот берёт из
+# `X-Forwarded-For` ПЕРВЫЙ элемент — то есть значение, которое пишет сам
+# вызывающий: прокси свой адрес дописывает в конец, а не заменяет строку. После
+# этого `request.client.host` подделывается заголовком, а на нём держится
+# граница «только с машины сервиса»: правка secrets.env, подключение проекта
+# (запуск произвольного процесса), правка тестов, запись с мышью.
+#
+# Заголовки разбирает сам сервис — `vistest/api/net.py`, список доверенных
+# адресов в VISTEST_TRUSTED_PROXIES (пусто = не доверять никому). Схему для
+# флага Secure на куке берите оттуда же или задайте VISTEST_COOKIE_SECURE=1.
+CMD ["uvicorn", "vistest.api.main:app", "--host", "0.0.0.0", "--port", "8420"]

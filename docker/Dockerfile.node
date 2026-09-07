@@ -1,0 +1,38 @@
+# Образ для наборов, которые запускаются своей командой на Node.
+#
+# `runner: command` выполняет их команду ВНУТРИ контейнера VisTest. Значит,
+# `npx playwright test` — это node, npm и их `node_modules` у нас, а не у них.
+# Ни `Dockerfile.api` (python:3.12-slim), ни `Dockerfile.full` этого не
+# содержат, и до сих пор поддержка чужих команд существовала только на бумаге:
+# первый же прогон отвечал «`npx` не найден — ни в PATH, ни в корне проекта».
+#
+# Здесь Node доставляется поверх «толстого» образа, а не собирается заново:
+# версия Playwright и набор шрифтов должны остаться теми же, иначе рендер
+# поедет и эталоны, снятые вчера, перестанут совпадать сами с собой.
+#
+# Node берётся из официального образа копированием, а не из apt: в jammy пакет
+# nodejs древний, а сеть на сборке может быть закрыта у всех, кроме реестра
+# образов. `bullseye` выбран намеренно — он старше jammy по glibc, поэтому его
+# бинарь на jammy запускается; обратное неверно.
+ARG VISTEST_IMAGE=vistest-full:latest
+ARG NODE_IMAGE=node:20-bullseye-slim
+
+FROM ${NODE_IMAGE} AS node
+FROM ${VISTEST_IMAGE}
+
+USER root
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && node --version && npm --version
+
+# Кэш npm и браузеры Playwright — в места, доступные на запись любому uid:
+# контейнер запускают и не от root, а падение на правах выглядит как
+# «инструмент сломался».
+ENV NPM_CONFIG_CACHE=/tmp/.npm \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Их зависимости мы НЕ ставим и ставить не должны: у каждого проекта свой
+# `package-lock.json`, и вшить один в образ значит сломать все остальные.
+# Проект монтируется вместе со своими `node_modules` — см. team.node.compose.yml.

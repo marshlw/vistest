@@ -541,8 +541,15 @@ def test_a_successful_sign_in_does_not_erase_the_audit(service):
     assert _recent_failures(mainmod.db, who=login) == 0, "но счётчик обнулён"
 
 
-def test_the_cookie_is_secure_behind_a_tls_terminating_proxy(service):
-    """За nginx схема запроса — http, и кука никогда не получала Secure."""
+def test_the_cookie_is_secure_behind_a_tls_terminating_proxy(service, monkeypatch):
+    """За nginx схема запроса — http, и кука никогда не получала Secure.
+
+    Заголовку верим только от прокси, объявленного доверенным: иначе любой
+    вызывающий выставляет куке Secure на инсталляции без TLS, браузер
+    перестаёт её отправлять, и человек видит бесконечный выход из системы.
+    """
+    from vistest.api import net
+
     client, mainmod, _ = service
     login, password = _make_admin(mainmod)
 
@@ -550,7 +557,81 @@ def test_the_cookie_is_secure_behind_a_tls_terminating_proxy(service):
                         json={"login": login, "password": password})
     assert "secure" not in plain.headers["set-cookie"].lower()
 
+    # TestClient соединяется с адреса `testclient`; объявляем его доверенным
+    # прокси ровно так же, как в проде объявляют адрес nginx.
+    monkeypatch.setenv(net.ENV_TRUSTED, "testclient")
+    net._trusted.cache_clear()
     fwd = client.post("/api/auth/login",
                       json={"login": login, "password": password},
                       headers={"X-Forwarded-Proto": "https"})
     assert "secure" in fwd.headers["set-cookie"].lower()
+
+
+def test_forwarded_headers_from_an_untrusted_caller_are_ignored(service, monkeypatch):
+    """Подделка X-Forwarded-Proto без доверенного прокси не даёт ничего."""
+    from vistest.api import net
+
+    client, mainmod, _ = service
+    login, password = _make_admin(mainmod)
+
+    monkeypatch.delenv(net.ENV_TRUSTED, raising=False)
+    net._trusted.cache_clear()
+    fwd = client.post("/api/auth/login",
+                      json={"login": login, "password": password},
+                      headers={"X-Forwarded-Proto": "https"})
+    assert "secure" not in fwd.headers["set-cookie"].lower()
+
+
+def test_a_forged_x_forwarded_for_does_not_make_a_caller_local(service, monkeypatch):
+    """Главная находка ревью, зафиксированная тестом.
+
+    «Только с машины сервиса» защищает действия, запускающие процессы:
+    подключение проекта, правку тестов, редактор переменных, запись с мышью.
+    Считалось это по `request.client.host`, который под
+    `--forwarded-allow-ips *` берётся из ПЕРВОГО элемента `X-Forwarded-For` —
+    то есть из строки, которую пишет сам вызывающий.
+
+    Здесь проверяется свойство, а не реализация: заголовок не делает вызов
+    локальным, что бы в нём ни стояло.
+    """
+    from starlette.requests import Request
+
+    from vistest.api import net
+
+    monkeypatch.delenv(net.ENV_TRUSTED, raising=False)
+    net._trusted.cache_clear()
+
+    def _request(peer: str, forwarded: str | None = None) -> Request:
+        headers = []
+        if forwarded is not None:
+            headers.append((b"x-forwarded-for", forwarded.encode()))
+        return Request({"type": "http", "method": "GET", "path": "/",
+                        "headers": headers, "client": (peer, 51234),
+                        "query_string": b"", "scheme": "http"})
+
+    assert net.is_loopback(_request("127.0.0.1"))
+    assert not net.is_loopback(_request("10.1.2.3"))
+    # Ровно тот запрос, который открывал редактор secrets.env снаружи.
+    assert not net.is_loopback(_request("10.1.2.3", "127.0.0.1"))
+    assert not net.is_loopback(_request("10.1.2.3", "127.0.0.1, 10.1.2.3"))
+    # И адрес для журнала берётся не из заголовка, пока прокси не доверенный.
+    assert net.client_ip(_request("10.1.2.3", "127.0.0.1")) == "10.1.2.3"
+
+
+def test_a_trusted_proxy_reveals_the_real_client(service, monkeypatch):
+    """За доверенным прокси адрес клиента берётся из цепочки, справа налево."""
+    from starlette.requests import Request
+
+    from vistest.api import net
+
+    monkeypatch.setenv(net.ENV_TRUSTED, "10.0.0.1")
+    net._trusted.cache_clear()
+
+    request = Request({"type": "http", "method": "GET", "path": "/",
+                       "headers": [(b"x-forwarded-for", b"203.0.113.7, 10.0.0.1")],
+                       "client": ("10.0.0.1", 51234),
+                       "query_string": b"", "scheme": "http"})
+    assert net.client_ip(request) == "203.0.113.7"
+    # Но локальным он от этого не становится: процессы запускать по-прежнему
+    # можно только с самой машины.
+    assert not net.is_loopback(request)

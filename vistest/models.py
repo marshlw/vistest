@@ -58,7 +58,7 @@ class DiffRegion:
     element_text: str | None = None
     perceptual_distance: float | None = None
     gate_probability: float | None = None   # оценка обучаемого гейта, 0..1
-    caption: str | None = None     # из LLM
+    caption: str | None = None     # внешний аннотатор, vistest/ai/hooks.py
     suppressed_by: str | None = None  # причина, если регион отброшен
     # Номер крупного плана этого региона (`region_<N>` в артефактах), если он
     # рисовался. Проставляется при рендере: сопоставлять картинку с регионом по

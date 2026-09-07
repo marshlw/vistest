@@ -134,3 +134,67 @@ def test_runner_survives_the_registry(tmp_path, monkeypatch):
     assert back.runner == "command"
     assert back.command == ["npx", "playwright", "test"]
     assert back.mode() == "observe"
+
+
+# --------------------------------------------------------------------------- #
+#  Зависимости чужого набора
+# --------------------------------------------------------------------------- #
+def test_dependencies_are_installed_by_their_own_manager(tmp_path, monkeypatch):
+    """Кнопка всегда ставила pip-пакеты в окружение VisTest.
+
+    Для питоновского набора это верно: он этим окружением и гоняется. Для Node
+    это не частичный ответ, а неправильный — pip не поставит
+    `@playwright/test`, а сообщение об успехе после этого прямая ложь.
+    """
+    from vistest.external import install_dependencies
+    from vistest.suites import forget
+
+    forget()
+    p = _project(tmp_path, runner="command", command=["npx", "playwright", "test"])
+    (p.root_path / "playwright.config.ts").write_text("export default {};\n")
+    (p.root_path / "yarn.lock").write_text("")
+
+    seen = {}
+    monkeypatch.setattr("vistest.external._spawn",
+                        lambda cmd, cwd, env, **kw: seen.update(
+                            cmd=cmd, cwd=cwd) or (0, []))
+    monkeypatch.setattr("vistest.external.shutil.which", lambda _x: "/usr/bin/yarn")
+    try:
+        assert install_dependencies(p, log=lambda *_a: None) == 0
+    finally:
+        forget()
+
+    assert seen["cmd"] == ["yarn", "install", "--frozen-lockfile"], \
+        "локфайл — единственный надёжный признак менеджера"
+    assert seen["cwd"] == p.root_path, "ставим в ИХ корне, а не в нашем"
+
+
+def test_an_unknown_stack_says_so_instead_of_pretending(tmp_path):
+    """Молча ничего не сделать — хуже, чем сказать «не знаю как»."""
+    from vistest.external import install_dependencies
+    from vistest.suites import forget
+
+    forget()
+    p = _project(tmp_path, runner="command", command=["./run.sh"])
+    said = []
+    try:
+        code = install_dependencies(p, log=said.append)
+    finally:
+        forget()
+
+    assert code == 1
+    assert any("does not know how" in line for line in said), said
+    assert any("ingest" in line for line in said), "назван путь, который работает"
+
+
+def test_a_pytest_project_keeps_the_old_behaviour(tmp_path, monkeypatch):
+    """Питоновский набор гоняется нашим окружением — pip там и нужен."""
+    from vistest import external
+
+    p = _project(tmp_path)
+    called = []
+    monkeypatch.setattr(external, "install_requirements",
+                        lambda project, **kw: called.append(project) or 0)
+
+    assert external.install_dependencies(p, log=lambda *_a: None) == 0
+    assert called == [p]

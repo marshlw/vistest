@@ -109,6 +109,41 @@ const ICONS={
    его название. «Runs — список прогонов» не стоит того, чтобы всплывать; «чем
    очередь решений отличается от списка прогонов» — стоит, потому что именно
    об этом спрашивают в первый день. */
+/* Полоса про лицензию.
+
+   Показывается только тогда, когда есть что сказать: льготный срок, отказ
+   после него или превышенный лимит. Молчит всё остальное время — баннер,
+   висящий постоянно, перестают видеть на третий день, и тогда он не сработает
+   ровно в тот момент, ради которого написан. */
+async function licenseBanner(){
+  let st;
+  try{st=await api('/api/license');}catch(e){return;}
+  const old=$('#licBanner');if(old)old.remove();
+  const over=st.over_limit&&(st.over_limit.users||st.over_limit.projects);
+  if(!st.expired&&!over)return;
+
+  const bar=el('div','info'+(st.blocked?' bad':' warn'));
+  bar.id='licBanner';
+  const parts=[];
+  if(st.blocked){
+    parts.push(`The licence ended on ${esc(st.expires_at)} and the grace `
+      +`period is over — new runs are refused. Baselines and history stay `
+      +`readable.`);
+  }else if(st.expired){
+    parts.push(`The licence ended on ${esc(st.expires_at)}. `
+      +`${st.grace_days+st.days_left} days of grace left, then new runs stop.`);
+  }
+  if(over){
+    parts.push('The installation is over its licensed limits: '
+      +(st.over_limit.projects?`${st.usage.projects} projects of ${st.limits.projects}. `:'')
+      +(st.over_limit.users?`${st.usage.users} active users of ${st.limits.users}.`:''));
+  }
+  bar.innerHTML=parts.join(' ')+' <a href="#/settings">Licence settings</a>';
+  bar.style.margin='0 0 14px';
+  const host=$('#screen');
+  if(host&&host.parentNode)host.parentNode.insertBefore(bar,host);
+}
+
 const NAV=[
   {grp:'REVIEW'},
   {v:'decisions',label:'Decisions',count:'failed',
@@ -260,21 +295,35 @@ function route(){
 window.addEventListener('hashchange',route);
 
 /* --------- project switcher --------- */
-$('#projPill').onclick=async e=>{
-  closeMenus();e.stopPropagation();
-  const m=el('div','menu');m.style.top='58px';m.style.left='26px';
-  m.innerHTML='<div class="mi-head">PROJECT</div>';
-  m.append(mkProj('*','all projects'));
-  try{(await api('/api/run-projects')).forEach(p=>m.append(mkProj(p.name,`${p.name}`,p.runs)));}catch{}
-  document.body.append(m);stopClose(m);
+/* Сам выбор, его хранение и меню живут в `project.js`: это одна сущность на
+   весь интерфейс, и собирать её из трёх роутов посреди каркаса значило бы
+   завести второе место, где известно, что такое проект.
+
+   Здесь остаётся только то, что принадлежит шапке, — открыть меню и закрыть
+   его. `aria-expanded` переписывается руками: `closeMenus()` зовётся отовсюду
+   (щелчок по документу, Esc, переход по роуту), и без этого атрибут остался бы
+   в `true` навсегда — то есть шапка говорила бы скринридеру «меню открыто»
+   там, где его давно нет. */
+$('#projPill').onclick=e=>{
+  e.stopPropagation();
+  const open=$('#projPill').getAttribute('aria-expanded')==='true';
+  closeMenus();
+  if(open)return;
+  if((state.projects||[]).length<2)return;
+  const m=projectSwitcher();
+  $('#projPill').setAttribute('aria-expanded','true');
+  /* Меню исчезает не только по нашей команде. Наблюдатель дешевле, чем
+     обещание всем вызывающим `closeMenus()` не забыть про атрибут. */
+  if(typeof MutationObserver==='function'){
+    const stop=new MutationObserver(()=>{
+      if(!m.isConnected){
+        const pill=$('#projPill');
+        if(pill)pill.setAttribute('aria-expanded','false');
+        stop.disconnect();
+      }});
+    stop.observe(document.body,{childList:true});
+  }
 };
-function mkProj(val,label,runs){
-  const b=el('button',null,`${esc(label)}${runs!=null?` <span class="faint mono" style="margin-left:auto;font-size:11px">${runs}</span>`:''}`);
-  b.style.justifyContent='space-between';
-  if(val===state.project)b.style.fontWeight='700';
-  b.onclick=()=>{closeMenus();state.project=val;$('#projName').textContent=label;palData=null;refreshCounts();route();};
-  return b;
-}
 
 /* --------- sidebar counts + rig --------- */
 /* Счётчики боковой панели — ОДНОЙ пачкой, а не семью запросами подряд.
@@ -292,6 +341,11 @@ function mkProj(val,label,runs){
 const quiet=p=>p.catch(()=>null);
 async function refreshCounts(){
   const scope=state.project;
+  /* Пока проект не выбран — считать нечего, а семь запросов с пустым
+     `project=` вернули бы числа чужого набора. Такое бывает ровно один раз:
+     между первой отрисовкой и ответом `/api/auth/me`. */
+  if(!scope)return;
+  const sq='?project='+encodeURIComponent(scope);
   const [c,m,rp,sc,pj,t,pend]=await Promise.all([
     /* Бейдж у «Runs» читается как «сколько ждёт меня». Стояло же там поле
        `failed` САМОГО СВЕЖЕГО прогона: последний прогон зелёный — бейдж пуст,
@@ -299,26 +353,33 @@ async function refreshCounts(){
        считает бэкенд по всей истории, вместе со счётчиками фильтров: считать
        их на клиенте по загруженной странице значило показывать «3» там, где
        триста. */
-    quiet(api('/api/runs/counts?project='+encodeURIComponent(scope))),
-    // Доля ложных падений в навигации. Метрика по одному проекту; при «всех
-    // проектах» смешивать её нельзя — доверие к красному у каждого набора своё.
-    scope!=='*'
-      ? quiet(api('/api/metrics/summary?project='+encodeURIComponent(scope)))
-      : Promise.resolve(null),
+    quiet(api('/api/runs/counts'+sq)),
+    // Доля ложных падений в навигации. Метрика по одному проекту — доверие к
+    // красному у каждого набора своё, и смешивать их было бы враньём. Сводного
+    // режима «все проекты» больше нет, поэтому и условия здесь больше нет.
+    quiet(api('/api/metrics/summary'+sq)),
     // Ключи проектов, у которых есть прогоны: по ним настраивается порог на
     // проект. Берём отсюда, а не из /api/projects — тот требует роль admin и,
     // по умолчанию, запроса с машины сервиса.
     quiet(api('/api/run-projects')),
-    /* Счётчик в навигации — по ВСЕЙ установке, а не по текущему набору.
-       `/api/baselines/detail` без параметров отвечает про собственный набор
-       сервиса, и рядом с подключённым проектом на одиннадцать эталонов в меню
-       стоял ноль. Число в навигации отвечает на «есть ли у меня эталоны
-       вообще», а не на «что сейчас открыто». */
+    /* Счётчик эталонов — по набору ЗАКРЕПЛЁННОГО проекта.
+
+       Он дважды переезжал. Сначала считался по `/api/baselines/detail` без
+       параметров — то есть по собственному набору сервиса, — и рядом с
+       подключённым проектом на одиннадцать эталонов в меню стоял ноль. Тогда
+       его развернули на всю установку: «есть ли у меня эталоны вообще».
+
+       Теперь проект закреплён в шапке, и «вся установка» стала неправдой с
+       другой стороны: человек выбрал один проект, а в навигации стоит сумма
+       по всем — число, которое не сходится ни с одним экраном. Считаем по
+       тому набору, который человек и открывает щелчком по пункту. */
     quiet(api('/api/baselines/scopes')),
     quiet(api('/api/projects')),
-    /* Тесты — свои И подключённых проектов: в меню стоял ноль у человека,
-       у которого одиннадцать тестов лежат в подключённом репозитории. */
-    quiet(api('/api/tests')),
+    /* Тесты — свои И подключённого проекта. Ключ обязателен: без него роут
+       сканирует все подключения разом, и в меню стоит число, которого нет ни
+       на одной вкладке. */
+    quiet(api('/api/tests?project='+encodeURIComponent(
+      (currentProject()||{}).kind==='project'?scope:''))),
     // Только администратору: остальным этот роут ответит 403, и поймать его
     // молча здесь правильнее, чем показывать бейдж, которого для них нет.
     can('admin') ? quiet(api('/api/users/pending')) : Promise.resolve(null),
@@ -329,9 +390,19 @@ async function refreshCounts(){
         state.counts.runs=c.all||0;}
   state.counts.trust=m?(m.totals||{}).false_fail_rate:null;
   if(rp)state.projectKeys=rp.map(p=>p.name).filter(Boolean);
-  if(sc)state.counts.baselines=(sc.scopes||[]).reduce((a,x)=>a
-    +(x.platforms||[]).reduce((n,p)=>n+(p.count||0),0),0);
+  if(sc){
+    state.scopes=(sc.scopes||[]).filter(x=>x&&x.scope);
+    const here=state.scopes.find(x=>x.scope===currentScope());
+    state.counts.baselines=scopeTotal(here);
+  }
   if(pj)state.counts.projects=(pj.projects||[]).length;
+  /* Числа в меню выбора проекта — отсюда же, а не отдельным запросом.
+
+     Список проектов собирается один раз при входе, а вкладка живёт днями:
+     прогоны идут, эталоны снимаются, и меню показывало бы вчерашние числа.
+     Всё нужное уже приехало в этой же пачке — списывать его сюда дешевле,
+     чем звать те же три роута второй раз. */
+  refreshProjectCounts(rp,sc);
   if(t)state.counts.tests=(t.tests||[]).length+(t.project_tests||[]).length;
   if(pend)state.counts.requests=(pend.pending||[]).length;
   paintCounts();

@@ -195,13 +195,6 @@ class AIConfig:
     attribution_enabled: bool = True     # DOM → selector; works without models
     attribution_min_iou: float = 0.25
 
-    captioner_enabled: bool = False
-    captioner_provider: str = "anthropic"
-    captioner_model: str = "claude-haiku-4-5-20251001"
-    captioner_min_severity: float = 40.0
-    captioner_max_regions: int = 5
-    captioner_timeout_s: float = 30.0
-
 
 # --------------------------------------------------------------------------- #
 #  Artifact rendering
@@ -251,6 +244,11 @@ class ServiceConfig:
     push_artifacts: bool = True
     timeout_s: float = 15.0
     fail_open: bool = True              # an unavailable API does not fail the tests
+    # Токен приёма: токен проекта из «CI-токенов» или общий
+    # `VISTEST_INGEST_TOKEN`. В git не хранится — только имя переменной, —
+    # поэтому значение приезжает из окружения, а в `vistest.yaml` его быть не
+    # должно. Пусто на одиночной установке: там приём и так открыт.
+    token: str = ""
 
 
 @dataclass
@@ -364,6 +362,11 @@ class VisTestConfig:
             cfg.service = replace(cfg.service, api_url=v)
         if v := os.getenv("VISTEST_PROJECT"):
             cfg.service = replace(cfg.service, project=v)
+        # Два имени, потому что оба встречаются в дикой природе: у пайплайна,
+        # который уже льёт прогоны, переменная называется INGEST.
+        if v := (os.getenv("VISTEST_TOKEN")
+                 or os.getenv("VISTEST_INGEST_TOKEN")):
+            cfg.service = replace(cfg.service, token=v)
         if v := os.getenv("VISTEST_ROOT"):
             cfg.paths = replace(cfg.paths, root=v)
         if os.getenv("VISTEST_UPDATE_BASELINES", "").lower() in ("1", "true", "yes"):

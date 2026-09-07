@@ -32,7 +32,6 @@ services:
       VISTEST_API_URL: http://api:8420
       VISTEST_ROOT: /work/.vistest
       VISTEST_PROJECT: ${VISTEST_PROJECT:-default}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     # Без этого Chromium в контейнере падает на нехватке /dev/shm
     shm_size: 1gb
     ipc: host

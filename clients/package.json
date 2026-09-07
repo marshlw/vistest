@@ -1,0 +1,41 @@
+{
+  "name": "vistest-client",
+  "version": "0.1.0",
+  "description": "Send screenshots from any JavaScript test suite to a self-hosted VisTest service and get a real verdict back: regions, change classes, severity, history and review.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "./vistest.mjs",
+  "exports": {
+    ".": "./vistest.mjs",
+    "./playwright-reporter": "./playwright-reporter.mjs",
+    "./cypress": "./cypress.mjs"
+  },
+  "files": [
+    "vistest.mjs",
+    "playwright-reporter.mjs",
+    "cypress.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "visual-regression",
+    "screenshot-testing",
+    "playwright",
+    "cypress",
+    "puppeteer",
+    "webdriverio"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marshlw/visual-testing.git",
+    "directory": "clients"
+  },
+  "homepage": "https://github.com/marshlw/visual-testing#readme",
+  "bugs": "https://github.com/marshlw/visual-testing/issues",
+  "dependencies": {},
+  "scripts": {
+    "test": "node --check vistest.mjs && node --check playwright-reporter.mjs && node --check cypress.mjs"
+  }
+}

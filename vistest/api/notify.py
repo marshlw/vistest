@@ -305,6 +305,13 @@ TICK_S = float(os.getenv("VISTEST_NOTIFY_TICK_S", "300"))
 
 _ticker: threading.Thread | None = None
 _ticker_lock = threading.Lock()
+#  Сигнал остановки часов — чтобы остановка была остановкой, а не обещанием
+#  остановиться через час.
+_stop = threading.Event()
+
+
+def stop_ticker() -> None:
+    _stop.set()
 # Куда смотреть на следующем такте. Отдельно от потока, потому что поток один
 # на процесс, а база у него может смениться — так делает перезагрузка модуля
 # сервиса в тестах. Замкнуть `db` внутри потока значило бы, что часы всю жизнь
@@ -330,8 +337,10 @@ def ensure_ticker(db, *, base_url: str = "") -> threading.Thread | None:
         def loop() -> None:
             # Сначала спим: смысл в том, чтобы не дёргать сеть на старте
             # сервиса, когда база могла ещё не догнать состояние.
-            while True:
-                time.sleep(TICK_S)
+            #
+            # `wait`, а не `sleep`, — чтобы остановка была остановкой, а не
+            # обещанием остановиться через час.
+            while not _stop.wait(TICK_S):
                 target = _target["db"]
                 if target is None:
                     continue

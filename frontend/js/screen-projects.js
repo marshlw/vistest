@@ -126,7 +126,11 @@ function showProposal(r){
     p.name=nm.value.trim()||p.name||p.key;
     connect.disabled=true;connect.textContent='Connecting…';
     try{await api('/api/projects/'+encodeURIComponent(p.key),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
-      toast('Project connected','ok');box.innerHTML='';SCREENS.projects();refreshCounts();}
+      toast('Project connected','ok');box.innerHTML='';
+      /* Список проектов собирается при входе. Подключение и отключение —
+         единственные два места, где он меняется на глазах, и без
+         пересборки новый проект не появился бы в шапке до перезагрузки. */
+      await loadProjects();SCREENS.projects();refreshCounts();}
     catch(e){toast(String(e.message||e),'err');connect.disabled=false;connect.textContent='Connect';}
   };
 }
@@ -165,7 +169,14 @@ function projectCard(p){
         +blank.map(x=>esc(variantLabel(x.platform))).join(', '):'')
     : 'not captured yet';
 
-  c.innerHTML=`<div class="ph"><span class="nm">${esc(p.name||p.key)}</span><span class="tag ${tagcls}">${esc(adapter)}</span><span class="root">${esc(p.root||'')}</span></div>
+  /* Который из них закреплён в шапке — видно здесь же. Вкладка «Projects»
+     осталась единственным экраном, который показывает все проекты сразу (иначе
+     подключить второй было бы негде), и без метки она противоречит шапке. */
+  const pinned=(p.key||p.name)===state.project;
+  if(pinned)c.classList.add('pinned');
+  c.innerHTML=`<div class="ph"><span class="nm">${esc(p.name||p.key)}</span>${
+      pinned?'<span class="tag pin">pinned</span>':''
+    }<span class="tag ${tagcls}">${esc(adapter)}</span><span class="root">${esc(p.root||'')}</span></div>
     <div class="pj-rows">
       <div class="k">Tests</div><div class="v">${esc(p.tests||p.tests_glob||'—')}</div>
       <div class="k">Interpreter</div><div class="v">${esc(p.python||p.interpreter||'—')}</div>
@@ -177,7 +188,19 @@ function projectCard(p){
   if(vtotal){
     const open=el('button','btn sm','Open VisTest snapshots');
     open.onclick=()=>{
-      state.scope='project:'+(p.key||p.name);
+      /* Открыть чужой набор мимо шапки больше нельзя, и это не ограничение,
+         а починка: раньше кнопка перебивала `state.scope`, а закреплённый в
+         шапке проект оставался прежним — экран эталонов показывал один
+         проект, а всё остальное другой, и понять это можно было только по
+         числам, которые не сходятся. Кнопка ПЕРЕКЛЮЧАЕТ проект целиком. */
+      const key=p.key||p.name;
+      const target=(state.projects||[]).find(x=>x.id===key);
+      /* Список проектов собирается при входе и может не знать про этот: его
+         только что подключили, прогонов у него ещё нет. Тогда переключаем хотя
+         бы набор — иначе кнопка не делает ничего видимого, а это худший из
+         возможных ответов. */
+      if(target)selectProject(target,{quiet:true});
+      else setScopeOverride('project:'+key);
       /* Открывать надо НЕПУСТОЙ набор.
 
          Здесь стояла платформа, совпавшая с `current_platform`, а тот —
@@ -187,7 +210,13 @@ function projectCard(p){
          появляются в эталонах»: они были, просто открывался чужой набор, а
          `state.platform` после этого держался до конца сессии. */
       const best=bs.best_platform||(filled[0]&&filled[0].platform);
-      if(best)state.platform=best;
+      if(best){
+        state.platform=best;
+        const parts=parsePlatform(best);
+        state.browser=parts.browser||null;
+        state.viewport=parts.viewport||'';
+      }
+      refreshCounts();
       location.hash='#/baselines';
       if(state.view==='baselines')SCREENS.baselines();
     };
@@ -222,9 +251,18 @@ function projectCard(p){
     +'Whatever it finds is noise, not a regression — and it is the ceiling on what '
     +'every other number here can mean.');
   noise.onclick=()=>{location.hash='#/doctor';};
-  const deps=el('button','btn','Install missing libraries');
-  tip(deps,'Installs the system libraries the browser needs on this machine. Safe to '
-    +'press twice — what is already there is left alone.');
+  /* Подпись зависит от того, чем набор гоняется. «Install missing libraries»
+     над чужим `npm ci` — не мелкая неточность: кнопка тогда обещает поставить
+     недостающее в НАШЕ окружение, а ставит зависимости В ИХ репозитории. */
+  const cmdRunner=p.runner==='command';
+  const deps=el('button','btn',cmdRunner?'Install project dependencies'
+                                        :'Install missing libraries');
+  tip(deps,cmdRunner
+    ? 'Runs the project\'s own installer in its root — npm ci, yarn, mvn, dotnet '
+      +'restore — picked by the lockfile that is actually there. Their suite is '
+      +'started by their own command, so pip would not help it in any way.'
+    : 'Installs the system libraries the browser needs on this machine. Safe to '
+      +'press twice — what is already there is left alone.');
   deps.onclick=()=>installDeps(p);
   /* Снять страницу движком VisTest, не заводя ради этого теста. Кнопка стоит
      на карточке проекта, а не на «Baselines»: вопрос звучит как «добавь этот
@@ -238,6 +276,25 @@ function projectCard(p){
   more.setAttribute('aria-label','More actions for this project');
   tip(more,'Capture the VisTest set, reset it, edit the connection, disconnect the project.');
   more.onclick=e=>projectMenu(e,p);
+  /* Переключиться на проект — с его же карточки.
+
+     Кнопка в шапке есть, но здесь человек уже смотрит на конкретный проект и
+     решает про него; заставлять его после этого искать тот же выбор в другом
+     углу экрана — лишний шаг, который каждый раз надо вспоминать. Кнопка
+     первая в ряду и исчезает у закреплённого: «переключиться на текущий» —
+     это кнопка, которая ничего не делает, и место она занимает как настоящая. */
+  if(!pinned){
+    const pin=el('button','btn','Show this project');
+    tip(pin,'Pins it in the top bar: runs, decisions, baselines, tests and metrics '
+      +'below all start showing this project and nothing else.');
+    pin.onclick=()=>{
+      const target=(state.projects||[]).find(x=>x.id===(p.key||p.name));
+      if(!target)return toast('This project has neither runs nor baselines yet','err');
+      selectProject(target);
+      toast('Now showing «'+(target.label||target.id)+'»','ok');
+    };
+    acts.append(pin);
+  }
   acts.append(runP,pickP,runV,pickV,shot,noise,deps,more);c.append(acts);
   /* Полоса под карточкой была тёмной. Тёмный фон в этом интерфейсе означает
      ровно одно — «здесь машинный вывод»: полотна со скриншотами, код теста,
@@ -430,7 +487,11 @@ function runProject(p,opts){
 }
 async function installDeps(p){
   const key=p.key||p.name;
-  await runJobLog(api(`/api/projects/${encodeURIComponent(key)}/deps`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}),{title:'Install missing libraries',sub:'installing only what preflight reported as missing'});
+  const cmd=p.runner==='command';
+  await runJobLog(api(`/api/projects/${encodeURIComponent(key)}/deps`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}),
+    {title:cmd?'Install project dependencies':'Install missing libraries',
+     sub:cmd?'their own installer, in their own root'
+            :'installing only what preflight reported as missing'});
   SCREENS.projects();
 }
 async function showPreflight(p){
@@ -490,6 +551,13 @@ function projectMenu(e,p){
   m.append(mkItem('Environment & arguments',()=>{closeMenus();projectEnvModal(p);}));
   m.append(mkItem('Collect tests (diagnose)',()=>{closeMenus();showPreflight(p);}));
   m.append(mkItem('Run like in CI',()=>runProject(p,{ci:true})));
+  /* Третий вход: разобрать то, что их прогон уже оставил.
+
+     Запуск чужой командой требует, чтобы ИХ инструмент стоял в НАШЕМ образе —
+     для Node это решается образом, для JVM и .NET не решается разумной ценой.
+     Здесь порядок обратный: их CI гоняет тесты у себя, а сюда приезжает
+     каталог с картинками. Вердикт, регионы, история и ревью — те же. */
+  m.append(mkItem('Read ready artifacts…',()=>{closeMenus();ingestModal(p);}));
   m.append(mkDiv());
   /* Съёмка набора — тоже прогон, и браузер ей нужен не меньше.
 
@@ -520,8 +588,78 @@ function projectMenu(e,p){
   m.append(pickSnap);
   m.append(mkItem('Reset baselines',()=>{if(confirm('Reset the project baselines?'))runJob(api(`/api/projects/${key}/baselines/reset`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}),{title:'Baseline reset'});}));
   m.append(mkDiv());
-  m.append(mkItem('Disconnect the project',async()=>{if(confirm('Disconnect the project from VisTest?')){try{await api('/api/projects/'+key,{method:'DELETE'});toast('Disconnected','ok');SCREENS.projects();refreshCounts();}catch(err){toast(String(err.message||err),'err');}}}));
+  m.append(mkItem('Disconnect the project',async()=>{if(confirm('Disconnect the project from VisTest?')){try{await api('/api/projects/'+key,{method:'DELETE'});toast('Disconnected','ok');
+      /* Отключённый проект мог быть закреплён: `loadProjects()` не найдёт
+         сохранённый ключ и выберет непустой соседний — это лучше, чем
+         шапка с именем того, чего больше нет. */
+      await loadProjects();SCREENS.projects();refreshCounts();}catch(err){toast(String(err.message||err),'err');}}}));
   document.body.append(m);stopClose(m);
+}
+
+/* Разбор готовых артефактов: их прогон уже был, мы читаем результат.
+
+   Каталоги спрашиваются, а не угадываются: профиль знает штатные места
+   инструмента (`test-results` у Playwright, `cypress/snapshots` у Cypress), но
+   пайплайн волен положить их куда угодно, и молча ничего не найти — худший
+   исход. */
+function ingestModal(p){
+  const key=p.key||p.name;
+  const wrap=el('div');
+  wrap.innerHTML=`<div class="mhead"><div><h3>Read ready artifacts · ${esc(p.name||key)}</h3>
+    <div class="msub">Their run has already happened. We read what it left.</div></div>
+    <button class="mclose" aria-label="Close">×</button></div>`;
+  const body=el('div','pf-body');wrap.append(body);
+  openModal(wrap);$('.mclose',wrap).onclick=closeModal;
+
+  body.append(el('div','info-note',
+    'Nothing is started here. VisTest reads the pictures your own run has '
+    + 'already left behind, judges them with its engine and records a run in '
+    + 'the history. Use it when the suite runs in your CI — a JVM or .NET '
+    + 'suite has no business being rebuilt inside the VisTest image.'));
+
+  const ingDirsLbl=el('div','field-lbl','Folders with the pictures');
+  ingDirsLbl.style.marginTop='16px';body.append(ingDirsLbl);
+  const dirs=el('textarea','inp');
+  dirs.style.cssText='margin:0;width:100%;font-family:var(--mono);font-size:13px';
+  dirs.rows=3;dirs.value=(p.search_dirs||[]).join('\n');
+  dirs.placeholder='test-results';
+  body.append(dirs);
+  const ingDirsHint=el('div','muted','One per line, relative to the project '
+    + 'root. Empty means the folders the «'+esc(p.suite_resolved||'auto')
+    + '» profile already knows.');
+  ingDirsHint.style.cssText='font-size:12.5px;margin-top:8px';
+  body.append(ingDirsHint);
+
+  const ingBrLbl=el('div','field-lbl','Which browser produced them');
+  ingBrLbl.style.marginTop='16px';body.append(ingBrLbl);
+  const br=el('select','inp');br.style.cssText='margin:0;max-width:260px';
+  br.innerHTML='<option value="">not specified</option>'
+    +'<option value="chromium">chromium</option>'
+    +'<option value="firefox">firefox</option>'
+    +'<option value="webkit">webkit</option>';
+  body.append(br);
+  const ingBrHint=el('div','muted','The browser is part of the baseline key, '
+    + 'not a label: text rendering differs between engines, and a set taken in '
+    + 'one is not a baseline for another.');
+  ingBrHint.style.cssText='font-size:12.5px;margin-top:8px';
+  body.append(ingBrHint);
+
+  const acts=el('div');acts.style.cssText='display:flex;gap:10px;margin-top:20px';
+  const go=el('button','btn dark','Read');
+  const cancel=el('button','btn','Cancel');cancel.onclick=closeModal;
+  acts.append(go,cancel);body.append(acts);
+
+  go.onclick=()=>{
+    const body_={dirs:dirs.value.split('\n').map(x=>x.trim()).filter(Boolean),
+                 browser:br.value};
+    closeModal();
+    runJobLog(api(`/api/projects/${encodeURIComponent(key)}/ingest`,
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify(body_)}),
+      {title:'Read ready artifacts',
+       sub:'nothing is started — the pictures are judged as they are',
+       then:()=>SCREENS.projects()});
+  };
 }
 
 /* Переменные окружения и аргументы pytest подключённого проекта.
@@ -598,6 +736,74 @@ function projectEnvModal(p){
     paint();
   };
 
+  // --- каким инструментом ---
+  //
+  // Профиль отвечает на три вопроса, которые различаются между экосистемами:
+  // чем запускать, куда инструмент кладёт картинки и как он их называет.
+  // Раньше все три ответа были зашиты под pytest, и подключить Playwright
+  // означало «подключить и не получить ни одной пары».
+  const suiteLbl=el('div','field-lbl','Testing tool');suiteLbl.style.marginTop='22px';
+  body.append(suiteLbl);
+  const suite=el('select','inp');suite.style.cssText='margin:0;max-width:420px';
+  suite.innerHTML='<option value="auto">determine automatically</option>';
+  suite.value=p.suite||'auto';
+  body.append(suite);
+  const suiteHint=el('div','muted','');
+  suiteHint.style.cssText='font-size:12.5px;margin-top:8px';
+  body.append(suiteHint);
+  const paintSuite=()=>{
+    if(suite.value==='auto'){
+      suiteHint.innerHTML=p.suite_resolved
+        ? 'Recognised by the files in their repository: <b>'+esc(p.suite_title||p.suite_resolved)+'</b>. '
+          +esc(p.suite_note||'')
+        : 'Decided by the markers in their repository — playwright.config, cypress.config, backstop.json, pom.xml, conftest.py.';
+    }else{
+      const o=suite.options[suite.selectedIndex];
+      suiteHint.textContent=(o&&o.dataset.note)||'';
+    }
+  };
+  paintSuite();
+  suite.onchange=paintSuite;
+  api('/api/suites').then(r=>{
+    (r.suites||[]).forEach(x=>{
+      const o=el('option','',x.title);o.value=x.id;o.dataset.note=x.note||'';
+      suite.append(o);
+    });
+    suite.value=p.suite||'auto';paintSuite();
+  }).catch(()=>{});
+
+  // --- где искать картинки ---
+  const dirsLbl=el('div','field-lbl','Where the pictures land');dirsLbl.style.marginTop='18px';
+  body.append(dirsLbl);
+  const dirs=el('textarea','inp');
+  dirs.style.cssText='margin:0;width:100%;font-family:var(--mono);font-size:13px';
+  dirs.rows=Math.max(2,(p.search_dirs||[]).length+1);
+  dirs.value=(p.search_dirs||[]).join('\n');
+  dirs.placeholder='test-results\nbuild/screenshots';
+  body.append(dirs);
+  const dirsHint=el('div','muted','One folder per line, relative to the '
+    + 'project root — in addition to the ones the profile already knows. '
+    + 'Needed when the output path is decided by their own config.');
+  dirsHint.style.cssText='font-size:12.5px;margin-top:8px';
+  body.append(dirsHint);
+
+  // --- как называются снимки ---
+  const nameLbl=el('div','field-lbl','Snapshot naming');nameLbl.style.marginTop='18px';
+  body.append(nameLbl);
+  const naming={};
+  [['actual','the fresh picture','(?P<name>.+)-actual\\.png'],
+   ['expected','their own baseline copy beside it','(?P<name>.+)-expected\\.png'],
+   ['diff','their diff picture','(?P<name>.+)-diff\\.png']].forEach(([k,what,ex])=>{
+    const r=el('div');r.style.cssText='display:flex;gap:10px;align-items:center;margin-top:6px';
+    const n=el('div','muted',what);n.style.cssText='min-width:220px;font-size:12.5px';
+    const v=el('input','inp');v.style.cssText='margin:0;flex:1;font-family:var(--mono);font-size:13px';
+    v.placeholder=ex;v.value=(p.naming||{})[k]||'';
+    naming[k]=v;r.append(n,v);body.append(r);
+  });
+  body.append(el('div','info-note',
+    'Fill these in only when the run says it found no pairs. A rule is a regular expression over the file name, '
+    + 'and the part that is the snapshot name goes into a <code>(?P&lt;name&gt;…)</code> group. Left empty, the profile decides.'));
+
   // --- сохранение ---
   const acts=el('div');acts.style.cssText='display:flex;gap:10px;margin-top:20px';
   const save=el('button','btn dark','Save');
@@ -617,7 +823,10 @@ function projectEnvModal(p){
     const list=args.value.split('\n').map(s=>s.trim()).filter(Boolean);
     const cmd=runner.value==='command';
     if(cmd&&!list.length)return toast('The run command is empty','err');
-    const patch={env,runner:runner.value};
+    const patch={env,runner:runner.value,suite:suite.value,
+      search_dirs:dirs.value.split('\n').map(x=>x.trim()).filter(Boolean),
+      naming:Object.fromEntries(Object.entries(naming)
+        .map(([k,v])=>[k,v.value.trim()]).filter(([,v])=>v))};
     patch[cmd?'command':'pytest_args']=list;
     save.disabled=true;const t=save.textContent;save.textContent='Saving…';
     try{

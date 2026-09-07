@@ -12,7 +12,8 @@
   1. attribution   — дёшево, без сети, даёт имена элементам
   2. perceptual    — локальная модель, отсеивает «математически заметное,
                      но человеком незаметное»
-  3. captioner     — дорого и в сети, только для того, что выжило
+  3. annotator     — необязательный внешний слой (см. vistest/ai/hooks.py):
+                     только описывает, вердикт не меняет
 
 Любая ступень может отсутствовать. Ни одна не имеет права уронить прогон.
 """
@@ -26,8 +27,8 @@ import numpy as np
 from ..config import AIConfig
 from ..models import ChangeKind, CompareResult, DiffRegion
 from .attribution import attribute, diagnose, dom_changes
-from .captioner import Captioner
 from .gate import RegionGate, default_model_path, features, guard
+from .hooks import RegionAnnotator, get_annotator
 from .perceptual import PerceptualModel
 
 log = logging.getLogger("vistest.ai")
@@ -41,6 +42,7 @@ class AIPipeline:
         dom_expected: dict | None = None,
         dom_actual: dict | None = None,
         gate: RegionGate | None = None,
+        annotator: RegionAnnotator | None = None,
     ):
         self.cfg = cfg or AIConfig()
         self.dom_expected = dom_expected
@@ -50,7 +52,7 @@ class AIPipeline:
             PerceptualModel(self.cfg.perceptual_model_path)
             if self.cfg.perceptual_enabled else None
         )
-        self._captioner = Captioner(self.cfg) if self.cfg.captioner_enabled else None
+        self._annotator = annotator if annotator is not None else get_annotator()
 
     def _load_gate(self) -> RegionGate | None:
         if not self.cfg.gate_enabled:
@@ -102,15 +104,11 @@ class AIPipeline:
             except Exception as e:
                 log.warning("perceptual: %s", e)
 
-        if self._captioner is not None:
+        if self._annotator is not None:
             try:
-                from ..render.artifacts import draw_heatmap
-
-                de_map = result.artifacts.get("_de_map")
-                heat = draw_heatmap(actual, de_map) if de_map is not None else actual
-                self._captioner.annotate(regions, expected, actual, heat)
+                self._apply_annotator(regions, expected, actual, result)
             except Exception as e:
-                log.warning("captioner: %s", e)
+                log.warning("annotator: %s", e)
 
         return regions
 
@@ -194,3 +192,28 @@ class AIPipeline:
                 r.kind = ChangeKind.NOISE
                 r.suppressed_by = f"perceptual:{d:.4f}<{self.cfg.perceptual_tolerance}"
                 r.severity = 0.0
+
+    # ------------------------------------------------------------------ #
+    def _apply_annotator(self, regions, expected, actual, result) -> None:
+        """Внешний аннотатор: только слова, вердикт откатывается.
+
+        Слепок трёх полей до вызова и сверка после. Правило, записанное
+        комментарием, нарушается молча; правило, записанное кодом, — нет.
+        """
+        annotator = self._annotator
+        if annotator is None or not regions:
+            return
+
+        before = [(r.kind, r.severity, r.suppressed_by) for r in regions]
+        try:
+            annotator.annotate(regions, expected, actual, result)
+        finally:
+            reverted = 0
+            for r, keep in zip(regions, before, strict=False):
+                if (r.kind, r.severity, r.suppressed_by) != keep:
+                    r.kind, r.severity, r.suppressed_by = keep
+                    reverted += 1
+            if reverted:
+                log.warning(
+                    "the annotator tried to change the verdict on %d region(s)"
+                    " — reverted", reverted)

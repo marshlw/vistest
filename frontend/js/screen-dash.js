@@ -19,7 +19,7 @@ SCREENS.dash=async function(){
   const page=el('div','page mid');s.append(page);
   const head=el('div','head');
   const left0=el('div','grow');
-  left0.innerHTML=`<div class="eyebrow">HEALTH · ${days} DAYS</div>
+  left0.innerHTML=`<div class="eyebrow">HEALTH · ${esc(projectLabel())} · ${days} DAYS</div>
     <h1 class="h1">Can a red run be trusted?</h1>`;
   head.append(left0);
   const ctr=el('div','acts');
@@ -167,13 +167,13 @@ SCREENS.dash=async function(){
       val.map(x=>[x.name,`${x.caught} caught`]),true));
   }
 
-  // Разбивка по проектам — при «все проекты» всё раньше схлопывалось в одно число.
-  const bp=m.by_project||[];
-  if(state.project==='*'&&bp.length>1){
-    page.append(listCard('By project',
-      'Which suite the failures actually come from.',
-      bp.map(x=>[x.project,`${x.failed} fail · ${x.unreviewed} waiting · ${x.comparisons} total`]),true));
-  }
+  /* Разбивки по проектам здесь больше нет.
+
+     Она существовала ради режима «все проекты» — единственного места, где на
+     этом экране могли смешаться два набора. Режима нет: доверие к красному у
+     каждого набора своё, усреднять его между чужими друг другу проектами
+     значит показывать число, по которому нельзя принять ни одного решения.
+     Метрика второго проекта — в одном щелчке по шапке. */
 };
 
 function listCard(title,note,rows,wide){

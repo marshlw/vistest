@@ -28,9 +28,13 @@ if [ -n "${VISTEST_VNC_PORT:-}" ]; then
     >/dev/null 2>&1 &
 fi
 
-# --proxy-headers обязателен. Без него uvicorn видит схему запроса как http
-# даже тогда, когда снаружи TLS терминирует nginx или Caddy, — и кука сессии
-# никогда не получает флаг Secure. Если прокси один и известен, сузьте список
-# доверенных источников переменной VISTEST_FORWARDED_ALLOW_IPS.
-exec uvicorn vistest.api.main:app --host 0.0.0.0 --port 8420 \
-  --proxy-headers --forwarded-allow-ips="${VISTEST_FORWARDED_ALLOW_IPS:-*}"
+# Без --proxy-headers намеренно: заголовки прокси разбирает сам сервис
+# (vistest/api/net.py), с явным списком доверенных адресов в
+# VISTEST_TRUSTED_PROXIES. У uvicorn с `--forwarded-allow-ips *` адрес клиента
+# берётся из первого элемента X-Forwarded-For, то есть из значения, которое
+# пишет сам вызывающий, — а по адресу решается, можно ли с этого запроса
+# запускать процессы на машине сервиса.
+#
+# Флаг Secure на куке: либо задайте VISTEST_TRUSTED_PROXIES (тогда схема
+# берётся из X-Forwarded-Proto от него), либо VISTEST_COOKIE_SECURE=1.
+exec uvicorn vistest.api.main:app --host 0.0.0.0 --port 8420

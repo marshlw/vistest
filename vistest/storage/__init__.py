@@ -9,6 +9,7 @@
 from .base import BaselineRecord, BaselineStore
 from .external import ExternalBaselineStore
 from .fs import FileBaselineStore, split_project
+from .pair import SiblingBaselineStore
 
 __all__ = ["BaselineStore", "BaselineRecord", "FileBaselineStore",
-           "ExternalBaselineStore", "split_project"]
+           "ExternalBaselineStore", "SiblingBaselineStore", "split_project"]

@@ -6,6 +6,9 @@ import json
 import os
 import re
 import shutil
+import threading as _threading
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import (
@@ -31,8 +34,10 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import VisTestConfig
 from . import decisions as _decisions
+from . import license as _license
 from . import logs as _logs
 from . import metrics as _metrics
+from . import net as _net
 from . import notify as _notify
 from . import retention as _retention
 from . import rights as _rights
@@ -42,6 +47,7 @@ from .check import router as check_router
 from .db import Database
 from .doctor import router as doctor_router
 from .jobs import runner as _jobs_runner
+from .license import router as license_router
 from .projects import router as projects_router
 from .record import router as record_router
 from .settings import router as settings_router
@@ -94,7 +100,8 @@ _notify.ensure_ticker(db, base_url=(os.getenv("VISTEST_PUBLIC_URL") or "").strip
 # десятки гигабайт за пару месяцев. Выключено по умолчанию: это единственное
 # фоновое действие, которое удаляет данные.
 _retention.ensure_ticker(db, lambda rid, key: _drop_run_files(rid, key),
-                         lambda: _storage_kb())
+                         lambda: _storage_kb(),
+                         checks_dir=ARTIFACTS / "checks")
 
 # --------------------------------------------------------------------------- #
 #  Who may reach the API at all
@@ -112,7 +119,8 @@ _retention.ensure_ticker(db, lambda rid, key: _drop_run_files(rid, key),
 #  route added tomorrow is protected by default, and opening one is a
 #  deliberate line in the list below.
 # --------------------------------------------------------------------------- #
-LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+#  «Локально» считается по адресу СОЕДИНЕНИЯ, а не по заголовку — см.
+#  `api/net.py`, там же записано, почему это отдельный модуль.
 
 #  Reachable without a session, and each for a stated reason.
 PUBLIC_EXACT = {
@@ -131,17 +139,26 @@ PUBLIC_EXACT = {
     "/api/auth/setup",
     "/api/auth/register",
     "/favicon.ico",
+    # Скрипт стабилизации. Данных в нём нет вовсе: это тот же код заморозки
+    # анимаций и снятия DOM, что уезжает в пакете на PyPI. Клиент на другом
+    # языке забирает его ПЕРВЫМ, до всякой проверки, и закрытый роут здесь
+    # означал бы, что снимки из чужого набора несопоставимы с нашими — при
+    # том что скрывать в нём нечего.
+    "/api/stabilize.js",
 }
-PUBLIC_PREFIXES = ("/ui", "/api/auth/invite/", "/docs", "/redoc", "/openapi.json")
+#  Схема API до входа не отдаётся: это карта всех роутов сервиса, и
+#  открытой она была по недосмотру, а не по решению. Включается на время
+#  разбора: VISTEST_DOCS=on (см. `_docs_enabled`).
+PUBLIC_PREFIXES = ("/ui", "/api/auth/invite/")
 
 
 def _client_host(request: Request) -> str:
-    return (request.client.host if request.client else "") or ""
+    """Адрес клиента для журнала: за доверенным прокси — настоящий."""
+    return _net.client_ip(request)
 
 
 def _is_loopback(request: Request) -> bool:
-    host = _client_host(request)
-    return host in LOOPBACK_HOSTS or host.startswith("127.")
+    return _net.is_loopback(request)
 
 
 def open_install_allowed(request: Request) -> bool:
@@ -211,19 +228,167 @@ def _metrics_token_ok(request: Request) -> bool:
     return bool(supplied) and _hmac.compare_digest(supplied, expected)
 
 
+# --------------------------------------------------------------------------- #
+#  Заголовки безопасности и защита от запроса с чужой страницы
+# --------------------------------------------------------------------------- #
+#  Инлайн-скриптов в интерфейсе нет — только `<script src>`, поэтому
+#  `script-src 'self'` ничего не ломает. Инлайн-стили есть (атрибут `style` в
+#  разметке), отсюда 'unsafe-inline' именно для стилей: убрать его — отдельная
+#  работа по разметке, а не строчка в заголовке.
+#
+#  `frame-ancestors 'none'` здесь важнее остального: «Принять как эталон» —
+#  единственное необратимое действие в интерфейсе, и кликджекинг на нём стоит
+#  переписанного эталона.
+CSP_UI = ("default-src 'self'; "
+          "img-src 'self' data: blob:; "
+          "style-src 'self' 'unsafe-inline'; "
+          "script-src 'self'; "
+          "connect-src 'self'; "
+          "font-src 'self' data:; "
+          "object-src 'none'; "
+          "base-uri 'none'; "
+          "form-action 'self'; "
+          "frame-ancestors 'none'")
+
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    # Ни одна из этих возможностей интерфейсу не нужна, и объявить это дешевле,
+    # чем однажды объяснять, почему страница просит микрофон.
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+}
+
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+#  Версия в адресе.
+#
+#  Клиенты для JS и JVM уже прибиты к путям `/api/...`, и первое же изменение
+#  контракта сломает их без предупреждения — а обновлять их будет не тот, кто
+#  выпускает VisTest, а покупатель лицензии, у которого свой цикл релизов.
+#
+#  Поэтому появляется `/api/v1/...` — тот же самый набор роутов, доступный по
+#  стабильному адресу. Не копия роутов и не второй роутер: префикс снимается
+#  до маршрутизации, то есть один обработчик обслуживает оба адреса и разойтись
+#  им нечем. Когда контракт однажды изменится, `/api/v2` будет отдельным
+#  роутером, а `/api/...` без версии останется тем, чем он был.
+API_VERSION_PREFIX = "/api/v1/"
+
+
+async def _api_version(request: Request, call_next):
+    path = request.scope.get("path", "")
+    if path.startswith(API_VERSION_PREFIX):
+        request.scope["path"] = "/api/" + path[len(API_VERSION_PREFIX):]
+        request.scope["raw_path"] = request.scope["path"].encode()
+    return await call_next(request)
+
+
+#  Потолок на тело запроса.
+#
+#  Пределы стоят у каждой двери, куда что-то грузят (снимок, артефакт, архив
+#  проекта), и это правильно: там они знают, что именно принимают. Но у роутов,
+#  принимающих JSON, потолка нет вовсе, а `POST /api/runs` разбирает тело
+#  целиком, до всякой проверки. Один запрос с телом в гигабайт кладёт процесс,
+#  и по логам это выглядит как «сервис молча умер».
+#
+#  Здесь общий предел на всё остальное — большой, чтобы не мешать нормальной
+#  работе, и конечный, чтобы «нормальной» осталась только она. Загрузки его не
+#  касаются: у них свой, более строгий.
+MAX_BODY_BYTES = int(os.getenv("VISTEST_MAX_BODY_MB", "64")) * 1024 * 1024
+_STREAMED_PATHS = ("/api/check", "/api/projects/upload")
+
+
+async def _body_limit(request: Request, call_next):
+    if request.method.upper() in UNSAFE_METHODS:
+        path = request.url.path
+        streamed = path.endswith("/artifacts") or any(
+            path.startswith(p) for p in _STREAMED_PATHS)
+        if not streamed:
+            declared = request.headers.get("content-length")
+            # `Content-Length` пишет клиент, и верить ему нельзя — но отказать
+            # по нему можно: честный клиент получит внятный ответ, не отправив
+            # тело, а нечестный упрётся в тот же предел ниже, при чтении.
+            if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"The request body is larger than "
+                                       f"{MAX_BODY_BYTES // (1024 * 1024)} MB"})
+    return await call_next(request)
+
+
+async def _security_headers(request: Request, call_next):
+    """Заголовки на каждый ответ.
+
+    HSTS сознательно НЕ ставится: сервис не знает, доступен ли он по HTTPS, а
+    ошибочный HSTS на инсталляции без TLS — это браузер, который отказывается
+    её открывать вовсе, и лечится это очисткой настроек у каждого сотрудника.
+    Его ставит тот, кто терминирует TLS.
+    """
+    response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    if request.url.path == "/" or request.url.path.startswith("/ui"):
+        response.headers.setdefault("Content-Security-Policy", CSP_UI)
+    return response
+
+
+def _same_origin(request: Request) -> bool:
+    """Пришёл ли изменяющий запрос со страницы самого сервиса.
+
+    Защита от запроса, отправленного чужой страницей на куке пользователя.
+    Сейчас от этого спасает `SameSite=lax`, но это свойство КУКИ, а не решение
+    сервиса: администратор, задавший `VISTEST_CORS_ORIGINS`, разрешает
+    доверенным страницам ходить сюда с учётными данными — и тогда единственная
+    преграда исчезает.
+
+    Проверяется `Origin`: браузер шлёт его на любой межсайтовый запрос, и
+    подделать его страница не может. Клиенты вне браузера (CI, curl, наши же
+    клиенты на других языках) `Origin` не присылают вовсе — их это правило не
+    касается и сломать интеграции не может.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    if origin.rstrip("/") in {o.rstrip("/") for o in _cors_origins}:
+        return True
+
+    from urllib.parse import urlsplit
+
+    host = request.headers.get("host") or ""
+    return urlsplit(origin).netloc == host
+
+
 def _access_gate(request: Request) -> None:
     path = request.url.path
     method = request.method.upper()
 
     if method == "OPTIONS":
         return
+
+    # Изменяющий запрос со страницы чужого сайта не выполняется никогда — даже
+    # на публичных роутах: вход через чужую страницу тоже вход.
+    if method in UNSAFE_METHODS and not _same_origin(request):
+        raise HTTPException(
+            403, "This request came from another origin. If a tool of yours "
+                 "needs to reach the API, use a token instead of a browser "
+                 "session, or add the origin to VISTEST_CORS_ORIGINS.")
     if path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES):
         return
 
     # Run intake carries its own authentication: a CI runner has no browser and
     # no cookie, so it presents `VISTEST_INGEST_TOKEN` instead. `_require_ingest`
     # is stricter than this gate, not weaker.
-    if method == "POST" and (path == "/api/runs"
+    #
+    # `/api/check` is on this list for exactly the same reason, and leaving it
+    # off was a plain defect. It is documented as the entry point for suites
+    # written in Cypress, Playwright JS, Java, C# or anything else — and it
+    # answered 401 to every one of them on any installation that has users,
+    # because the only way in was a browser session cookie. The route itself
+    # asks `_require_ingest`, so the check is not skipped, only moved to where
+    # the project name is readable.
+    if method == "POST" and (path in ("/api/runs", "/api/check",
+                                     "/api/baselines/seed")
                              or (path.startswith("/api/runs/")
                                  and path.endswith("/artifacts"))):
         _open_install(request)
@@ -241,8 +406,45 @@ def _access_gate(request: Request) -> None:
     _require(request, "viewer")
 
 
+def _docs_enabled() -> bool:
+    """Интерактивная схема. Выключена, пока её не попросили.
+
+    `/docs` и `/openapi.json` — полный перечень роутов, тел запросов и имён
+    полей. До входа это подсказка тому, кто изучает сервис снаружи, а внутри
+    периметра нужна ровно во время разбора. Включается переменной, а не
+    правкой кода.
+    """
+    return (os.getenv("VISTEST_DOCS") or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Что происходит при остановке сервиса.
+
+    До этого — ничего. Часы уборки и уведомлений были daemon-потоками: процесс
+    их не ждёт, но и не отменяет, поэтому при остановке они досыпали свой
+    интервал и успевали сделать ещё один заход уже на выходе. Соединения с
+    базой не закрывались вовсе, а каждое держит открытыми и файл, и его WAL.
+
+    Запуск часов остаётся на импорте модуля намеренно: их заводит и
+    `vistest serve`, и `uvicorn ...:app`, и тесты, импортирующие модуль
+    напрямую, — перенос в lifespan оставил бы часть этих путей без часов, и
+    заметили бы это не сразу.
+    """
+    yield
+    _retention.stop_ticker()
+    _notify.stop_ticker()
+    db.close()
+
+
+_docs = _docs_enabled()
 app = FastAPI(title="VisTest", version="0.1.0",
-              dependencies=[Depends(_access_gate)])
+              dependencies=[Depends(_access_gate)],
+              lifespan=_lifespan,
+              docs_url="/docs" if _docs else None,
+              redoc_url="/redoc" if _docs else None,
+              openapi_url="/openapi.json" if _docs else None)
 
 # CORS. The interface is served from the same origin as the API, so it needs
 # nothing from here at all. What does need it is a test runner in another
@@ -262,6 +464,11 @@ _cors_origins = [o.strip() for o in
 # словами. Тело запроса и строка запроса в лог не попадают: там пароли из формы
 # входа, значения со стенда и токен метрик.
 app.middleware("http")(_logs.middleware)
+app.middleware("http")(_security_headers)
+app.middleware("http")(_body_limit)
+# Регистрируется последним, то есть выполняется первым: путь должен стать
+# каноническим до того, как его увидят и страж доступа, и запись в журнал.
+app.middleware("http")(_api_version)
 
 
 @app.exception_handler(Exception)
@@ -298,6 +505,7 @@ app.include_router(settings_router)    # environment variables for scenarios beh
 app.include_router(projects_router)    # externally connected test suites
 app.include_router(doctor_router)      # project noise and environment check
 app.include_router(record_router)      # recording baselines with the mouse
+app.include_router(license_router)     # what this installation is licensed for
 
 # Login and roles. Connected last, because the router needs a ready database.
 from .auth import build_router as _build_auth  # noqa: E402
@@ -412,6 +620,16 @@ def _require_ingest(request: Request, project: str = "") -> str:
                  "session") from None
 
 
+def require_ingest(request: Request, project: str = "") -> str:
+    """Тот же страж приёма, но для роутеров, лежащих в других модулях.
+
+    Отдельное имя без подчёркивания — потому что это уже не частность
+    `main`, а точка расширения: любой роут, который принимает данные из
+    чужого CI, обязан спрашивать здесь, а не заводить свою проверку.
+    """
+    return _require_ingest(request, project)
+
+
 # --------------------------------------------------------------------------- #
 #  Runs
 # --------------------------------------------------------------------------- #
@@ -425,6 +643,10 @@ def create_run(request: Request, payload: dict = Body(...)):
     # было нечего в принципе — общая переменная пускала всюду.
     project = payload.get("project") or cfg.service.project
     who = _require_ingest(request, project)
+    # Единственное, что останавливает истёкшая лицензия, — и только после
+    # льготного срока. Эталоны и история остаются читаемыми всегда: это данные
+    # заказчика, и держать их в заложниках из-за счёта нельзя.
+    _license.check_runs()
     run_id = db.ingest_run(payload, project)
 
     # Re-sending a run under the same key replaces the row and gives it a new
@@ -447,7 +669,26 @@ async def upload_artifact(
     snapshot: str = Form(...),
     kind: str = Form(...),
     file: UploadFile = File(...),
+    platform: str = Form(default=""),
 ):
+    """Положить артефакт сравнения.
+
+    `platform` появилась здесь позже остального и по неприятной причине.
+
+    Прогон по матрице — это один прогон и шесть вариантов: chromium при 1440,
+    firefox при 390 и так далее. Снимок в них называется одинаково, потому что
+    это один и тот же экран, — и артефакты всех шести вариантов ложились в
+    `artifacts/<run>/<snapshot>/`, то есть в ОДИН каталог. Последний
+    загруженный затирал остальные, и в разборе падения на мобильном размере
+    человек смотрел на картинку с десктопа, не зная об этом.
+
+    Тем же самым болела привязка ссылки: сравнение искалось по имени снимка
+    внутри прогона, а таких строк там шесть, и `db.one` возвращал случайную.
+
+    Поле необязательное: прогон одного варианта (и клиенты прежних версий) его
+    не присылают, и для них всё остаётся ровно как было — каталог без
+    подпапки варианта.
+    """
     # Проект берётся у самого прогона: токен выдан на проект, и заливать
     # картинки в чужой прогон он не должен. Строка читается ДО проверки, но
     # 404 отдаётся ПОСЛЕ неё — иначе роут отвечал бы на вопрос «а есть ли у вас
@@ -463,7 +704,12 @@ async def upload_artifact(
     if suffix not in SERVABLE_SUFFIXES:
         raise HTTPException(400, f"artifact type {suffix} is not accepted")
 
+    # Вариант — отдельный уровень каталога, а не суффикс в имени файла:
+    # так `_drop_run_files` и уборка сносят прогон целиком, ничего не зная о
+    # матрице, а старые прогоны на диске остаются читаемыми.
     dest_dir = ARTIFACTS / str(run_id) / _safe(snapshot)
+    if platform:
+        dest_dir = dest_dir / _safe(platform)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{_safe(kind)}{suffix}"
 
@@ -484,10 +730,20 @@ async def upload_artifact(
         dest.unlink(missing_ok=True)
         raise
 
-    uri = f"/files/{run_id}/{_safe(snapshot)}/{dest.name}"
-    row = db.one(
-        "SELECT c.id, c.artifacts FROM comparison c JOIN snapshot s"
-        " ON s.id=c.snapshot_id WHERE c.run_id=? AND s.name=?", (run_id, snapshot))
+    uri = "/files/" + dest.relative_to(ARTIFACTS).as_posix()
+    # Сравнение ищется по имени И платформе. По одному имени в прогоне по
+    # матрице подходит шесть строк, и ссылка доставалась той, которую вернул
+    # запрос, — то есть каждый раз другой.
+    if platform:
+        row = db.one(
+            "SELECT c.id, c.artifacts FROM comparison c JOIN snapshot s"
+            " ON s.id=c.snapshot_id WHERE c.run_id=? AND s.name=? AND s.platform=?",
+            (run_id, snapshot, platform))
+    else:
+        row = db.one(
+            "SELECT c.id, c.artifacts FROM comparison c JOIN snapshot s"
+            " ON s.id=c.snapshot_id WHERE c.run_id=? AND s.name=?",
+            (run_id, snapshot))
     if row:
         arts = json.loads(row["artifacts"] or "{}")
         arts[kind] = uri
@@ -988,14 +1244,28 @@ def cleanup_runs(request: Request, body: dict = Body(default={})):
     result = _retention.sweep(
         db, _drop_run_files, days=days, keep_last=keep_last,
         only_passed=only_passed, project=project)
+
+    # Артефакты одиночных проверок из `POST /api/check`. Прогона они не
+    # создают, в базе про них не написано ничего — и уборка, ходящая по
+    # прогонам, до них не доставала вовсе. Чистятся только по возрасту:
+    # `keep_last` для них бессмысленно, последовательности прогонов здесь нет.
+    if days is not None:
+        checks = _retention.sweep_checks(ARTIFACTS / "checks", days)
+        result["checks_deleted"] = checks["deleted"]
+        result["freed_kb"] = result.get("freed_kb", 0) + checks["freed_kb"]
     return {"ok": True, **result}
 
 
 @app.delete("/api/comparisons/{comp_id}")
 def delete_comparison(comp_id: int, request: Request):
+    # Право спрашивается ПЕРВЫМ, 404 отдаётся после — как в `delete_run`.
+    # Обратный порядок отвечает на вопрос «а есть ли у вас сравнение номер 42»
+    # тому, кто не имеет права спрашивать вовсе: по коду ответа перебором
+    # снимается карта чужих проектов. Проект берётся из сравнения, и если его
+    # нет, `of_comparison` вернёт пусто — тогда проверяется глобальная роль.
+    _require(request, "reviewer", _rights.of_comparison(db, comp_id))
     if not db.one("SELECT id FROM comparison WHERE id=?", (comp_id,)):
         raise HTTPException(404, "comparison not found")
-    _require(request, "reviewer", _rights.of_comparison(db, comp_id))
     db.execute("DELETE FROM comparison WHERE id=?", (comp_id,))
     return {"ok": True, "deleted": comp_id}
 
@@ -1008,10 +1278,11 @@ def delete_snapshot_history(snapshot_id: int, request: Request):
     dashboard: after fixing the mask it is more honest to start the statistics
     over than to drag a distorted fail rate around for years.
     """
+    # Сначала право, потом существование — см. `delete_comparison`.
+    _require(request, "reviewer", _rights.of_snapshot(db, snapshot_id))
     row = db.one("SELECT name FROM snapshot WHERE id=?", (snapshot_id,))
     if not row:
         raise HTTPException(404, "snapshot not found")
-    _require(request, "reviewer", _rights.of_snapshot(db, snapshot_id))
     n = db.execute("DELETE FROM comparison WHERE snapshot_id=?", (snapshot_id,))
     return {"ok": True, "snapshot": row["name"], "deleted_comparisons": n}
 
@@ -1055,6 +1326,8 @@ def _rmtree_safe(path: Path) -> int:
             return 0
         size = _dir_size(p)
         shutil.rmtree(p, ignore_errors=True)
+        # Мы только что изменили то, что кеш описывает.
+        _forget_sizes()
         return size
     except Exception:
         return 0
@@ -1070,13 +1343,41 @@ def _storage_kb() -> int:
     return round((_dir_size(ARTIFACTS) + _dir_size(ROOT / "runs")) / 1024)
 
 
+#  Размер каталога с коротким кешем.
+#
+#  `rglob("*")` обходит дерево целиком: на инсталляции с историей это десятки
+#  тысяч файлов и секунды под GIL. Вызывается он из `/api/storage` (то есть с
+#  каждым открытием экрана настроек) и на каждом тике уборки, а ответ за эти
+#  секунды не меняется ни на сколько-нибудь значимую величину.
+#
+#  Пять секунд — потому что кеш нужен от повторного вызова в пределах одного
+#  экрана, а не от изменений за час. После уборки кеш сбрасывается явно: там
+#  разница как раз в том, ради чего человек и нажал кнопку.
+_SIZE_TTL_S = 5.0
+_size_cache: dict[str, tuple[float, int]] = {}
+_size_lock = _threading.Lock()
+
+
+def _forget_sizes() -> None:
+    with _size_lock:
+        _size_cache.clear()
+
+
 def _dir_size(path: Path) -> int:
+    key = str(path)
+    now = time.monotonic()
+    with _size_lock:
+        hit = _size_cache.get(key)
+        if hit and now - hit[0] < _SIZE_TTL_S:
+            return hit[1]
     try:
-        if not path.exists():
-            return 0
-        return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+        size = (0 if not path.exists()
+                else sum(f.stat().st_size for f in path.rglob("*") if f.is_file()))
     except Exception:
-        return 0
+        size = 0
+    with _size_lock:
+        _size_cache[key] = (now, size)
+    return size
 
 
 # --------------------------------------------------------------------------- #
@@ -1778,6 +2079,15 @@ def frontend_stamp(directory: Path) -> str:
     """
     import hashlib
 
+    # Здесь стоял кеш на пять секунд — и тесты `test_ui_delivery` показали,
+    # почему его тут быть не должно: отпечаток обязан меняться в тот же
+    # момент, что и файл на диске. Иначе правка интерфейса доезжает до
+    # браузера «через несколько секунд», то есть ровно тот класс поломок,
+    # ради которого отпечаток и заведён, возвращается — только теперь с
+    # оговоркой «иногда».
+    #
+    # Кеш и не нужен: каталог интерфейса — это два десятка файлов, а не
+    # десятки тысяч, как каталог артефактов (там кеш как раз стоит).
     h = hashlib.sha256()
     for p in sorted(directory.rglob("*")):
         if not p.is_file() or p.suffix.lower() not in (".js", ".css", ".html"):
@@ -1856,15 +2166,51 @@ def _safe(s: str) -> str:
 
 
 def _resolve(uri: str) -> Path | None:
-    if uri.startswith("/files/"):
-        return (ARTIFACTS / uri[len("/files/"):]).resolve()
-    if uri.startswith("/local/"):
-        return (ROOT / uri[len("/local/"):]).resolve()
-    p = Path(uri)
+    """Ссылка на артефакт → файл на диске, и только внутри каталога данных.
+
+    Отсюда файл уезжает в `store.save()`, то есть СТАНОВИТСЯ ЭТАЛОНОМ, и
+    дальше его можно скачать через `/files`. А `uri` берётся из
+    `comparison.artifacts`, куда он попал из тела `POST /api/runs` — то есть
+    его пишет чужой CI.
+
+    Проверки не было никакой: `/files/../../etc/passwd` спокойно выходил за
+    ARTIFACTS, а третья ветка принимала вообще любой абсолютный путь. Токен
+    приёма прогонов — это право писать историю, а не читать диск сервера, и
+    разница между этими двумя правами здесь и проводится.
+    """
+    for prefix, base in (("/files/", ARTIFACTS), ("/local/", ROOT)):
+        if uri.startswith(prefix):
+            return _inside_root(base / uri[len(prefix):])
+
+    # Абсолютный путь пишет наш же раннер, когда работает на этой машине
+    # (`.vistest/runs/...`). Всё, что вне каталога данных, — не наше.
+    return _inside_root(Path(uri))
+
+
+def _inside_root(path: Path) -> Path | None:
+    try:
+        p = path.resolve()
+    except (OSError, ValueError):
+        return None
+    root = ROOT.resolve()
+    if p != root and not p.is_relative_to(root):
+        _logs.log.warning("artifact path outside the data volume refused: %s", path)
+        return None
     return p if p.exists() else None
 
 
 def serve(host: str = "127.0.0.1", port: int = 8420, reload: bool = False):
+    """Запуск сервиса.
+
+    `proxy_headers=False` — не описка. Разбор `X-Forwarded-*` живёт в
+    `api/net.py`, с явным списком доверенных адресов в
+    `VISTEST_TRUSTED_PROXIES`. Uvicorn при `proxy_headers=True` ПЕРЕПИСЫВАЕТ
+    `scope["client"]` значением из заголовка, и после этого настоящий адрес
+    соединения недоступен вообще — а именно по нему решается, можно ли с этого
+    запроса запускать процессы на машине сервиса. Одно из двух: либо мы знаем
+    настоящий адрес, либо у нас есть удобство uvicorn; выбран первый вариант.
+    """
     import uvicorn
 
-    uvicorn.run("vistest.api.main:app", host=host, port=port, reload=reload)
+    uvicorn.run("vistest.api.main:app", host=host, port=port, reload=reload,
+                proxy_headers=False)

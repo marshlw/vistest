@@ -39,11 +39,13 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Body, HTTPException, Request
 
 from ..config import VisTestConfig
+from . import net
 from .jobs import runner
 
 router = APIRouter()
 
-LOOPBACK = {"127.0.0.1", "::1", "localhost", "testclient"}
+#  «Локально» живёт в `api/net.py`: считается по адресу соединения,
+#  который заголовком не подделать.
 
 # One recorder at a time: two browsers with panels writing into a single store
 # would only lead to confusion.
@@ -65,13 +67,12 @@ def _guard(request: Request) -> None:
                                  "(VISTEST_RECORD_UI=off)")
     if mode == "all":
         return
-    host = (request.client.host if request.client else "") or ""
-    if host not in LOOPBACK:
+    if not net.is_loopback(request):
         raise HTTPException(
             403,
             "Recording with the mouse is possible only from the machine where "
-            f"the service runs: the browser will open there, not on yours "
-            f"(request from {host}). "
+            "the service runs: the browser will open there, not on yours "
+            f"(request from {net.client_ip(request)}). "
             "To allow this deliberately: VISTEST_RECORD_UI=all",
         )
 

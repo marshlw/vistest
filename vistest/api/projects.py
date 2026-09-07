@@ -24,11 +24,11 @@ process on the server, and exposing that outward must be a deliberate choice.
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import re
 import shutil
+import tempfile
 import zipfile
 from dataclasses import asdict
 from glob import escape as glob_escape
@@ -45,17 +45,25 @@ from fastapi import (
     UploadFile,
 )
 
+from .. import suites
 from ..config import VisTestConfig
 from ..projects import Project, ProjectRegistry, discover, suggest
+from . import net
 from .jobs import JobFailure, runner
 
 router = APIRouter()
 
-LOOPBACK = {"127.0.0.1", "::1", "localhost", "testclient"}
+#  «Локально» живёт в `api/net.py`: считается по адресу соединения,
+#  который заголовком не подделать.
 # Проходов установки зависимостей. Больше шести — это уже не «слой за слоем»,
 # а проект, который проще поставить целиком по requirements.txt.
 MAX_DEPS_ROUNDS = 6
 MAX_UPLOAD = 200 * 1024 * 1024   # 200 MB per project archive
+# Сколько архив имеет право занять в распакованном виде и из скольких файлов
+# состоять. Zip сжимает нули в тысячи раз: 40 КБ архива разворачиваются в
+# гигабайты, и проверка размера САМОГО архива про это ничего не знает.
+MAX_UNPACKED = 2 * 1024 * 1024 * 1024   # 2 GB
+MAX_ENTRIES = 50_000
 
 
 def _uploads_root() -> Path:
@@ -101,13 +109,13 @@ def _guard(request: Request, role: str = "admin",
                                  "(VISTEST_PROJECTS_UI=off)")
     if mode == "all":
         return
-    host = (request.client.host if request.client else "") or ""
-    if host not in LOOPBACK:
+    if not net.is_loopback(request):
         raise HTTPException(
             403,
-            f"Projects can be connected only from the local machine (request from {host}). "
-            "This starts an arbitrary process, so exposing it outward is a "
-            "deliberate choice: VISTEST_PROJECTS_UI=all",
+            "Projects can be connected only from the local machine (request "
+            f"from {net.client_ip(request)}). This starts an arbitrary process, "
+            "so exposing it outward is a deliberate choice: "
+            "VISTEST_PROJECTS_UI=all",
         )
 
 
@@ -192,13 +200,32 @@ async def upload_project(request: Request,
     if not fname.lower().endswith(".zip"):
         raise HTTPException(400, "A .zip archive of the project is required")
 
-    data = await file.read()
-    if len(data) > MAX_UPLOAD:
-        raise HTTPException(413, f"Archive is larger than {MAX_UPLOAD // (1024 * 1024)} MB")
+    # Читаем кусками и во временный файл на диске, а не в память.
+    #
+    # Здесь стояло `data = await file.read()`, и проверка размера — СТРОКОЙ
+    # НИЖЕ. То есть потолок в 200 МБ не защищал ни от чего: к моменту проверки
+    # присланное уже лежало в памяти целиком, сколько бы его ни было.
+    spool = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
     try:
-        zf = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile:
-        raise HTTPException(400, "File is not a zip archive") from None
+        written = 0
+        while chunk := await file.read(1024 * 1024):
+            written += len(chunk)
+            if written > MAX_UPLOAD:
+                raise HTTPException(
+                    413, f"Archive is larger than {MAX_UPLOAD // (1024 * 1024)} MB")
+            spool.write(chunk)
+        spool.seek(0)
+        try:
+            zf = zipfile.ZipFile(spool)
+        except zipfile.BadZipFile:
+            raise HTTPException(400, "File is not a zip archive") from None
+        return _unpack_project(zf, name, fname)
+    finally:
+        spool.close()
+
+
+def _unpack_project(zf: zipfile.ZipFile, name: str, fname: str) -> dict:
+    """Распаковка и осмотр. Вынесено, чтобы временный файл закрывался всегда."""
 
     slug = _slug(name or Path(fname).stem)
     dest = _uploads_root() / slug
@@ -207,12 +234,29 @@ async def upload_project(request: Request,
     dest.mkdir(parents=True, exist_ok=True)
 
     # Zip-slip: the path of every file must stay inside dest.
+    #
+    # Плюс объём. Проверка пути отвечает на «куда положат», и не отвечает на
+    # «сколько положат»: архив из одних нулей сжимается в тысячи раз, и том
+    # данных заполняется файлом, который прошёл проверку размера с большим
+    # запасом. Считаем ДО распаковки, по заголовкам архива.
     base = dest.resolve()
-    for m in zf.infolist():
+    entries = zf.infolist()
+    if len(entries) > MAX_ENTRIES:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise HTTPException(
+            400, f"The archive holds more than {MAX_ENTRIES} entries")
+    unpacked = 0
+    for m in entries:
         target = (dest / m.filename).resolve()
         if target != base and not _inside(target, base):
             shutil.rmtree(dest, ignore_errors=True)
             raise HTTPException(400, "Unsafe path in the archive")
+        unpacked += m.file_size
+        if unpacked > MAX_UNPACKED:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise HTTPException(
+                413, f"The archive unpacks to more than "
+                     f"{MAX_UNPACKED // (1024 * 1024)} MB")
     zf.extractall(dest)
 
     # People often archive a whole folder, so inside there is one directory. We
@@ -236,14 +280,67 @@ def save_project(key: str, request: Request, payload: dict = Body(...)):
     project = Project.from_dict(key, payload)
     if not project.root:
         raise HTTPException(400, "Project root is not specified")
+    # Лимит считается только для НОВОГО проекта: правка уже подключённого не
+    # занимает места, и запрещать её из-за лимита значило бы запирать
+    # заказчика внутри его же настроек.
+    if not _registry().get(key):
+        from .license import check_projects
+
+        check_projects(_db())
     _registry().save(project)
+    # Инструмент опознаётся по файлам в их корне и запоминается: без сброса
+    # проект, только что переехавший на другой корень, ещё сутки считался бы
+    # тем, чем был.
+    suites.forget(project.root_path)
     return {"ok": True, "project": project.to_dict(),
             "problems": project.validate()}
 
 
 EDITABLE = ("env", "pytest_args", "tests", "python", "note",
-            "runner", "command")
+            "runner", "command", "suite", "naming", "search_dirs",
+            "keep_dir")
+NAMING_KINDS = ("actual", "expected", "diff", "strip")
 VAR_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _clean_naming(value) -> dict:
+    """Наши правила имён — регулярные выражения, и они приходят из формы.
+
+    Непонятное выражение здесь дороже обычной опечатки: прогон не упадёт, он
+    просто ничего не найдёт и скажет «пар не найдено», а причина будет лежать
+    в поле, которое человек заполнил час назад. Поэтому проверяем сразу.
+    """
+    if not isinstance(value, dict):
+        raise HTTPException(400, "«naming» must be an object: kind → pattern")
+    out: dict[str, str] = {}
+    for kind, pattern in value.items():
+        kind = str(kind).strip().lower()
+        pattern = str(pattern or "").strip()
+        if not pattern:
+            continue
+        if kind not in NAMING_KINDS:
+            raise HTTPException(
+                400, f"Unknown naming rule: {kind!r} "
+                     f"({' | '.join(NAMING_KINDS)})")
+        try:
+            compiled = re.compile(pattern)
+        except re.error as e:
+            raise HTTPException(
+                400, f"The «{kind}» rule is not a valid expression: {e}") from e
+        if kind != "strip" and "name" not in compiled.groupindex:
+            raise HTTPException(
+                400, f"The «{kind}» rule must say which part of the file name "
+                     "is the snapshot name — put it in a (?P<name>…) group, "
+                     r"for example (?P<name>.+)-actual\.png")
+        out[kind] = pattern
+    return out
+
+
+@router.get("/api/suites")
+def list_suites(request: Request):
+    """The profiles the interface offers, and what each one implies."""
+    _guard(request)
+    return {"suites": suites.choices()}
 
 
 @router.patch("/api/projects/{key}")
@@ -282,12 +379,26 @@ def patch_project(key: str, request: Request, payload: dict = Body(...)):
         if value not in ("pytest", "command"):
             raise HTTPException(400, f"Unknown runner: {value!r} (pytest | command)")
         raw["runner"] = value
+    if "suite" in payload:
+        value = str(payload["suite"] or "auto").strip().lower()
+        if value != "auto" and suites.get(value) is None:
+            raise HTTPException(
+                400, f"Unknown suite profile: {value!r} "
+                     f"(auto | {' | '.join(suites.ids())})")
+        raw["suite"] = value
+    if "naming" in payload:
+        raw["naming"] = _clean_naming(payload["naming"])
+    if "search_dirs" in payload:
+        raw["search_dirs"] = _clean_args(payload["search_dirs"])
+    if "keep_dir" in payload:
+        raw["keep_dir"] = bool(payload["keep_dir"])
     for field in ("tests", "python", "note"):
         if field in payload:
             raw[field] = str(payload[field] or "")
 
     updated = Project.from_dict(key, raw)
     _registry().save(updated)
+    suites.forget(updated.root_path)
 
     from .auth import audit, current_user
 
@@ -413,6 +524,17 @@ def run_project_endpoint(key: str, request: Request, payload: dict = Body(None))
     only = str(payload.get("only") or "").strip()
     if only and (only.startswith("-") or ".." in only):
         raise HTTPException(400, "only must be a test path inside the project")
+    if only:
+        # Отказ, а не тихий прогон всего набора. До этого `only` вне pytest
+        # просто терялся в сборке команды: человек нажимал «перепроверить этот
+        # снимок», ждал двадцать минут и получал прогон всего набора —
+        # причём выглядело это как медленная кнопка, а не как операция,
+        # которой у этого инструмента нет.
+        from ..external import only_refusal
+
+        refusal = only_refusal(project, only)
+        if refusal:
+            raise HTTPException(400, refusal)
     # Baseline source for this run: "project" (their PNGs) | "vistest" (our
     # captured set) | None (the project setting). ci — the run only compares.
     baseline_source = payload.get("baselines")
@@ -672,6 +794,85 @@ def run_project_endpoint(key: str, request: Request, payload: dict = Body(None))
             "queued": job.status == "queued"}
 
 
+@router.post("/api/projects/{key}/ingest")
+def ingest_ready_artifacts(key: str, request: Request, payload: dict = Body(None)):
+    """Разобрать картинки, которые их прогон уже оставил. Ничего не запуская.
+
+    Третий способ подключения, и единственный, которому не нужен их инструмент
+    в нашем образе. `npx playwright test` внутри контейнера VisTest — это node,
+    `npm ci` и вся их сборка у нас; для JVM и .NET такой обмен не окупается
+    вовсе. Здесь наоборот: их CI гоняет тесты там, где у него всё стоит, а
+    сюда приезжает каталог с картинками.
+
+    Правила разбора те же, что у обычного прогона: тот же профиль набора, те же
+    эталоны, тот же сборщик — двух дверей с разным поведением быть не должно.
+    """
+    _guard(request)
+    project = _need(key)
+    payload = payload or {}
+
+    problems = project.validate()
+    if problems:
+        raise HTTPException(400, "Ingest is not possible: " + "; ".join(problems))
+
+    cfg = VisTestConfig.load()
+    dirs = _clean_args(payload.get("dirs") or [])
+    browser = str(payload.get("browser") or "").strip().lower()
+    update = bool(payload.get("update_baselines"))
+    baseline_source = payload.get("baselines")
+    if baseline_source not in ("project", "vistest"):
+        baseline_source = None
+
+    lock_key = f"project:{key}"
+    busy = runner.busy(lock_key)
+    if busy:
+        raise HTTPException(409, {
+            "error": "This project is already running",
+            "message": (f"Started by {busy.owner or 'someone'}, status "
+                        f"{busy.status}. Reading the results while a run "
+                        "writes them would judge half a run."),
+            "job_id": busy.id,
+        })
+
+    from .auth import audit, current_user
+
+    who = current_user(_db(), request.cookies.get("vistest_session"))["login"]
+    audit(_db(), who, "project.ingest", key, dirs=dirs or None,
+          browser=browser or None)
+
+    def work(job):
+        from ..external import ExternalRunRefused, ingest_project, publish
+
+        try:
+            run = ingest_project(project, cfg=cfg, dirs=dirs, browser=browser,
+                                 baseline_source=baseline_source,
+                                 update_baselines=update,
+                                 log=lambda t: job.say(t))
+        except ExternalRunRefused as e:
+            raise JobFailure(str(e)) from None
+
+        s = run.summary()
+        job.say(f"result: snapshots {s['total']} (failed {s['failed']}, "
+                f"new baselines {s['new']}, errors {s['errored']})")
+        try:
+            publish(run, project, cfg=cfg, log=lambda t: job.say(t))
+        except Exception as e:
+            job.say(f"could not write to the history: {e}", "warn")
+
+        if not run.results:
+            # Пустой разбор — это не успех. Зелёный тост на нуле найденных пар
+            # означает «всё хорошо», хотя на самом деле не проверено ничего, а
+            # причина уже названа строкой выше.
+            raise JobFailure(
+                "Not a single pair was found — the reason is in the log above.")
+        return {"run": run.to_dict(), "summary": s,
+                "history_run_id": run.history_run_id}
+
+    job = runner.submit("project", f"Ingest {project.name}", work,
+                        owner=who, lock_key=lock_key)
+    return {"job_id": job.id, "queued": job.status == "queued"}
+
+
 @router.post("/api/projects/{key}/check")
 def check_project(key: str, request: Request, payload: dict = Body(None)):
     """Collect their tests without running anything.
@@ -711,9 +912,27 @@ def install_deps(key: str, request: Request, payload: dict = Body(None)):
         raise HTTPException(409, "Installation is already in progress")
 
     def work(job):
-        from ..external import install_requirements, preflight
+        from ..external import (
+            install_dependencies,
+            install_requirements,
+            preflight,
+        )
 
         cfg = VisTestConfig.load()
+
+        # Чужой набор ставит зависимости своим менеджером, в своём корне.
+        # Питоновская ветка ниже — не «общий случай», а частный: она ставит
+        # пакеты в окружение VisTest, потому что этим окружением их набор и
+        # гоняется. Для Node и JVM это не так, и pip там не поможет ничем.
+        if not project.uses_pytest():
+            code = install_dependencies(project, log=job.say,
+                                        should_stop=lambda: job.cancelled)
+            if code != 0:
+                raise JobFailure(
+                    "Dependencies were not installed — the reason is in the "
+                    "log above.")
+            return {"code": code, "mode": "suite"}
+
         if payload.get("all"):
             job.say("installing the whole requirements.txt")
             code = install_requirements(project, log=job.say,

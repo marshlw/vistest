@@ -171,7 +171,27 @@ def test_a_project_run_by_its_own_command_refuses_instead_of_lying(tmp_path):
     project = _project(tmp_path, runner="command",
                        command=["npx", "playwright", "test"])
     assert project.browser_control() == "none"
-    assert "своей командой" in project.browser_refusal()
+    assert "its own command" in project.browser_refusal()
+
+
+def test_a_recognised_tool_names_the_argument_itself(tmp_path):
+    """Отказ выше — про незнание инструмента, а не про запуск своей командой.
+
+    Как только в корне лежит `playwright.config.ts`, аргумент известен
+    (`--project`), и отказывать не в чем.
+    """
+    from vistest import suites
+
+    project = _project(tmp_path, runner="command",
+                       command=["npx", "playwright", "test"])
+    (project.root_path / "playwright.config.ts").write_text("export default {};\n")
+    suites.forget()
+    try:
+        assert project.browser_control() == "profile"
+        assert project.browser_refusal() == ""
+        assert project.profile().browser_arg == ("--project={browser}",)
+    finally:
+        suites.forget()
 
 
 def test_control_can_be_switched_off_deliberately(tmp_path):

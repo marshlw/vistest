@@ -53,7 +53,7 @@ SCREENS.runs=async function(arg){
   const total=state.runCounts||null;
   const head=el('div','head');
   const left=el('div','grow');
-  left.innerHTML=`<div class="eyebrow">HISTORY</div>
+  left.innerHTML=`<div class="eyebrow">HISTORY · ${esc(projectLabel())}</div>
     <h1 class="h1">Runs</h1>
     <div class="lede">${total?fmtInt(total.all)+' runs in the history. ':''}Open one to see its
       causes, or go to <a href="#/decisions">Decisions</a> for what still needs an answer.</div>`;

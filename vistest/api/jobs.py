@@ -439,6 +439,18 @@ class JobRunner:
         same moment both saw the key free and started together. Two runs of one
         project write into the same baselines and the same directory —
         serialization by key exists precisely so that cannot happen.
+
+        Замок здесь — на ПРОЦЕСС, и этого достаточно ровно до второго процесса.
+        `uvicorn --workers 2`, две реплики за общим томом, `vistest project run`
+        из консоли рядом с работающим сервисом — и ключ, который должен был
+        сериализовать прогоны одного проекта, сериализует их только внутри
+        своего процесса. Оба прогона пишут в одни эталоны, и портится источник
+        правды, а не просто результат.
+
+        Поэтому после своего замка спрашиваем ещё и общую базу: не ведёт ли
+        кто-то живой (свежий `heartbeat_at`) задачу с тем же ключом. Это тот же
+        признак, по которому при старте помечаются прерванные задачи, так что
+        новой договорённости между процессами не заводится.
         """
         with self._lock:
             running = [j for j in self._jobs.values() if j.status == "running"]
@@ -446,8 +458,30 @@ class JobRunner:
                 return False
             if len(running) >= MAX_PARALLEL:
                 return False
+            if self._held_elsewhere(job):
+                return False
             job.status = "running"
             return True
+
+    def _held_elsewhere(self, job: Job) -> bool:
+        """Держит ли этот ключ другой процесс на той же базе.
+
+        Молчаливо False, если базы нет или запрос не удался: очередь не может
+        стоить сервиса, а в однопроцессной установке (самый частый случай)
+        ответ и так даёт замок выше.
+        """
+        db = self._db
+        if db is None:
+            return False
+        try:
+            row = db.one(
+                "SELECT id FROM job WHERE lock_key=? AND status='running'"
+                "   AND id<>? AND heartbeat_at IS NOT NULL"
+                "   AND heartbeat_at > ? LIMIT 1",
+                (job.lock_key, job.id, time.time() - STALE_S))
+        except Exception:
+            return False
+        return bool(row)
 
     def queued(self, lock_key: str | None = None) -> list[Job]:
         with self._lock:

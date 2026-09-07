@@ -34,13 +34,15 @@ from .. import source as _source
 from ..config import VisTestConfig, platform_key
 from ..models import Verdict
 from ..storage import FileBaselineStore, split_project
+from . import net
 from .jobs import Job, JobFailure, runner
 
 router = APIRouter()
 _cfg = VisTestConfig.load()
 ROOT = Path(os.getenv("VISTEST_ROOT", ".vistest")).resolve()
 
-LOOPBACK = {"127.0.0.1", "::1", "localhost", "testclient"}
+#  «Локально» живёт в `api/net.py`: считается по адресу соединения,
+#  который заголовком не подделать.
 
 
 # --------------------------------------------------------------------------- #
@@ -82,12 +84,12 @@ def _guard_tests(request: Request, role: str = "reviewer") -> None:
                                  "(VISTEST_TESTS_UI=off)")
     if mode == "all":
         return
-    host = (request.client.host if request.client else "") or ""
-    if host not in LOOPBACK:
+    if not net.is_loopback(request):
         raise HTTPException(
             403,
             "Tests can be edited and run only from the service machine "
-            f"(request from {host}). To allow deliberately: VISTEST_TESTS_UI=all",
+            f"(request from {net.client_ip(request)}). To allow deliberately: "
+            "VISTEST_TESTS_UI=all",
         )
 
 
@@ -2278,7 +2280,7 @@ MAX_TEST_BYTES = 1_000_000
 _TEST_DEF = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(", re.M)
 
 
-def _count_tests(path: Path, funcs: list[str]) -> int:
+def _count_tests(path: Path, funcs: list[str], decl: str = "") -> int:
     """Сколько тестов в файле.
 
     Человек считает свой набор ТЕСТАМИ, а список показывает ФАЙЛЫ. Шесть строк
@@ -2297,8 +2299,52 @@ def _count_tests(path: Path, funcs: list[str]) -> int:
         text = path.read_text("utf-8", errors="replace")
     except OSError:
         return 0
+    if decl:
+        # Чужой язык: считать нечего, кроме объявлений, которые видно глазами
+        # — `test(` и `it(` в JS, `@Test` в Java. Тот же стандарт честности,
+        # что и у питоновской ветки: параметризация не разворачивается.
+        try:
+            return len(re.findall(decl, text, re.M))
+        except re.error:
+            return 0
     return sum(1 for name in _TEST_DEF.findall(text)
                if any(fnmatch.fnmatchcase(name, p) for p in funcs))
+
+
+def _suite_id(project) -> str:
+    try:
+        return project.profile().id
+    except Exception:                                      # pragma: no cover
+        return ""
+
+
+def _scan_rules(project) -> tuple[list[str], str, list[str], str]:
+    """По каким шаблонам искать тесты этого набора и чем считать объявления.
+
+    У pytest ответ даёт ИХ конфигурация — `python_files` и `python_functions`
+    в `pytest.ini`, `pyproject.toml` или `setup.cfg`. Это авторитет, и
+    статический список рядом с ним рано или поздно с ним разойдётся.
+
+    У всех остальных авторитета в таком виде нет: `playwright.config.ts` — это
+    код, и `testMatch` из него не вычитать разбором. Значит, шаблоны берутся
+    из профиля набора. До этого не брались ниоткуда: скан искал только
+    `*.py`, и подключённый Playwright показывал «0 тестов» при одиннадцати
+    снимках — то есть человек видел, что снимки чем-то сняты, а чем именно, в
+    интерфейсе не было нигде.
+    """
+    root = project.root_path
+    if project.uses_pytest():
+        patterns, source = _python_files(root)
+        funcs, funcs_from = _python_functions(root)
+        return patterns, source, funcs, funcs_from
+
+    profile = project.profile()
+    if not profile.test_files:
+        return [], f"the «{profile.id}» profile does not describe test files", \
+            [], ""
+    return (list(profile.test_files), f"the «{profile.id}» suite profile",
+            [profile.test_decl] if profile.test_decl else [],
+            f"the «{profile.id}» suite profile")
 
 
 def _walk_tests(base: Path, patterns: list[str], *,
@@ -2361,17 +2407,22 @@ def _project_test_scan(key: str = "") -> tuple[list[dict], list[dict]]:
             continue
         root = project.root_path
         base = (root / project.tests) if project.tests else root
-        patterns, source = _python_files(root)
-        funcs, funcs_from = _python_functions(root)
+        patterns, source, funcs, funcs_from = _scan_rules(project)
+        decl = funcs[0] if (funcs and not project.uses_pytest()) else ""
         note = {"project": project.key, "project_name": project.name,
                 "dir": str(base), "root": str(root), "exists": base.exists(),
                 "patterns": patterns, "patterns_from": source,
                 "functions": funcs, "functions_from": funcs_from,
+                "runner": project.runner, "suite": _suite_id(project),
                 "found": 0, "tests": 0, "outside": 0, "outside_sample": []}
         notes.append(note)
         if not base.exists():
             continue
 
+        if not patterns:
+            # Шаблонов нет — обходить чужое дерево незачем, а «0 файлов» без
+            # причины читается как «тестов нет». Причина уже в `patterns_from`.
+            continue
         room = max(0, MAX_PROJECT_TESTS - len(out))
         files, truncated = _walk_tests(base, patterns, limit=room)
         if truncated:
@@ -2386,7 +2437,7 @@ def _project_test_scan(key: str = "") -> tuple[list[dict], list[dict]]:
                 rel = path.relative_to(root).as_posix()
             except (OSError, ValueError):
                 continue
-            count = _count_tests(path, funcs)
+            count = _count_tests(path, funcs, decl)
             note["tests"] += count
             out.append({
                 "name": rel, "short": path.name,
@@ -2395,6 +2446,10 @@ def _project_test_scan(key: str = "") -> tuple[list[dict], list[dict]]:
                 "mtime": int(st.st_mtime * 1000), "tests": count,
                 "generated": False, "editable": False,
                 "has_backup": False,
+                # Чем это запускается — чтобы интерфейс не подписывал
+                # `npx playwright test` словом «pytest».
+                "runner": project.runner,
+                "suite": note["suite"],
             })
         note["found"] = len(files)
 

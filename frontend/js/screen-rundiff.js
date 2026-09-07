@@ -109,7 +109,7 @@ function noRunsToDiff(){
   const screen=$('#screen');screen.innerHTML='';
   const page=el('div','page narrow');screen.append(page);
   const head=el('div','head');
-  head.innerHTML=`<div class="grow"><div class="eyebrow">RUNS · WHAT CHANGED</div>
+  head.innerHTML=`<div class="grow"><div class="eyebrow">RUNS · ${esc(projectLabel())} · WHAT CHANGED</div>
     <h1 class="h1">Two runs, side by side</h1>
     <div class="lede">This screen answers «what did this branch break»: it takes two
       runs and splits every snapshot by how its verdict moved between them.</div></div>`;
@@ -152,7 +152,7 @@ function runChip(r,label){
 function diffHead(d,head){
   const box=el('div','rd-head');
   const left=el('div');left.style.flex='1';
-  left.innerHTML=`<div class="eyebrow">RUNS · COMPARISON</div>
+  left.innerHTML=`<div class="eyebrow">RUNS · ${esc(projectLabel())} · COMPARISON</div>
     <h1 class="h1">What changed</h1>
     <div class="dchips">${runChip(d.base,'compared against')}<span class="darrow">→</span>${runChip(d.head,'this run')}</div>`;
   box.append(left);

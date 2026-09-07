@@ -55,6 +55,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Body, Cookie, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
+from . import net
+
 router = APIRouter()
 
 PBKDF2_ITERATIONS = 480_000
@@ -355,8 +357,22 @@ def any_users(db) -> bool:
 #  a lockout that a service restart clears is a lockout an attacker can clear.
 # --------------------------------------------------------------------------- #
 LOGIN_WINDOW_MINUTES = 15
-LOGIN_MAX_FAILURES = 8          # per login within the window
+#  Пара «логин + адрес»: это и есть перебор пароля, и запирать надо именно её.
+LOGIN_MAX_FAILURES_PAIR = 8
+#  Один логин со ВСЕХ адресов сразу. Раньше здесь стояло 8, и это означало, что
+#  любой, кто знает чужой логин, запирает человека из его собственного сервиса
+#  восемью запросами. Порог поднят до величины, которая говорит о
+#  распределённом переборе, а не о коллеге, забывшем раскладку.
+LOGIN_MAX_FAILURES = 40
 LOGIN_MAX_FAILURES_IP = 30      # per source address within the window
+
+#  Заявка на доступ стоит сервису PBKDF2 в 480 000 раундов — то есть открытая
+#  регистрация была готовым усилителем нагрузки: десяток запросов без единого
+#  пароля занимают процессор целиком. Плюс очередь заявок, которую разбирает
+#  человек, а значит её можно засыпать.
+REGISTER_WINDOW_MINUTES = 60
+REGISTER_MAX_PER_IP = 5
+MAX_PENDING_USERS = 50
 
 
 def _last_success(db, who: str = "", source: str = "") -> str:
@@ -368,6 +384,47 @@ def _last_success(db, who: str = "", source: str = "") -> str:
         row = db.one("SELECT MAX(at) AS at FROM audit"
                      " WHERE action='login.ok' AND target=?", (source,))
     return (row or {}).get("at") or ""
+
+
+def _recent_pair_failures(db, who: str, source: str) -> int:
+    """Неудачи этого логина именно с этого адреса, после последнего успеха.
+
+    Отдельно от счётчика по логину: перебор — это один адрес, долбящий один
+    логин, и запирать надо ровно эту пару. Адрес лежит в `target` той же
+    записи журнала, поэтому новых таблиц не нужно.
+    """
+    since = f"-{LOGIN_WINDOW_MINUTES} minutes"
+    mark = _last_success(db, who=who)
+    row = db.one(
+        "SELECT COUNT(*) AS n FROM audit"
+        " WHERE action='login.failed' AND who=? AND target=?"
+        "   AND at >= datetime('now', ?) AND at > ?",
+        (who, source, since, mark))
+    return int((row or {}).get("n") or 0)
+
+
+def _recent_actions(db, action: str, target: str, minutes: int) -> int:
+    """Сколько раз это действие приходило с этого адреса за окно."""
+    row = db.one(
+        "SELECT COUNT(*) AS n FROM audit"
+        " WHERE action=? AND target=? AND at >= datetime('now', ?)",
+        (action, target, f"-{minutes} minutes"))
+    return int((row or {}).get("n") or 0)
+
+
+def register_blocked(db, source: str) -> int:
+    """Секунды ожидания для заявки на доступ, или 0.
+
+    Считается по журналу, как и вход: счётчик в памяти обнуляется перезапуском,
+    то есть его обнуляет тот, от кого он защищает.
+    """
+    try:
+        if source and _recent_actions(db, "register.requested", source,
+                                      REGISTER_WINDOW_MINUTES) >= REGISTER_MAX_PER_IP:
+            return REGISTER_WINDOW_MINUTES * 60
+    except Exception:
+        return 0
+    return 0
 
 
 def _recent_failures(db, who: str = "", source: str = "") -> int:
@@ -396,8 +453,20 @@ def _recent_failures(db, who: str = "", source: str = "") -> int:
 
 
 def login_blocked(db, who: str, source: str) -> int:
-    """Seconds to wait, or 0 if the attempt may proceed."""
+    """Seconds to wait, or 0 if the attempt may proceed.
+
+    Три порога вместо двух, и порядок здесь — это порядок правдоподобия.
+
+    Пара «логин + адрес» — это перебор, и восьми попыток достаточно. Один
+    логин со всех адресов сразу — распределённый перебор, и порог для него
+    высокий: низкий превращал защиту в оружие против владельца учётной записи,
+    потому что запереть человека мог любой, кто знает его логин. Один адрес по
+    всем логинам — перебор словарём по именам.
+    """
     try:
+        if who and source and _recent_pair_failures(
+                db, who, source) >= LOGIN_MAX_FAILURES_PAIR:
+            return LOGIN_WINDOW_MINUTES * 60
         if who and _recent_failures(db, who=who) >= LOGIN_MAX_FAILURES:
             return LOGIN_WINDOW_MINUTES * 60
         if source and _recent_failures(db, source=source) >= LOGIN_MAX_FAILURES_IP:
@@ -436,8 +505,11 @@ def cookie_secure(request: Request) -> bool:
         return False
     if request.url.scheme == "https":
         return True
-    forwarded = (request.headers.get("x-forwarded-proto") or "").split(",")[0]
-    return forwarded.strip().lower() == "https"
+    # Заголовку верим только от доверенного прокси. Раньше верили любому — и
+    # это работало в обе стороны: чужой `X-Forwarded-Proto: https` ставил куке
+    # флаг Secure на инсталляции без TLS, после чего браузер переставал её
+    # отправлять, а человек видел бесконечный выход из системы.
+    return net.forwarded_proto(request) == "https"
 
 
 # --------------------------------------------------------------------------- #
@@ -643,6 +715,85 @@ def require(db, token: str | None, role: str) -> dict:
 # --------------------------------------------------------------------------- #
 #  Endpoints
 # --------------------------------------------------------------------------- #
+def _try_directory(db, login_name: str, password: str, row):
+    """Спросить каталог и, если он узнал человека, подготовить запись.
+
+    Возвращает `(row, True)` при успехе и None, если каталог выключен, не
+    настроен, недоступен или человека не признал. Ошибки наружу не пускаются
+    намеренно: «каталог не ответил» для формы входа выглядит как «неверный
+    пароль», и это правильно — рассказывать анониму про устройство внутренней
+    сети незачем. Причина уходит в журнал и в лог.
+    """
+    from . import directory
+
+    try:
+        cfg = directory.settings(db)
+        if not cfg.enabled:
+            return None
+        person = directory.authenticate(cfg, login_name, password)
+    except directory.DirectoryError as e:
+        audit(db, login_name or "—", "ldap.unavailable", str(e)[:200])
+        return None
+    except Exception as e:                                   # pragma: no cover
+        audit(db, login_name or "—", "ldap.error", f"{type(e).__name__}: {e}")
+        return None
+
+    if not person:
+        return None
+
+    role = person.get("role") or cfg.default_role
+    if row is None:
+        # Человек появляется при первом входе: ни импорта, ни задания
+        # синхронизации. Место по лицензии проверяется здесь же — учётная
+        # запись из каталога занимает его так же, как заведённая руками.
+        _check_user_limit(db)
+        # Пароль не хранится вовсе: строка заведомо не является нашим
+        # форматом хеша, поэтому `verify_password` на ней всегда ложна.
+        db.execute(
+            "INSERT INTO user(login, name, password, role, active, status,"
+            " source, external_dn) VALUES(?,?,?,?,1,'active','ldap',?)",
+            (login_name, person.get("name") or login_name, "ldap",
+             role, person.get("dn", "")))
+        audit(db, login_name, "user.created", login_name,
+              role=role, source="ldap")
+    else:
+        # Роль пересчитывается на каждом входе: человек, вышедший из группы
+        # ревьюеров, должен перестать быть ревьюером при следующем входе, а не
+        # тогда, когда кто-нибудь про это вспомнит.
+        #
+        # Исключение — роль, поднятая вручную в VisTest: её сохраняем, иначе
+        # «сделай Анну администратором здесь» молча отменялось бы само.
+        current = row["role"] or "viewer"
+        if _RANK.get(role, 0) > _RANK.get(current, 0):
+            db.execute("UPDATE user SET role=?, active=1, status='active',"
+                       " source='ldap', external_dn=? WHERE id=?",
+                       (role, person.get("dn", ""), row["id"]))
+        else:
+            db.execute("UPDATE user SET active=1, status='active',"
+                       " source='ldap', external_dn=? WHERE id=?",
+                       (person.get("dn", ""), row["id"]))
+
+    fresh = db.one(
+        "SELECT id, login, name, role, password, active, status, source"
+        "  FROM user WHERE login=?", (login_name,))
+    return (fresh, True) if fresh else None
+
+
+def _check_user_limit(db) -> None:
+    """Место под ещё одну учётную запись — по лицензии.
+
+    Отдельной функцией, потому что мест, где человек появляется, три:
+    администратор завёл руками, прошёл по приглашению, одобрили заявку. Три
+    отдельные проверки разошлись бы на первой же правке — и разошлись бы
+    молча, что в лимитах хуже всего.
+    """
+    try:
+        from .license import check_users
+    except Exception:                                        # pragma: no cover
+        return
+    check_users(db)
+
+
 def build_router(db):
     """The router is assembled with an already prepared database — one per process."""
 
@@ -694,7 +845,7 @@ def build_router(db):
                      "Sign in, or ask them for an invite.")
         if not setup_token_ok(payload.get("token") or ""):
             audit(db, "—", "setup.refused",
-                  (request.client.host if request.client else "") or "?")
+                  net.client_ip(request) or "?")
             raise HTTPException(403, "Wrong setup token")
 
         # Окно закрывается ЗДЕСЬ, и это же проверка «мы первые» — см.
@@ -721,7 +872,7 @@ def build_router(db):
         row = db.one("SELECT id, login, name, role FROM user WHERE login=?",
                      ((payload.get("login") or "").strip().lower(),))
         audit(db, row["login"], "setup.completed",
-              (request.client.host if request.client else "") or "?")
+              net.client_ip(request) or "?")
 
         token = open_session(db, row["id"],
                              request.headers.get("user-agent", ""))
@@ -748,6 +899,24 @@ def build_router(db):
             raise HTTPException(
                 409, "This installation has no administrator yet — "
                      "the first account to be created becomes one.")
+
+        # Оба ограничения стоят ДО `create_user`, то есть до PBKDF2: заявка,
+        # которую мы не примем, не должна стоить нам полмиллиона раундов.
+        source = net.client_ip(request) or "?"
+        wait = register_blocked(db, source)
+        if wait:
+            raise HTTPException(
+                429, "Too many access requests from this address. "
+                     f"Try again in {wait // 60} minutes.",
+                headers={"Retry-After": str(wait)})
+        # Заявка ничего не даёт до одобрения, поэтому лицензия проверяется
+        # не здесь, а при одобрении: считать заявку занятым местом значило бы
+        # запирать очередь по причине, к очереди отношения не имеющей.
+        if len(pending_users(db)) >= MAX_PENDING_USERS:
+            raise HTTPException(
+                429, "There are too many access requests waiting for review on "
+                     "this installation. Ask an administrator to go through "
+                     "them, or to send you an invite.")
         try:
             create_user(db, payload.get("login") or "",
                         payload.get("password") or "",
@@ -758,7 +927,7 @@ def build_router(db):
 
         audit(db, (payload.get("login") or "").strip().lower(),
               "register.requested",
-              (request.client.host if request.client else "") or "?")
+              net.client_ip(request) or "?")
         return JSONResponse(
             status_code=202,
             content={"status": "pending",
@@ -788,7 +957,11 @@ def build_router(db):
     def login(response: Response, request: Request, payload: dict = Body(...)):
         login_name = (payload.get("login") or "").strip().lower()
         password = payload.get("password") or ""
-        source = (request.client.host if request.client else "") or "?"
+        # Счётчик попыток считает по адресу клиента, а не по заголовку: за
+        # доверенным прокси это настоящий адрес, без прокси — адрес соединения.
+        # До этого сюда попадал `X-Forwarded-For` от кого угодно, то есть
+        # перебор обходился сменой одной строки в запросе.
+        source = net.client_ip(request) or "?"
 
         # Before the hash, not after: a throttled attempt must not cost us
         # 480k PBKDF2 rounds.
@@ -800,14 +973,28 @@ def build_router(db):
                 headers={"Retry-After": str(wait)})
 
         row = db.one(
-            "SELECT id, login, name, role, password, active, status FROM user"
-            " WHERE login=?", (login_name,))
+            "SELECT id, login, name, role, password, active, status, source"
+            "  FROM user WHERE login=?", (login_name,))
 
         # We check the password even when the user is absent: otherwise the
         # response time reveals which logins exist.
         stored = row["password"] if row else _ABSENT_USER_HASH
         password_ok = verify_password(password, stored)
+        # Учётная запись из каталога локальным паролем не открывается: её
+        # хеш заведомо непригоден, и проверка выше на ней всегда ложна. Это и
+        # есть смысл колонки `source` — «отключили в AD» должно означать
+        # «войти нельзя», а не «нельзя одним из двух способов».
+        if row and (row["source"] or "local") != "local":
+            password_ok = False
         ok = password_ok and row and row["active"]
+
+        # Каталог спрашивается ВТОРЫМ. Если он недоступен — просрочен
+        # сертификат, переехал сервер, лежит VPN, — администратор с локальным
+        # паролем всё ещё войдёт и выключит интеграцию. Инсталляция, в которую
+        # можно попасть только через лежащий сервис, — это инсталляция,
+        # которую некому чинить.
+        if not ok and not (row and row["status"] == "pending"):
+            row, ok = _try_directory(db, login_name, password, row) or (row, ok)
 
         # Заявка, ждущая одобрения, — это не «неверный пароль». Человек только
         # что зарегистрировался и получил бы ответ, из которого следует, что он
@@ -826,7 +1013,7 @@ def build_router(db):
             audit(db, login_name or "—", "login.failed", source)
             raise HTTPException(401, "Wrong login or password")
 
-        if needs_rehash(row["password"]):
+        if (row["source"] or "local") == "local" and needs_rehash(row["password"]):
             db.execute("UPDATE user SET password=? WHERE id=?",
                        (hash_password(password), row["id"]))
 
@@ -842,6 +1029,55 @@ def build_router(db):
         audit(db, row["login"], "login.ok", source)
         purge_expired(db)
         return {"login": row["login"], "name": row["name"], "role": row["role"]}
+
+    # ---------------- каталог предприятия ----------------
+    @router.get("/api/ldap")
+    def ldap_settings(request: Request,
+                      vistest_session: str | None = Cookie(default=None)):
+        """Настройки каталога. Пароль сервисного аккаунта наружу не отдаётся."""
+        from . import directory
+
+        require(db, vistest_session, "admin")
+        cfg = directory.settings(db)
+        return cfg.to_dict(bind_password_set=bool(directory.bind_password()))
+
+    @router.put("/api/ldap")
+    def ldap_save(request: Request, payload: dict = Body(...),
+                  vistest_session: str | None = Cookie(default=None)):
+        from . import directory
+
+        me_ = require(db, vistest_session, "admin")
+        # Включить интеграцию, не проверив её, — это способ выяснить, что она
+        # не работает, на людях в понедельник утром.
+        if payload.get("enabled"):
+            cfg = directory.save_settings(db, {**payload, "enabled": False},
+                                          me_["login"])
+            check = directory.probe(cfg)
+            if not check["ok"]:
+                raise HTTPException(
+                    400, f"The settings are saved but the directory is not "
+                         f"turned on: {check['error']}")
+        cfg = directory.save_settings(db, payload, me_["login"])
+        audit(db, me_["login"], "ldap.configured", cfg.server,
+              enabled=cfg.enabled, base_dn=cfg.base_dn)
+        return cfg.to_dict(bind_password_set=bool(directory.bind_password()))
+
+    @router.post("/api/ldap/test")
+    def ldap_test(request: Request, payload: dict = Body(default={}),
+                  vistest_session: str | None = Cookie(default=None)):
+        """Проверка соединения — по шагам, потому что «не работает» нечинибельно."""
+        from . import directory
+
+        require(db, vistest_session, "admin")
+        # Проверяем то, что в форме прямо сейчас, а не то, что сохранено:
+        # иначе настройку пришлось бы сохранять, чтобы узнать, верна ли она.
+        cfg = directory.settings(db)
+        for key, value in (payload.get("settings") or {}).items():
+            if hasattr(cfg, key) and value is not None:
+                if key == "role_map" and isinstance(value, str):
+                    value = directory.parse_role_map(value)
+                setattr(cfg, key, value)
+        return directory.probe(cfg, str(payload.get("login") or "").strip())
 
     @router.post("/api/auth/logout")
     def logout(response: Response,
@@ -925,6 +1161,7 @@ def build_router(db):
     def add_user(payload: dict = Body(...),
                  vistest_session: str | None = Cookie(default=None)):
         me_ = require(db, vistest_session, "admin")
+        _check_user_limit(db)
         try:
             create_user(db, payload.get("login", ""), payload.get("password", ""),
                         role=payload.get("role", "viewer"),
@@ -991,6 +1228,7 @@ def build_router(db):
         осознанно.
         """
         me_ = require(db, vistest_session, "admin")
+        _check_user_limit(db)
         role = payload.get("role") or "viewer"
         try:
             ok = approve_user(db, login, role)
@@ -1075,6 +1313,14 @@ def build_router(db):
         inv = claim_invite(db, token, login_name)
         if not inv:
             raise HTTPException(400, "The invite link is invalid or has expired")
+        try:
+            _check_user_limit(db)
+        except HTTPException:
+            # Ссылка не виновата в том, что мест не осталось: возвращаем её в
+            # оборот, иначе администратору придётся выписывать новую после
+            # каждого такого отказа.
+            release_invite(db, token)
+            raise
         try:
             uid = create_user(db, payload.get("login", ""),
                               payload.get("password", ""),

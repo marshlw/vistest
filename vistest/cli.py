@@ -144,6 +144,30 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("rest", nargs=argparse.REMAINDER,
                        help="extra arguments for their pytest")
 
+    p_ing = pr_sub.add_parser(
+        "ingest",
+        help="judge the pictures a run has already left behind, without "
+             "starting anything")
+    p_ing.add_argument("key")
+    p_ing.add_argument("--dir", action="append", default=[], metavar="PATH",
+                       dest="dirs",
+                       help="where the run left its pictures, relative to the "
+                            "project root; may be repeated")
+    p_ing.add_argument("--browser", default="",
+                       help="which browser produced them — it is part of the "
+                            "baseline key, not a label")
+    p_ing.add_argument("--baselines", choices=["project", "vistest"],
+                       help="which set to compare against, for this run only")
+    p_ing.add_argument("--update", action="store_true",
+                       help="accept these pictures as the baselines")
+    p_ing.add_argument("--run-key", default="",
+                       help="identifier of the run; a repeat under the same "
+                            "key replaces it")
+    p_ing.add_argument("--ci-url", default="")
+    p_ing.add_argument("--json", action="store_true")
+    p_ing.add_argument("--no-history", action="store_true",
+                       help="do not record the run in the shared history")
+
     p_chk = pr_sub.add_parser(
         "check", help="collect their tests without running anything")
     p_chk.add_argument("key")
@@ -280,6 +304,45 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--ignore-review", action="store_true",
                    help="ignore that a failure has already been accepted as normal")
 
+    bl = sub.add_parser("baselines", help="move baselines between installations")
+    bl_sub = bl.add_subparsers(dest="sub", required=True)
+
+    bl_ex = bl_sub.add_parser("export", help="pack selected baselines")
+    bl_ex.add_argument("archive")
+    bl_ex.add_argument("--project", default="", help="only this project's set")
+    bl_ex.add_argument("--platform", default="",
+                       help="only this platform key, for example linux-chromium-1x")
+    bl_ex.add_argument("--name", action="append", default=[], dest="names",
+                       help="glob of snapshot names; may be repeated")
+    bl_ex.add_argument("--with-history", action="store_true",
+                       help="include previous versions, several times the size")
+
+    bl_im = bl_sub.add_parser("import", help="merge an archive into this installation")
+    bl_im.add_argument("archive")
+    bl_im.add_argument("--mode", default="new", choices=["new", "update", "replace"],
+                       help="new: keep what is here; update: bring incoming in as "
+                            "a new version; replace: incoming wins, history included")
+    bl_im.add_argument("--project", default="")
+    bl_im.add_argument("--platform", default="")
+    bl_im.add_argument("--name", action="append", default=[], dest="names")
+    bl_im.add_argument("--dry-run", action="store_true",
+                       help="say what would happen and change nothing")
+    bl_im.add_argument("--who", default="", help="name to record on imported versions")
+
+    bk = sub.add_parser("backup", help="pack baselines and the database into an archive")
+    bk.add_argument("archive", help="where to write it, for example vistest-2026-09-05.tar.gz")
+    bk.add_argument("--with-secrets", action="store_true",
+                    help="include secrets.env — it holds stand credentials, "
+                         "so it is left out unless asked for")
+
+    rs = sub.add_parser("restore", help="unpack a backup into the data volume")
+    rs.add_argument("archive")
+    rs.add_argument("--force", action="store_true",
+                    help="restore over a non-empty data volume, replacing "
+                         "the baselines and the database")
+    rs.add_argument("--show", action="store_true",
+                    help="only say what is inside, restore nothing")
+
     pr = sub.add_parser("prune", help="delete old runs and their artifacts")
     pr.add_argument("--days", type=int, help="delete runs older than N days")
     pr.add_argument("--keep-last", type=int, default=20,
@@ -355,7 +418,115 @@ def main(argv: list[str] | None = None) -> int:
         return _gate(args)
     if args.cmd == "prune":
         return _prune(args)
+    if args.cmd == "baselines":
+        return _baselines_transfer(args)
+    if args.cmd == "backup":
+        return _backup(args)
+    if args.cmd == "restore":
+        return _restore(args)
     return 1
+
+
+def _baselines_root() -> Path:
+    cfg = VisTestConfig.load()
+    root = Path(os.getenv("VISTEST_ROOT", ".vistest"))
+    return root / cfg.paths.baselines
+
+
+def _baselines_transfer(args) -> int:
+    from .transfer import Selection, export, import_, inspect, plan
+
+    selection = Selection(project=args.project, platform=args.platform,
+                          names=tuple(args.names))
+    root = _baselines_root()
+
+    if args.sub == "export":
+        try:
+            info = export(args.archive, baselines_root=root,
+                          selection=selection, with_history=args.with_history)
+        except FileNotFoundError as e:
+            print(str(e))
+            return 1
+        if not info["count"]:
+            print("Nothing matched the selection — the archive would be empty.")
+            return 1
+        print(f"{info['count']} snapshots -> {info['archive']} "
+              f"({info['size_kb']} KB)"
+              + (", with history" if info["with_history"] else ""))
+        return 0
+
+    # import
+    try:
+        manifest = inspect(args.archive)
+    except (OSError, ValueError) as e:
+        print(str(e))
+        return 1
+    print(f"Made {manifest.get('created_at', '?')} by VisTest "
+          f"{manifest.get('version', '?')}: "
+          f"{len(manifest.get('snapshots') or [])} snapshots")
+
+    steps = plan(args.archive, baselines_root=root, mode=args.mode,
+                 selection=selection)
+    if not steps:
+        print("Nothing in this archive matches the selection.")
+        return 1
+
+    for step in steps:
+        where = f" [{step['platform']}]" if step["platform"] else ""
+        print(f"  {step['action']:<12} {step['name']}{where}  - {step['reason']}")
+
+    if args.dry_run:
+        print("\nNothing was changed (--dry-run).")
+        return 0
+
+    result = import_(args.archive, baselines_root=root, mode=args.mode,
+                     selection=selection, who=args.who)
+    counts = result["counts"]
+    print(f"\nadded {counts['added']}, new versions {counts['updated']}, "
+          f"replaced {counts['replaced']}, skipped {counts['skipped']}")
+    if result["failed"]:
+        for bad in result["failed"]:
+            print(f"  failed: {bad['name']} - {bad['error']}")
+        return 1
+    return 0
+
+
+def _backup(args) -> int:
+    from .backup import create
+
+    try:
+        info = create(args.archive, with_secrets=args.with_secrets)
+    except FileNotFoundError as e:
+        print(str(e))
+        return 1
+
+    print(f"Backup: {info['archive']} ({info['size_kb']} KB)")
+    print("Contains: " + (", ".join(info["contains"]) or "nothing"))
+    if not args.with_secrets:
+        print("secrets.env is NOT included — add --with-secrets if you need it.")
+    return 0
+
+
+def _restore(args) -> int:
+    from .backup import inspect, restore
+
+    if args.show:
+        info = inspect(args.archive)
+        print(f"Made {info.get('created_at', '?')} by VisTest "
+              f"{info.get('version', '?')}")
+        print("Contains: " + (", ".join(info.get("contains") or []) or "nothing"))
+        print(f"Schema version: {info.get('schema_version', '?')}")
+        return 0
+
+    try:
+        info = restore(args.archive, force=args.force)
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        print(str(e))
+        return 1
+
+    print(f"Restored into {info['restored_to']}: "
+          + (", ".join(info.get("contains") or []) or "nothing"))
+    return 0
 
 
 def _compare(args) -> int:
@@ -1044,6 +1215,11 @@ def _project(args) -> int:
             print(f"Project {args.key!r} is not connected", file=sys.stderr)
             return 1
 
+        if not project.uses_pytest():
+            from .external import install_dependencies
+
+            return install_dependencies(project)
+
         if args.all:
             return install_requirements(project, all_requirements=True)
 
@@ -1114,6 +1290,44 @@ def _project(args) -> int:
             return 1
         print(f"Disconnected: {args.key}. The project's files are untouched.")
         return 0
+
+    if args.sub == "ingest":
+        from .external import ingest_project, publish
+
+        project = reg.get(args.key)
+        if project is None:
+            print(f"Project {args.key!r} is not connected", file=sys.stderr)
+            return 1
+
+        quiet = (lambda _t: None) if args.json else print
+        run = ingest_project(project, cfg=cfg, dirs=args.dirs,
+                             browser=args.browser,
+                             baseline_source=args.baselines,
+                             update_baselines=args.update,
+                             run_key=args.run_key, ci_url=args.ci_url,
+                             log=quiet)
+
+        if not args.no_history:
+            try:
+                publish(run, project, cfg=cfg, log=quiet)
+            except Exception as e:
+                print(f"could not write to the history: {e}", file=sys.stderr)
+
+        if args.json:
+            print(json.dumps(run.to_dict(), indent=2, ensure_ascii=False))
+            return 1 if run.failed else 0
+
+        s = run.summary()
+        print(f"\nSnapshots: {s['total']}, failed: {s['failed']}, "
+              f"new baselines: {s['new']}, passed: {s['passed']}")
+        for r in run.results:
+            if r["verdict"] != "pass":
+                print(f"  {r['verdict']:12s} {r['name']}  "
+                      f"severity={r.get('max_severity', 0):.1f}")
+        for e in run.errors:
+            print(f"  ! {e}", file=sys.stderr)
+        print(f"Artifacts: {run.run_dir}")
+        return 1 if run.failed else 0
 
     if args.sub == "run":
         from .external import publish, run_project

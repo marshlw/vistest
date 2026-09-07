@@ -13,20 +13,16 @@
 SCREENS.decisions = async function(){
   loadingScreen();
   const here=pageGuard();
-  /* Очередь строится для ОДНОГО набора: причина объединяет снимки одного
-     проекта, и общее решение для двух чужих друг другу наборов бессмысленно.
-     Поэтому при «всех проектах» здесь не пустой экран, а выбор. */
-  if(state.project==='*'){
-    /* Один набор — спрашивать не о чем. Экран выбора при единственном проекте
-       это лишний щелчок на каждом заходе, и он же — первое, что видит человек
-       на свежей инсталляции. */
-    const list=await api('/api/run-projects').catch(()=>[]);
-    const named=list.filter(p=>p.name);
-    if(named.length!==1)return pickProjectForQueue(named);
-    state.project=named[0].name;$('#projName').textContent=named[0].name;
-    refreshCounts();
-  }
+  /* Экрана «выберите проект» здесь больше нет, и это не упрощение, а следствие.
 
+     Очередь строится для ОДНОГО набора: причина объединяет снимки одного
+     проекта, и общее решение для двух чужих друг другу наборов бессмысленно
+     (`/api/decisions` отвечает на `project=*` четырёхсотым — намеренно).
+     Пока в шапке жило «all projects», этот экран был единственным, кто с ним
+     не мирился, и вынужден был спрашивать сам — то есть задавать вопрос,
+     который уже задан в шапке, и отвечать на него в обход неё.
+
+     Теперь проект закреплён до первой отрисовки, и спрашивать нечего. */
   let d;
   try{d=await api('/api/decisions?project='+encodeURIComponent(state.project));}
   catch(e){return errScreen(e);}
@@ -242,28 +238,3 @@ function triageIds(causes){
   return out;
 }
 
-function pickProjectForQueue(known){
-  const s=$('#screen');s.innerHTML='';
-  const page=el('div','page narrow');
-  page.innerHTML=`<div class="eyebrow">QUEUE</div>
-    <h1 class="h1">Pick a project</h1>
-    <div class="lede">A cause groups snapshots of one set, and one answer cannot
-      close two projects at once. Choose whose queue to open — the switch is in
-      the top left as well.</div>`;
-  const box=el('div','panel');box.style.marginTop='18px';
-  Promise.resolve(known||api('/api/run-projects')).then(list=>{
-    if(!list.length){box.append(el('div','empty','No runs yet — nothing to decide.'));return;}
-    list.forEach(p=>{
-      const row=el('div');
-      row.style.cssText='display:flex;align-items:center;gap:12px;padding:11px 15px;'
-        +'border-bottom:1px solid var(--line3);cursor:pointer';
-      row.innerHTML=`<b>${esc(p.name)}</b>
-        <span class="mono faint" style="font-size:11.5px">${p.runs} runs</span>
-        <span class="mono faint" style="margin-left:auto;font-size:11.5px">${esc(timeAgo(p.last_run))}</span>`;
-      hit(row,()=>{state.project=p.name;$('#projName').textContent=p.name;
-        refreshCounts();SCREENS.decisions();},`Open the queue of ${p.name}`);
-      box.append(row);
-    });
-  }).catch(e=>box.append(el('div','empty',esc(String(e.message||e)))));
-  page.append(box);s.append(page);
-}

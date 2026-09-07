@@ -178,8 +178,35 @@ def test_a_project_run_by_its_own_command_is_refused_with_a_reason(service, tmp_
     r = client.post("/api/projects/shop/run",
                     json={"browsers": ["chromium", "firefox"], "mode": "separate"})
     assert r.status_code == 400
-    assert "своей командой" in r.json()["detail"]
+    assert "its own command" in r.json()["detail"]
     assert not started, "отказали — значит ничего не запускали"
+
+
+def test_a_recognised_suite_is_not_refused(service, tmp_path):
+    """Отказ был про незнание, а не про принцип.
+
+    `npx playwright test` понимает `--project`, и как только инструмент
+    опознан по `playwright.config.ts`, отказывать не в чем: аргумент известен,
+    и три прогона будут тремя разными движками, а не тремя chromium.
+    """
+    client, mainmod, started = service
+    (tmp_path / "their-repo").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "their-repo" / "playwright.config.ts").write_text(
+        "export default {};\n")
+    from vistest import suites
+    suites.forget()
+    _connect(tmp_path, mainmod, runner="command",
+             command=["npx", "playwright", "test"])
+    _admin(mainmod, client)
+
+    r = client.post("/api/projects/shop/run",
+                    json={"browsers": ["chromium", "firefox"], "mode": "separate"})
+    assert r.status_code == 200, r.text
+    assert len(started) == 2
+
+    p = client.get("/api/projects").json()["projects"][0]
+    assert p["browser_control"] == "profile" and not p["browser_refusal"]
+    suites.forget()
 
 
 def test_the_same_project_still_runs_without_a_browser(service, tmp_path):

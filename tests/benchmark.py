@@ -11,6 +11,7 @@
     python tests/benchmark.py                       таблица по VisTest
     python tests/benchmark.py --artifacts           + картинки диффов
     python tests/benchmark.py --compare             VisTest против конкурентов
+    python tests/benchmark.py --no-ai               голый компаратор, без AI-слоя
     python tests/benchmark.py --compare --markdown bench_out/BENCHMARK.md
     python tests/benchmark.py --export bench_out/corpus   выгрузить корпус
 
@@ -41,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tests import baselines as bl  # noqa: E402
 from tests import corpus as cp  # noqa: E402
+from vistest.ai import AIPipeline  # noqa: E402
 from vistest.config import VisTestConfig  # noqa: E402
 from vistest.core.comparator import compare  # noqa: E402
 from vistest.models import Verdict  # noqa: E402
@@ -88,12 +90,23 @@ class Score:
             self.misses += int(not failed)
 
 
+def _title(cfg: VisTestConfig, ai: AIPipeline | None) -> str:
+    return f"VisTest ({cfg.preset})" if ai else f"VisTest ({cfg.preset}, без AI)"
+
+
+def _note(ai: AIPipeline | None) -> str:
+    base = "ΔE00 ∧ SSIM, консенсус"
+    return base + (" + обучаемый гейт" if ai else ", AI-слой выключен")
+
+
 def score_vistest(cases: list[cp.Case], cfg: VisTestConfig,
-                  *, artifacts_dir: Path | None = None) -> Score:
-    s = Score(title=f"VisTest ({cfg.preset})", note="ΔE00 ∧ SSIM, консенсус")
+                  *, artifacts_dir: Path | None = None,
+                  ai: AIPipeline | None = None) -> Score:
+    s = Score(title=_title(cfg, ai), note=_note(ai))
     for c in cases:
         t0 = time.perf_counter()
-        r = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name)
+        r = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name,
+                    ai_hooks=ai)
         s.ms += (time.perf_counter() - t0) * 1000
         s.add(c, r.verdict is Verdict.FAIL)
         wrong = (r.verdict is Verdict.FAIL) != c.expected_fail
@@ -131,20 +144,23 @@ def score_native(cases: list[cp.Case], native: dict, key: str,
 #  Вывод
 # --------------------------------------------------------------------------- #
 def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
-                 artifacts_dir: Path | None) -> Score:
+                 artifacts_dir: Path | None,
+                 ai: AIPipeline | None = None) -> Score:
     header = (f"{'кейс':24s} {'ожид':6s} {'факт':6s} {'sev':>6s} {'изм%':>8s} "
               f"{'ΔE':>6s} {'SSIM':>7s} {'рег':>4s} {'мс':>5s}  итог")
-    print(f"\n=== VisTest benchmark (preset={cfg.preset}) ===")
+    print(f"\n=== VisTest benchmark (preset={cfg.preset}, "
+          f"AI-слой {'вкл' if ai else 'выкл'}) ===")
     print(header)
     print("-" * len(header))
 
-    s = Score(title=f"VisTest ({cfg.preset})")
+    s = Score(title=_title(cfg, ai), note=_note(ai))
     for group in ("NOISE", "SIGNAL"):
         expected = Verdict.PASS if group == "NOISE" else Verdict.FAIL
         print(f"\n[{group}]  ожидается {expected.value}")
         for c in (x for x in cases if x.group == group):
             t0 = time.perf_counter()
-            r = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name)
+            r = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name,
+                        ai_hooks=ai)
             ms = (time.perf_counter() - t0) * 1000
             s.ms += ms
             failed = r.verdict is Verdict.FAIL
@@ -195,6 +211,11 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("")
     L.append("Числа ниже воспроизводятся одной командой на любой машине — "
              "корпус синтетический и генерируется кодом, а не лежит архивом.")
+    L.append("")
+    L.append("VisTest считается в конфигурации по умолчанию, вместе с "
+             "AI-слоем: обучаемый гейт включён в поставке, и прогон у "
+             "покупателя идёт именно так. Голый компаратор без него — "
+             "`python tests/benchmark.py --compare --no-ai`.")
     L.append("")
 
     L.append("## Результат")
@@ -329,6 +350,8 @@ def main() -> int:
     ap.add_argument("--artifacts", action="store_true", help="сохранить картинки")
     ap.add_argument("--compare", action="store_true",
                     help="сравнить с конкурентами")
+    ap.add_argument("--no-ai", action="store_true",
+                    help="без AI-слоя: голый компаратор, только для диагностики")
     ap.add_argument("--native", help="JSON нативного прогона pixelmatch")
     ap.add_argument("--export", metavar="DIR",
                     help="выгрузить корпус в PNG для чужих инструментов")
@@ -338,6 +361,10 @@ def main() -> int:
 
     cfg = VisTestConfig.preset_of(args.preset)
     cases = cp.build()
+    # По умолчанию меряем то, что реально уезжает покупателю: гейт включён в
+    # конфигурации по умолчанию, и CheckService собирает пайплайн на каждой
+    # проверке. Бенчмарк без него мерил подмножество продукта и занижал его.
+    ai = None if args.no_ai else AIPipeline(cfg.ai)
     out = Path(args.out)
     artifacts_dir = out if args.artifacts else None
 
@@ -349,12 +376,12 @@ def main() -> int:
         return 0
 
     if not args.compare:
-        s = print_detail(cases, cfg, artifacts_dir)
+        s = print_detail(cases, cfg, artifacts_dir, ai=ai)
         if args.artifacts:
             print(f"Артефакты: {out.resolve()}")
         return 1 if s.correct != s.total else 0
 
-    scores = [score_vistest(cases, cfg, artifacts_dir=artifacts_dir)]
+    scores = [score_vistest(cases, cfg, artifacts_dir=artifacts_dir, ai=ai)]
 
     native: dict = {}
     if args.native:

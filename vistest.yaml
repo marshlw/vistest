@@ -94,8 +94,6 @@ ai:
   perceptual_enabled: false     # нужен onnxruntime + models/perceptual.onnx
   perceptual_model_path: models/perceptual.onnx
   perceptual_tolerance: 0.06
-  captioner_enabled: false      # vision-LLM, требует ANTHROPIC_API_KEY
-  captioner_min_severity: 40.0
 
 render:
   heatmap: true

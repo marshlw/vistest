@@ -43,7 +43,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import VisTestConfig, platform_key
-from .projects import Project, baseline_name_of, classify_png
+from .projects import Project
+from .suites import SKIP_DIRS
 
 
 @dataclass
@@ -185,6 +186,93 @@ def has_own_baselines(directory: Path) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+def resolve_baselines(project: Project, cfg: VisTestConfig, *,
+                      baseline_source: str | None = None, browser: str = "",
+                      update_baselines: bool = False,
+                      env: dict[str, str] | None = None) -> tuple[Path, bool]:
+    """Против чего сравнивать: их папка эталонов или наш собственный набор.
+
+    Вынесено из `run_project` не ради красоты. Приём готовых артефактов
+    (`ingest`) обязан выбирать эталоны ровно теми же правилами, что и обычный
+    прогон, — иначе один и тот же проект через две двери сравнивался бы с
+    разными наборами, и расхождение было бы видно только по вердикту.
+
+    `baseline_source` переопределяет настройку проекта на один раз:
+    «project» — их закоммиченные PNG, «vistest» — набор, снятый нами.
+    """
+    # Без окружения прогона правило выбора папки эталонов проверять нечем:
+    # у проектов, гоняющих и локально, и в контейнере, их две, и условие
+    # написано на переменных. Пустой словарь молча выбрал бы безусловное
+    # правило — то есть не ту папку.
+    if env is None:
+        env = {**os.environ, **(project.env or {})}
+
+    # baseline_source overrides the baseline source for a specific run:
+    #   "project" — compare against their committed PNGs; "vistest" — against the
+    #   set captured by VisTest itself. Without it the project setting is used.
+    if baseline_source in ("project", "vistest"):
+        own = baseline_source == "vistest"
+    else:
+        own = project.uses_own_baselines()
+
+    if own:
+        # Our own set is captured by our capture and lives outside their repo.
+        # The platform in the path is mandatory: text rendering in Windows and in
+        # a container is physically different, there is no shared baseline between
+        # them.
+        platform = platform_key(browser or "chromium",
+                                cfg.capture.device_scale_factor)
+        baseline_dir = project.vistest_baselines_path(cfg, platform)
+        # Каталог НЕ создаётся здесь.
+        #
+        # Здесь стоял `mkdir(parents=True, exist_ok=True)` — до всех проверок,
+        # то есть каждая неудачная попытка прогона оставляла на диске пустой
+        # каталог платформы. Дальше он попадал в `baseline_status()` и на
+        # карточку: «11 on docker-chromium-1x (11), docker-firefox-1x (0),
+        # docker-webkit-1x (0)». Читается это как «набор для firefox есть, но
+        # пуст», хотя на самом деле его не снимали ни разу и попытка была
+        # отвергнута секундой раньше.
+        #
+        # Каталог создаёт тот, кто в него пишет: адаптер, когда
+        # `VISTEST_ADAPTER_UPDATE=1`. Отсутствие каталога — честный ответ
+        # «этого набора нет».
+        # An empty set + no request to capture is an error, not a «first run».
+        # Capturing VisTest baselines is a separate explicit action (a button in «⋯»).
+        if not update_baselines and not has_own_baselines(baseline_dir):
+            # Совет обязан вести туда, где помогает.
+            #
+            # Здесь стояло «снимите набор через ⋯ → Capture VisTest baselines»,
+            # и для многобраузерного прогона это тупик: то действие снимает
+            # набор браузера по умолчанию, то есть chromium — который как раз и
+            # работал. Человек делал ровно то, что написано, и получал ту же
+            # ошибку про firefox.
+            #
+            # Поэтому сообщение называет БРАУЗЕР и говорит, у каких браузеров
+            # набор уже есть: из этого сразу видно, что вопрос не в проекте, а
+            # в одном движке.
+            have = [name for name, ok in
+                    browsers_with_baselines(project, cfg).items() if ok]
+            hint = (f"Sets are already captured for: {', '.join(have)}. "
+                    if have else "")
+            for_browser = f" for {browser}" if browser else ""
+            raise ExternalRunRefused(
+                f"The VisTest baseline set for platform {platform} has not been "
+                f"captured yet — there is nothing in {baseline_dir}. {hint}"
+                f"Capture it{for_browser}: «⋯ → Snap VisTest baselines», "
+                f"picking{for_browser or ' the browser'} in the «▾» menu, "
+                "then run the comparison again.")
+    else:
+        baseline_dir = project.baseline_dir(env)
+        if baseline_dir is None:
+            raise ExternalRunRefused(
+                "No baselines folder selected. Check the rules in the project "
+                "description: no condition matched the run environment.")
+        if not baseline_dir.exists():
+            raise ExternalRunRefused(f"Baselines folder not found: {baseline_dir}")
+    return baseline_dir, own
+
+
+# --------------------------------------------------------------------------- #
 def run_project(project: Project, *, cfg: VisTestConfig | None = None,
                 env_overrides: dict[str, str] | None = None,
                 update_baselines: bool = False,
@@ -246,72 +334,13 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
             raise ExternalRunRefused(
                 install_hint(browser, state, where="the project environment"))
 
-    # baseline_source overrides the baseline source for a specific run:
-    #   "project" — compare against their committed PNGs; "vistest" — against the
-    #   set captured by VisTest itself. Without it the project setting is used.
-    if baseline_source in ("project", "vistest"):
-        own = baseline_source == "vistest"
-    else:
-        own = project.uses_own_baselines()
-
     # In CI we never write baselines: a run only compares.
     if ci:
         update_baselines = False
 
-    if own:
-        # Our own set is captured by our capture and lives outside their repo.
-        # The platform in the path is mandatory: text rendering in Windows and in
-        # a container is physically different, there is no shared baseline between
-        # them.
-        platform = platform_key(browser or "chromium",
-                                cfg.capture.device_scale_factor)
-        baseline_dir = project.vistest_baselines_path(cfg, platform)
-        # Каталог НЕ создаётся здесь.
-        #
-        # Здесь стоял `mkdir(parents=True, exist_ok=True)` — до всех проверок,
-        # то есть каждая неудачная попытка прогона оставляла на диске пустой
-        # каталог платформы. Дальше он попадал в `baseline_status()` и на
-        # карточку: «11 on docker-chromium-1x (11), docker-firefox-1x (0),
-        # docker-webkit-1x (0)». Читается это как «набор для firefox есть, но
-        # пуст», хотя на самом деле его не снимали ни разу и попытка была
-        # отвергнута секундой раньше.
-        #
-        # Каталог создаёт тот, кто в него пишет: адаптер, когда
-        # `VISTEST_ADAPTER_UPDATE=1`. Отсутствие каталога — честный ответ
-        # «этого набора нет».
-        # An empty set + no request to capture is an error, not a «first run».
-        # Capturing VisTest baselines is a separate explicit action (a button in «⋯»).
-        if not update_baselines and not has_own_baselines(baseline_dir):
-            # Совет обязан вести туда, где помогает.
-            #
-            # Здесь стояло «снимите набор через ⋯ → Capture VisTest baselines»,
-            # и для многобраузерного прогона это тупик: то действие снимает
-            # набор браузера по умолчанию, то есть chromium — который как раз и
-            # работал. Человек делал ровно то, что написано, и получал ту же
-            # ошибку про firefox.
-            #
-            # Поэтому сообщение называет БРАУЗЕР и говорит, у каких браузеров
-            # набор уже есть: из этого сразу видно, что вопрос не в проекте, а
-            # в одном движке.
-            have = [name for name, ok in
-                    browsers_with_baselines(project, cfg).items() if ok]
-            hint = (f"Sets are already captured for: {', '.join(have)}. "
-                    if have else "")
-            for_browser = f" for {browser}" if browser else ""
-            raise ExternalRunRefused(
-                f"The VisTest baseline set for platform {platform} has not been "
-                f"captured yet — there is nothing in {baseline_dir}. {hint}"
-                f"Capture it{for_browser}: «⋯ → Snap VisTest baselines», "
-                f"picking{for_browser or ' the browser'} in the «▾» menu, "
-                "then run the comparison again.")
-    else:
-        baseline_dir = project.baseline_dir(env)
-        if baseline_dir is None:
-            raise ExternalRunRefused(
-                "No baselines folder selected. Check the rules in the project "
-                "description: no condition matched the run environment.")
-        if not baseline_dir.exists():
-            raise ExternalRunRefused(f"Baselines folder not found: {baseline_dir}")
+    baseline_dir, own = resolve_baselines(
+        project, cfg, baseline_source=baseline_source, browser=browser,
+        update_baselines=update_baselines, env=env)
 
     # Секунды не хватает на идентификатор прогона, а с многобраузерностью и
     # подавно: три прогона одного проекта стартуют в одну секунду штатно, а
@@ -441,8 +470,9 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
     # yesterday, and passing them off as the result would be a lie.
     before: dict[str, float] = {}
     if mode == "observe":
-        before.update(_png_snapshot(baseline_dir))
-        before.update(_png_snapshot(project.tests_path()))
+        for where in _observe_roots(project, project.profile(),
+                                    baseline_dir, run_dir):
+            before.update(_png_snapshot(where))
 
     run.command = _build_command(project, mode,
                                  list(extra_args or []) + browser_args,
@@ -462,7 +492,9 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
             _collect_adapter(run, run_dir, project=project, log=log)
         else:
             _collect_observed(run, project, cfg, baseline_dir, run_dir,
-                              before=before, log=log, own=own)
+                              before=before, log=log, own=own,
+                              update_baselines=update_baselines,
+                              browser=browser)
     except Exception as e:
         run.errors.append(f"Failed to collect the results: {type(e).__name__}: {e}")
         log(run.errors[-1])
@@ -661,6 +693,16 @@ def _browser_env_and_args(project: Project, browser: str, *, log=print
         return env, ["--browser", browser]
     if how == "none":                                      # pragma: no cover
         return env, []
+    if how == "profile":
+        # Инструмент опознан, и аргумент берётся из его профиля, а не из
+        # предположения: у Playwright это `--project`, у Cypress `--browser`,
+        # у `mvn test` — ничего, и профиль честно не даёт ничего.
+        profile = project.profile()
+        args = [a.format(browser=browser) for a in profile.browser_arg]
+        if args:
+            log(f"browser: {browser} → {' '.join(args)}  "
+                f"(«{profile.id}» profile)")
+        return env, args
 
     # auto
     if any(str(a).startswith("--browser") for a in (project.pytest_args or [])):
@@ -751,7 +793,15 @@ def _build_command(project: Project, mode: str,
     the PNG pairs it left behind.
     """
     if not project.uses_pytest():
-        return list(project.command) + list(extra_args or [])
+        cmd = list(project.command)
+        if only:
+            # Прицел берётся из профиля, а не угадывается: у Cypress это
+            # `--spec`, у Maven `-Dtest`, у Playwright — просто путь. Пустой
+            # `only_arg` сюда не доходит: такой прогон отвергается раньше, на
+            # входе, — потому что молча прогнать весь набор в ответ на
+            # «перепроверь один снимок» хуже любого отказа.
+            cmd += [a.format(only=only) for a in project.profile().only_arg]
+        return cmd + list(extra_args or [])
 
     cmd = [exe or project.resolve_python(), "-m", "pytest"]
     if mode == "adapter":
@@ -982,7 +1032,7 @@ def _names(tests: list[dict], limit: int = 5) -> str:
 
 
 def _store_for(project: Project, cfg: VisTestConfig, baseline_dir: Path,
-               *, own: bool | None = None):
+               *, own: bool | None = None, browser: str = ""):
     """Baselines store for a directory THIS RUN chose.
 
     `own` is the effective source of this run — the same flag `run_project`
@@ -1006,7 +1056,39 @@ def _store_for(project: Project, cfg: VisTestConfig, baseline_dir: Path,
 
     from .storage import ExternalBaselineStore
 
-    return ExternalBaselineStore(baseline_dir, project.sidecar_dir(cfg))
+    # Подсказка для набора, где платформа записана в имя файла:
+    # Playwright хранит `login-chromium-linux.png`, а снимок называется
+    # `login`. Без токенов прогона выбор между вариантами был бы случайным.
+    variants = tuple(x for x in (browser, _os_token()) if x)
+    return ExternalBaselineStore(baseline_dir, project.sidecar_dir(cfg),
+                                 variants=variants)
+
+
+def _os_token() -> str:
+    """Как их инструмент называет эту операционную систему в имени файла."""
+    return {"win32": "win32", "darwin": "darwin"}.get(sys.platform, "linux")
+
+
+def _observe_roots(project: Project, profile, baseline_dir: Path,
+                   run_dir: Path) -> list[Path]:
+    """Where to look for the pictures a run left behind.
+
+    Three sources, and the third is the one that used to be missing. The
+    baseline folder and our run directory were always scanned; the folder the
+    tool actually writes to was not, and for Playwright that is `test-results`
+    at the repository root — outside both. A run therefore found nothing and
+    said so as if the suite had produced nothing.
+
+    The tests directory is scanned only when the profile says the tool writes
+    the actual next to the baseline. For everyone else it is a walk over their
+    whole source tree for no reason, and on a Node repository that walk is the
+    slowest thing in the run.
+    """
+    extra: list[Path] = [baseline_dir, run_dir]
+    if profile.search_tests:
+        extra.append(project.tests_path())
+    return profile.roots(project.root_path,
+                         extra=tuple(x for x in extra if x is not None))
 
 
 def _png_snapshot(directory: Path) -> dict[str, float]:
@@ -1017,65 +1099,151 @@ def _png_snapshot(directory: Path) -> dict[str, float]:
     namesake elsewhere was newer.
     """
     out: dict[str, float] = {}
-    if not directory.exists():
+    if not directory or not directory.exists():
         return out
-    for p in directory.rglob("*.png"):
-        try:
-            if p.is_file():
-                out[str(p.resolve())] = p.stat().st_mtime
-        except OSError:
-            continue
+    for dirpath, dirnames, filenames in os.walk(directory):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS
+                       and not d.startswith(".")]
+        for filename in filenames:
+            if not filename.lower().endswith(".png"):
+                continue
+            path = Path(dirpath) / filename
+            try:
+                out[str(path.resolve())] = path.stat().st_mtime
+            except OSError:
+                continue
     return out
+
+
+def _relative(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix() or "."
+    except ValueError:
+        return str(path)
 
 
 def _collect_observed(run: ExternalRun, project: Project, cfg: VisTestConfig,
                       baseline_dir: Path, run_dir: Path, *,
-                      before: dict[str, float], log, own: bool | None = None) -> None:
-    """Mode without injection: compare the PNG pairs left after their run.
+                      before: dict[str, float], log, own: bool | None = None,
+                      update_baselines: bool = False, browser: str = "") -> None:
+    """Mode without injection: compare the pictures left after their run.
 
     Their test already decided whether it matched or not, and already colored
     itself. Our task is different — to show **what exactly** diverged: regions,
     classes, severity, artifacts. That is why the verdict is recomputed by our
     engine.
+
+    Which file is which is not decided here. It is decided by the suite
+    profile, and that is the whole reason this path works outside pytest at
+    all: classification used to go by prefix (`actual_login.png`), while
+    Playwright, Cypress and jest-image-snapshot all name by suffix
+    (`login-actual.png`). Every picture they wrote was filed as a baseline,
+    no actuals were found, and the run ended by blaming the suite.
     """
     from .capture.playwright_capture import read_png
     from .service import CheckService
+    from .storage import SiblingBaselineStore
+    from .suites import ACTUAL, EXPECTED
 
-    store = _store_for(project, cfg, baseline_dir, own=own)
-    service = CheckService(cfg, run_dir=run_dir, store=store)
+    profile = project.profile()
+    roots = _observe_roots(project, profile, baseline_dir, run_dir)
+    log(f"suite profile: {profile.id} — {profile.title}")
+    log("looking for pictures in: "
+        + (", ".join(_relative(r, project.root_path) for r in roots) or "—"))
 
-    search_dirs = {baseline_dir, project.tests_path(), run_dir}
     actuals: dict[str, Path] = {}
-    for d in search_dirs:
-        if not d.exists():
+    groups: dict[str, str] = {}
+    expected: dict[str, Path] = {}
+    collisions: dict[str, list[Path]] = {}
+    stale = 0
+
+    for snapshot in profile.walk(roots, relative_to=project.root_path):
+        if snapshot.kind == EXPECTED:
+            expected.setdefault(snapshot.group, snapshot.path)
             continue
-        for png in d.rglob("*.png"):
-            if classify_png(png) != "actual":
-                continue
-            # We check freshness by time: the directory could still hold
-            # actual_*.png files from the day before yesterday, and passing them
-            # off as the run result would be a lie.
-            key = str(png.resolve())
-            if key in before and png.stat().st_mtime <= before[key]:
-                continue
-            actuals[baseline_name_of(png)] = png
+        if snapshot.kind != ACTUAL:
+            continue
+        # Freshness by time: the directory could still hold pictures from the
+        # day before yesterday, and passing those off as the run result is a lie.
+        try:
+            mtime = snapshot.path.stat().st_mtime
+        except OSError:
+            continue
+        if before.get(str(snapshot.path.resolve()), -1.0) >= mtime:
+            stale += 1
+            continue
+        previous = actuals.get(snapshot.name)
+        if previous is not None and previous != snapshot.path:
+            collisions.setdefault(snapshot.name, [previous]).append(snapshot.path)
+        actuals[snapshot.name] = snapshot.path
+        groups[snapshot.name] = snapshot.group
 
     if not actuals:
-        _note(run, log,
-              "Did not find a single fresh actual_*.png. Either all tests passed "
-              "and the project does not save them, or the files are named "
-              "differently — in that case specify the comparison point and "
-              "switch to adapter mode.")
+        _note(run, log, _nothing_found(profile, roots, project, stale))
         return
 
-    log(f"pairs found for review: {len(actuals)}")
+    # Их собственный эталон, лежащий рядом с фактом. Для Playwright и Cypress
+    # это единственный способ узнать, С ЧЕМ они сравнивали: путь к эталону
+    # считает их конфигурация, а не мы. При съёмке своего набора он не нужен —
+    # там эталоном становится сам факт.
+    siblings: dict[str, Path] = {}
+    if not update_baselines:
+        for name in actuals:
+            found = expected.get(groups.get(name, ""))
+            if found is not None:
+                siblings[name] = found
+
+    for name, paths in sorted(collisions.items()):
+        _note(run, log,
+              f"«{name}»: {len(paths)} different files claim this name "
+              + ", ".join(_relative(x, project.root_path) for x in paths)
+              + ". Only the last one was checked. Turn on «keep the folder in "
+                "the snapshot name» in the project settings so they stop "
+                "colliding.")
+    if stale:
+        log(f"skipped as left over from an earlier run: {stale}")
+
+    primary = _store_for(project, cfg, baseline_dir, own=own, browser=browser)
+    store = SiblingBaselineStore(primary, siblings) if siblings else primary
+    service = CheckService(cfg, run_dir=run_dir, store=store,
+                           browser=browser or "chromium")
+
+    if update_baselines:
+        # Съёмка набора в этом режиме возможна — и до сих пор её не было: в
+        # разборе готовых PNG стояло `update_baseline=False`, то есть кнопка
+        # «Snap VisTest baselines» для всего, что не pytest, не делала ничего,
+        # а прогон потом отправлял к ней же. Круг размыкается здесь.
+        #
+        # Но сказать надо ровно то, что происходит: эталоном становится ИХ
+        # картинка, снятая их конвейером. Наш захват — заморозка анимаций,
+        # подмена времени, серия кадров — в этом пути не участвует, и обещать
+        # его стабильность было бы неправдой.
+        log("capturing the VisTest set from their own pictures: our capture "
+            "(frozen animations, substituted time, a series of frames) is not "
+            "involved here — the pixels are theirs, the history and the review "
+            "are ours")
+
+    log(f"pairs found for review: {len(actuals)}"
+        + (f" (of them {len(siblings)} against the suite's own expected picture)"
+           if siblings else ""))
+
     for name, png in sorted(actuals.items()):
-        if not store.exists(name):
-            _note(run, log, f"{name}: no baseline in {baseline_dir.name}")
+        borrowed = isinstance(store, SiblingBaselineStore) and store.borrowed(name)
+        if not update_baselines and not store.exists(name):
+            _note(run, log,
+                  f"{name}: no baseline — neither in {baseline_dir.name} nor "
+                  "beside the actual picture")
             continue
+        notes = [f"Review of a ready snapshot: {png}"]
+        if borrowed:
+            notes.append(
+                f"Compared against the suite's own baseline copy "
+                f"({_relative(siblings[name], project.root_path)}). Accepting "
+                "this change means updating it with their tool, not here.")
         try:
-            res = service.check(name, read_png(png), update_baseline=False,
-                                notes=[f"Review of a ready snapshot: {png}"])
+            res = service.check(name, read_png(png),
+                                update_baseline=update_baselines and not borrowed,
+                                notes=notes)
         except Exception as e:
             _note(run, log, f"{name}: {type(e).__name__}: {e}")
             continue
@@ -1086,6 +1254,8 @@ def _collect_observed(run: ExternalRun, project: Project, cfg: VisTestConfig,
         entry.update({
             "actual": str(png),
             "source": str(png),
+            "baseline_source": "suite" if borrowed else (
+                "vistest" if own else "project"),
             "max_severity": metrics.get("max_severity", 0.0),
             "changed_area_pct": metrics.get("changed_area_pct", 0.0),
             "ssim": metrics.get("ssim_global", 1.0),
@@ -1094,6 +1264,121 @@ def _collect_observed(run: ExternalRun, project: Project, cfg: VisTestConfig,
         })
         run.results.append(entry)
         log(f"  {res.verdict.value:12s} {name}  severity={res.max_severity:.1f}")
+
+
+def _nothing_found(profile, roots, project: Project, stale: int) -> str:
+    """Why the run produced nothing — with the rules it actually applied.
+
+    «Did not find a single fresh actual_*.png» was true and useless: it named
+    one naming convention out of the several in use and left the person to
+    guess whether the suite wrote nothing, wrote it elsewhere, or wrote it
+    under a name we do not recognise. All three are fixable, and they are
+    fixed in different places.
+    """
+    where = ", ".join(_relative(r, project.root_path) for r in roots) or "—"
+    rules = ", ".join(profile.actual) or "—"
+    # Каталоги, которых нет, называются отдельно и намеренно. Отсутствие
+    # `test-results` — это не «мы туда не смотрели», это «их прогон ничего не
+    # написал», и различить два случая по одному списку «где искали» нельзя.
+    missing = [d for d in profile.search_dirs if not (project.root_path / d).exists()]
+    absent = (f" The «{profile.id}» profile also expects "
+              f"{', '.join(missing)}, and there is no such folder in the "
+              "project — so the run wrote nothing there." if missing else "")
+    tail = (f" {stale} picture(s) were found but left over from an earlier run."
+            if stale else "")
+    return (
+        f"No fresh actual picture was found. Looked in: {where}.{absent} Rules "
+        f"of the «{profile.id}» profile for the actual: {rules}.{tail} Either "
+        "the suite wrote nothing (for Playwright a green run leaves no "
+        "artifacts at all), or it writes to another folder — add it in «Where "
+        "the pictures land» — or it names them differently: describe the name "
+        "in «Snapshot naming».")
+
+
+# --------------------------------------------------------------------------- #
+def ingest_project(project: Project, *, cfg: VisTestConfig | None = None,
+                   dirs: list[str] | None = None, browser: str = "",
+                   baseline_source: str | None = None,
+                   update_baselines: bool = False, run_key: str = "",
+                   ci_url: str = "", log=print) -> ExternalRun:
+    """Разобрать то, что осталось после ИХ прогона. Ничего не запуская.
+
+    Третий вход, и он закрывает то, чего не закрывали первые два.
+
+    Прогон чужой командой (`runner: command`) требует, чтобы их инструмент был
+    в НАШЕМ образе: `npx playwright test` внутри контейнера VisTest — это node,
+    `npm ci` и вся их сборка у нас. Для Node это решается образом, для JVM и
+    .NET — уже нет: тащить в образ ревью-сервиса maven с их зависимостями
+    никто не станет, и правильно сделает.
+
+    Приём готовых артефактов переворачивает порядок. Их CI гоняет тесты сам,
+    там, где у него всё уже стоит, а VisTest получает каталог с картинками и
+    делает единственное, чего у них нет: вердикт движка, регионы, классы
+    изменений, историю и ревью. Ни одной строчки их кода мы при этом не
+    исполняем — и не должны.
+
+    Правила разбора те же, что у обычного прогона: тот же профиль набора, те
+    же эталоны, тот же сборщик. Двух дверей с разным поведением быть не может.
+    """
+    cfg = cfg or VisTestConfig.load()
+    browser = (browser or "").strip().lower()
+    if browser:
+        from .matrix import normalize_browser
+
+        browser = normalize_browser(browser)
+
+    baseline_dir, own = resolve_baselines(
+        project, cfg, baseline_source=baseline_source, browser=browser,
+        update_baselines=update_baselines)
+
+    if dirs:
+        # Каталог из команды — это разовая подсказка «вот сюда положил мой
+        # пайплайн», а не изменение описания проекта: сохранять её значило бы
+        # менять проект побочным эффектом чтения.
+        from dataclasses import replace as _replace
+
+        project = _replace(project, search_dirs=list(
+            dict.fromkeys([*(project.search_dirs or []), *dirs])))
+
+    run_key = run_key or "-".join(x for x in (
+        "ext", project.key, browser, time.strftime("%Y%m%d-%H%M%S"),
+        uuid.uuid4().hex[:4]) if x)
+    run_dir = cfg.runs_path() / run_key
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    from .runner import git_info
+
+    run = ExternalRun(project=project.key, mode="observe",
+                      baseline_dir=str(baseline_dir), run_dir=str(run_dir),
+                      baseline_scope="vistest" if own else "project",
+                      browser=browser, git=git_info(project.root_path))
+    run.command = ["(ingest)", *(dirs or [])]
+    if ci_url:
+        run.git.setdefault("ci_url", ci_url)
+
+    log(f"ingest: {project.name or project.key}")
+    log(f"baselines: {baseline_dir}"
+        + ("  (own VisTest set)" if own else "  (project folder)"))
+
+    started = time.perf_counter()
+    try:
+        # `before` пуст намеренно, и это не забывчивость. Обычный прогон
+        # отсекает вчерашние картинки по времени, потому что он сам их
+        # застал; здесь каталог приносит вызывающий и говорит «вот результат
+        # моего прогона». Молча выбросить половину принесённого, сверившись с
+        # чужими часами, было бы хуже любой лишней пары.
+        _collect_observed(run, project, cfg, baseline_dir, run_dir,
+                          before={}, log=log, own=own,
+                          update_baselines=update_baselines, browser=browser)
+    except Exception as e:
+        run.errors.append(f"Failed to collect the results: {type(e).__name__}: {e}")
+        log(run.errors[-1])
+        raise
+    finally:
+        run.elapsed_s = time.perf_counter() - started
+        run.exit_code = 0
+        _write_run(run, run_dir)
+    return run
 
 
 # --------------------------------------------------------------------------- #
@@ -1270,6 +1555,27 @@ def approve(project: Project, name: str, *, cfg: VisTestConfig | None = None,
                               meta={"approved_from": str(actual_png),
                                     "scope": scope}))
     return store.png_for(name)
+
+
+def only_refusal(project: Project, only: str) -> str:
+    """Почему один тест из этого набора запустить нельзя. Пусто — можно.
+
+    Существует по той же причине, что и отказ по браузеру: пункт меню,
+    который заведомо сделает не то, о чём просили, — это не строгость, а
+    неправда. «Перепроверить один снимок», тихо прогоняющее весь набор,
+    выглядит как медленная кнопка, а не как неподдерживаемая операция.
+    """
+    if not only or project.uses_pytest():
+        return ""
+    profile = project.profile()
+    if profile.only_arg:
+        return ""
+    return (
+        f"The suite «{project.name or project.key}» is started by its own "
+        f"command, and the «{profile.id}» profile names no argument that "
+        "would narrow it down to one test. Running the whole suite instead "
+        "would answer a different question than the one asked. Pick a profile "
+        "that matches the tool, or run the whole suite deliberately.")
 
 
 def check_ready(project: Project) -> list[str]:
@@ -1485,8 +1791,12 @@ def _preflight_command(project: Project, out: dict, *, log) -> dict:
         out["hint"] = (
             f"`{exe}` not found — neither in PATH nor in the project root. The "
             "command runs inside the VisTest container, so the tool has to be "
-            "available there: for a Node stack that means an image with node "
-            "and the project's `npm ci` already done.")
+            "available there. Two ways out, and the second one is usually the "
+            "right one: build the image with the runtime "
+            "(`docker/Dockerfile.node`) and mount the project together with "
+            "its `node_modules`; or do not run their suite here at all — let "
+            "their CI run it and hand us the result: "
+            f"`vistest project ingest {project.key} --dir <folder>`.")
         log(out["hint"])
         return out
 
@@ -1594,6 +1904,49 @@ def _pip_install(spec: str, *, log, allow_build: bool) -> tuple[bool, str]:
         return False, "no prebuilt wheel for this Python"
     tail = [ln for ln in text.splitlines() if ln.strip()][-1:]
     return False, (tail[0][:160] if tail else "installation error")
+
+
+def install_dependencies(project: Project, *, log=print,
+                         should_stop=lambda: False) -> int:
+    """Поставить зависимости ЧУЖОГО набора — тем, чем их ставят у них.
+
+    Кнопка «Install dependencies» всегда ставила pip-пакеты в окружение
+    VisTest. Для питоновского набора это верно и остаётся как было: он и
+    гоняется нашим интерпретатором. Для Node или JVM это не частичный ответ, а
+    неправильный: pip не поставит `@playwright/test`, а сообщение об успехе
+    после этого — прямая ложь.
+
+    Команда берётся из профиля по признаку в репозитории: локфайл говорит,
+    каким менеджером собран проект, и это единственный надёжный признак.
+    Не знаем — говорим, что не знаем; молча ничего не сделать хуже.
+    """
+    if project.uses_pytest():
+        return install_requirements(project, log=log)
+
+    profile = project.profile()
+    command = profile.install_command(project.root_path)
+    if not command:
+        log(f"The «{profile.id}» profile does not know how dependencies are "
+            f"installed in this project, and guessing would be worse than "
+            f"saying so. Install them the way the team does — in "
+            f"{project.root_path} — or connect the suite through ready "
+            f"artifacts: `vistest project ingest {project.key}`.")
+        return 1
+
+    exe = shutil.which(command[0])
+    if not exe and not (project.root_path / command[0]).exists():
+        log(f"`{command[0]}` not found. The command runs inside the VisTest "
+            "container, so the tool has to be available there: see "
+            "`docker/Dockerfile.node` for a Node stack.")
+        return 1
+
+    log("$ " + " ".join(command))
+    env = {**os.environ, **_expand(project.env or {}, dict(os.environ))}
+    code, _ = _spawn(command, project.root_path, env, log=log,
+                     should_stop=should_stop)
+    log("dependencies installed" if code == 0
+        else f"installation finished with code {code}")
+    return code
 
 
 def install_requirements(project: Project, *, log=print,

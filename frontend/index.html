@@ -74,12 +74,25 @@
          увела бы человека на другой экран. Кнопка переводит фокус. -->
     <button class="skip" id="skipLink">Skip to content</button>
     <div id="topbar">
-      <!-- Переключатель набора — <button>, а не <div> с onclick: он открывает
-           меню, и об этом надо уметь сказать клавиатуре и скринридеру. -->
+      <!-- Закреплённый проект. Всё, что ниже, — про него: прогоны, решения,
+           эталоны, тесты, метрики. Раньше здесь стояло «all projects», то есть
+           состояние «показать всё сразу» — ровно то, что перестаёт читаться,
+           как только проектов становится два.
+
+           Слово PROJECT моноширинным перед именем — не украшение: имя без
+           подписи не отвечает на вопрос «это фильтр или заголовок?», а
+           отвечать на него должна шапка, а не документация.
+
+           <button>, а не <div> с onclick: он открывает меню, и об этом надо
+           уметь сказать клавиатуре и скринридеру. -->
       <button class="proj-pill" id="projPill" type="button" aria-haspopup="menu"
-              aria-expanded="false"
-              data-tip="Which set of runs and baselines everything below is about. A cause never spans two projects, so the queue follows this choice.">
-        <span class="pd"></span><span id="projName">all projects</span>
+              aria-expanded="false">
+        <span class="pk" aria-hidden="true">PROJECT</span>
+        <span class="pd" aria-hidden="true"></span>
+        <span id="projName">…</span>
+        <!-- Признак «смотрите не свой набор эталонов». Он обязан быть в шапке,
+             а не только на той вкладке, где его включили. -->
+        <span class="pj-over" id="projMeta" hidden></span>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5l4 4 4-4"/></svg>
       </button>
       <div class="crumb"><span id="crumb">decisions</span></div>
@@ -163,6 +176,7 @@
 <script src="js/tip.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/shell.js"></script>
+<script src="js/project.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/screen-decisions.js"></script>
 <script src="js/screen-runs.js"></script>

@@ -36,6 +36,8 @@ ZONES = ROOT / "tests" / "ui" / "zones_view.mjs"
 RUNMENU = ROOT / "tests" / "ui" / "run_menu_view.mjs"
 CITOKENS = ROOT / "tests" / "ui" / "ci_tokens_view.mjs"
 CARDMENU = ROOT / "tests" / "ui" / "project_card_menu.mjs"
+BASELINES = ROOT / "tests" / "ui" / "baselines_view.mjs"
+SUITEFORM = ROOT / "tests" / "ui" / "project_suite_view.mjs"
 FRONTEND = ROOT / "frontend"
 
 
@@ -160,4 +162,55 @@ def test_the_browser_pick_dropdowns_on_a_project_card_open_where_they_were_click
                           cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, (
         "выпадашки выбора браузера на карточке проекта не раскрываются:\n"
+        + (done.stderr or done.stdout).strip())
+
+
+def test_the_baselines_screen_asks_browser_and_window_separately():
+    """Ключ хранения — плохой переключатель, и это видно только на экране.
+
+    В `docker-chromium-1x-390x844` склеены четыре независимых ответа, а
+    спрашивают их по одному: «в каком движке» и «в каком размере окна» —
+    разные вопросы. С матрицей таких строк шесть или восемнадцать, и выбрать
+    из них «firefox на телефоне» можно было только вычитав каждую по буквам.
+
+    Здесь же проверяется, что набор эталонов следует за закреплённым в шапке
+    проектом (пока переключателей было два, человек выбирал проект наверху и
+    продолжал видеть чужие эталоны внизу) и что сравнение по движкам
+    объединяет варианты по ИМЕНИ снимка, а не по их порядку в наборе.
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("нет node — проверка экрана эталонов пропущена")
+    if not _jsdom_available(node):
+        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
+
+    done = subprocess.run([node, str(BASELINES), str(FRONTEND)],
+                          cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, (
+        "экран эталонов показывает не то:\n"
+        + (done.stderr or done.stdout).strip())
+
+
+def test_the_connection_form_sends_the_profile_and_the_naming_rules():
+    """Поля, которые заполняют один раз и на которые опирается каждый прогон.
+
+    Ошибка здесь тихая по определению: форма сохранится, тост скажет «Saved»,
+    а в описание проекта уедет не то — и выяснится это через день, на прогоне,
+    который «почему-то не находит пар». Поэтому проверяется не наличие полей,
+    а тело запроса.
+
+    Проверка сразу окупилась: форма настроек падала на `TypeError` — то есть
+    не открывалась ВООБЩЕ, ни у одного проекта, — потому что `append()`
+    возвращает `undefined`, а не добавленный узел.
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("нет node — проверка формы подключения пропущена")
+    if not _jsdom_available(node):
+        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
+
+    done = subprocess.run([node, str(SUITEFORM), str(FRONTEND)],
+                          cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, (
+        "подключение чужого набора настраивается не тем:\n"
         + (done.stderr or done.stdout).strip())

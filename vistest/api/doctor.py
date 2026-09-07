@@ -75,6 +75,16 @@ def env_report():
                     "count": sum(1 for _ in d.rglob("baseline.png")),
                 })
 
+    # Чем эта инсталляция вообще способна запустить чужой набор.
+    #
+    # Подключение с `runner: command` выполняет их команду ВНУТРИ нашего
+    # контейнера. Пока этого списка не было, ответ на «почему `npx` не
+    # найден» приходилось искать в логе упавшего прогона — то есть уже после
+    # того, как человек всё настроил и нажал запуск. Здесь он виден до.
+    runtimes = [{"name": name, "path": shutil.which(name) or ""}
+                for name in ("node", "npm", "npx", "java", "mvn", "gradle",
+                             "dotnet")]
+
     return {
         "python": sys.version.split()[0],
         "executable": sys.executable,
@@ -85,6 +95,7 @@ def env_report():
         "docker": shutil.which("docker") or "",
         "git": shutil.which("git") or "",
         "dependencies": deps,
+        "runtimes": runtimes,
         "baselines": baselines,
         "browsers_hint": (
             "Playwright browsers are installed with the command python run.py setup"

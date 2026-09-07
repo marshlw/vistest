@@ -43,6 +43,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from contextvars import ContextVar
@@ -97,6 +98,37 @@ def emit(*, method: str, path: str, status: int, ms: float, request_id: str,
     log.info("%s %s %s %s %.0fms%s", request_id, method, path, status, ms, tail)
 
 
+# --------------------------------------------------------------------------- #
+#  Счётчики самого сервиса
+#
+#  `/metrics` до сих пор отвечал на вопросы про КАРТИНКИ: сколько сравнений,
+#  какие классы регионов, как часто падает снимок. Всё это правда и всё это
+#  полезно — но когда в три часа ночи спрашивают «сервис жив?», нужны другие
+#  числа: сколько запросов, сколько из них пятисоток, сколько они идут.
+#
+#  Считается в памяти процесса и обнуляется вместе с ним — это нормально для
+#  счётчиков Prometheus: `rate()` умеет обрабатывать сброс. Метки — метод и
+#  класс кода, а НЕ путь: путь содержит идентификаторы (`/api/runs/1481`), и
+#  метка с ними за неделю порождает десятки тысяч рядов. Шаблон роута взять
+#  негде — прослойка стоит до маршрутизации.
+_counts: dict[tuple[str, str], int] = {}
+_seconds: dict[tuple[str, str], float] = {}
+_counts_lock = threading.Lock()
+
+
+def observe(method: str, status: int, seconds: float) -> None:
+    key = (method.upper(), f"{status // 100}xx")
+    with _counts_lock:
+        _counts[key] = _counts.get(key, 0) + 1
+        _seconds[key] = _seconds.get(key, 0.0) + seconds
+
+
+def counters() -> tuple[dict, dict]:
+    """Снимок счётчиков — под замком, чтобы не читать словарь на ходу."""
+    with _counts_lock:
+        return dict(_counts), dict(_seconds)
+
+
 async def middleware(request, call_next):
     """ASGI-прослойка: идентификатор, замер, строка в лог, заголовок в ответ."""
     request_id = new_id(next(
@@ -111,12 +143,13 @@ async def middleware(request, call_next):
         return response
     finally:
         current_request_id.reset(token)
+        elapsed = time.perf_counter() - started
+        observe(request.method, status, elapsed)
         # `?query` отбрасывается намеренно: там живёт токен метрик.
         path = request.url.path
         if not _quiet(path):
             emit(method=request.method, path=path, status=status,
-                 ms=(time.perf_counter() - started) * 1000,
-                 request_id=request_id, who=_who(request))
+                 ms=elapsed * 1000, request_id=request_id, who=_who(request))
 
 
 def _who(request) -> str:

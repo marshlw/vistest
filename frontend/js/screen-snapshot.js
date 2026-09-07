@@ -31,6 +31,27 @@ SCREENS.snapshot=async function(arg){
   renderSnapshot(d);
 };
 
+/* «Назад к эталонам» — в тот самый набор и на тот самый вариант.
+
+   Раньше сюда писалось `state.scope` напрямую, и это разъезжалось с шапкой:
+   снимок открыт из набора подключённого проекта, а закреплён другой — возврат
+   уводил на экран, где этого снимка нет. Набор теперь следует за проектом,
+   поэтому и здесь ставится не он, а переопределитель — и только когда набор
+   действительно чужой закреплённому. Платформа раскладывается на движок и
+   размер окна: экран эталонов выбирает их по отдельности. */
+function backToBaselines(ref){
+  if(!ref)return void(location.hash='#/baselines');
+  const p=currentProject();
+  if(ref.scope&&(!p||ref.scope!==p.scope))setScopeOverride(ref.scope);
+  if(ref.platform){
+    state.platform=ref.platform;
+    const pp=parsePlatform(ref.platform);
+    state.browser=pp.browser||null;
+    state.viewport=pp.viewport;
+  }
+  location.hash='#/baselines';
+}
+
 function snapshotMissing(ref){
   const screen=$('#screen');screen.innerHTML='';
   const s=el('div','page');screen.append(s);
@@ -43,8 +64,7 @@ function snapshotMissing(ref){
       into a different set — a comparison remembers the name, not the file.</p>`;
   const go=el('button','btn dark');go.textContent='To the baselines';
   go.style.marginTop='16px';
-  go.onclick=()=>{state.scope=ref.scope;state.platform=ref.platform;
-                  location.hash='#/baselines';};
+  go.onclick=()=>backToBaselines(ref);
   card.append(go);s.append(card);
 }
 
@@ -61,8 +81,7 @@ function renderSnapshot(d){
   const ref=state.snapRef;
 
   const back=el('div','back','‹ BASELINES');back.style.cursor='pointer';
-  back.onclick=()=>{state.scope=ref.scope;state.platform=ref.platform;
-                    location.hash='#/baselines';};
+  back.onclick=()=>backToBaselines(ref);
   s.append(back);
 
   const head=el('div','head');head.style.marginTop='10px';

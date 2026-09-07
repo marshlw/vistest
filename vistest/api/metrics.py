@@ -418,8 +418,61 @@ def _label(value) -> str:
             .replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n"))
 
 
-def prometheus(db: Database) -> str:
+def _service_lines() -> list[str]:
+    """Запросы, ошибки и время — то, о чём спрашивают, когда что-то не так.
+
+    `counter`, а не `gauge`: это накопленные с момента старта значения, и их
+    сброс при перезапуске Prometheus понимает правильно. Отдельная функция —
+    чтобы падение здесь не уносило с собой всю выдачу: метрики читает
+    мониторинг, и «нет ответа» он покажет как «сервис лежит».
+    """
+    from . import logs as _logs
+
     lines: list[str] = []
+    try:
+        counts, seconds = _logs.counters()
+    except Exception:                                        # pragma: no cover
+        return lines
+
+    lines.append("# HELP vistest_http_requests_total Requests served since start")
+    lines.append("# TYPE vistest_http_requests_total counter")
+    for (method, code), n in sorted(counts.items()):
+        lines.append(f'vistest_http_requests_total{{method="{method}",'
+                     f'code="{code}"}} {n}')
+
+    lines.append("# HELP vistest_http_seconds_total Time spent serving them")
+    lines.append("# TYPE vistest_http_seconds_total counter")
+    for (method, code), value in sorted(seconds.items()):
+        lines.append(f'vistest_http_seconds_total{{method="{method}",'
+                     f'code="{code}"}} {value:.3f}')
+
+    return lines
+
+
+def _job_lines(db: Database) -> list[str]:
+    """Очередь фоновых задач.
+
+    Одно число, объясняющее «почему кнопка „Прогнать“ отвечает „подождите“» без
+    похода в интерфейс. Считается по БАЗЕ, а не по памяти процесса: задачи
+    зеркалятся туда, и при нескольких процессах на общем томе память знает
+    только про свои.
+    """
+    try:
+        rows = db.query(
+            "SELECT status, COUNT(*) AS n FROM job"
+            " WHERE status IN ('queued','running') GROUP BY status")
+    except Exception:                                        # pragma: no cover
+        return []
+    counts = {r["status"]: r["n"] for r in rows}
+    lines = ["# HELP vistest_jobs Background jobs right now",
+             "# TYPE vistest_jobs gauge"]
+    for status in ("queued", "running"):
+        lines.append(f'vistest_jobs{{status="{status}"}} {counts.get(status, 0)}')
+    return lines
+
+
+def prometheus(db: Database) -> str:
+    lines: list[str] = _service_lines() + _job_lines(db)
 
     def add(name: str, help_: str, type_: str, rows, fmt):
         lines.append(f"# HELP {name} {help_}")

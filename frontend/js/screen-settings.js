@@ -83,6 +83,16 @@ SCREENS.settings=async function(){
   const rtHolder=el('div');rtHolder.id='retentionCard';s.append(rtHolder);
   renderRetention(rtHolder);
 
+  // directory
+  s.append(el('div','sect-h','<h2>Corporate directory</h2>'));
+  const ldHolder=el('div');ldHolder.id='ldapCard';s.append(ldHolder);
+  renderDirectory(ldHolder);
+
+  // licence
+  s.append(el('div','sect-h','<h2>Licence</h2>'));
+  const lcHolder=el('div');lcHolder.id='licenseCard';s.append(lcHolder);
+  renderLicense(lcHolder);
+
   /* Оглавление ставится последним и в самое начало: собрать его можно только
      когда разделы уже на странице, а место ему — под заголовком, где его
      ищут. Панели, которые дозагружаются (`renderThresholds` и соседи),
@@ -587,6 +597,187 @@ async function renderThresholds(box,project){
   acts.append(el('span','muted','applies to the next run, not to history'));
   acts.querySelector('.muted').style.fontSize='12.5px';
   card.append(acts);
+}
+
+/* ------- каталог предприятия -------
+   Панель существует ради одного разговора: «а можно вход через наш AD». Всё
+   остальное здесь подчинено тому, чтобы его настроил администратор заказчика
+   за один заход и без нашей помощи.
+
+   Поэтому: пароль сервисного аккаунта здесь НЕ вводится (он живёт в
+   окружении, и панель только говорит, задан ли он), а кнопка проверки
+   отвечает по шагам — «подключились», «сервисный аккаунт вошёл», «нашли
+   человека», «роль была бы такая». «Не работает» без этих шагов чинить
+   нечем. */
+async function renderDirectory(box){
+  let st;
+  try{st=await api('/api/ldap');}catch(e){box.append(errCard(e));return;}
+  box.innerHTML='';
+  const c=el('div','set-card');
+
+  if(!st.available){
+    c.append(el('div','info warn',
+      'The ldap3 package is not installed on this service, so signing in '
+      +'against a directory is unavailable: pip install "vistest[ldap]"'));
+  }
+
+  const field=(key,label,hint,value,type)=>{
+    const wrap=el('div');wrap.style.marginBottom='12px';
+    const lb=el('div','muted');lb.style.cssText='font-size:12.5px;margin-bottom:4px';
+    lb.textContent=label;
+    const inp=el(type==='area'?'textarea':'input','inp');
+    inp.id='ld_'+key;inp.value=value==null?'':String(value);
+    if(type==='area')inp.rows=4;
+    inp.style.width='100%';
+    wrap.append(lb,inp);
+    if(hint){const h=el('div','muted');h.style.cssText='font-size:11.5px;margin-top:4px';
+      h.textContent=hint;wrap.append(h);}
+    return wrap;
+  };
+
+  const on=el('label','pick'+(st.enabled?' on':''));
+  on.innerHTML='<b>Sign in through the directory</b>'
+    +'<span class="mono faint">local accounts keep working either way</span>';
+  let enabled=!!st.enabled;
+  on.onclick=()=>{enabled=!enabled;on.classList.toggle('on',enabled);};
+  c.append(on);
+
+  c.append(
+    field('server','Server','ldaps://dc.company.local — or ldap:// with StartTLS',st.server),
+    field('base_dn','Base DN','where to search for people: DC=company,DC=local',st.base_dn),
+    field('bind_dn','Service account DN',
+          `the password goes in ${st.bind_password_env}`
+          +(st.bind_password_set?' (set)':' (NOT set)'),st.bind_dn),
+    field('user_filter','User filter',
+          'Active Directory: (sAMAccountName={login}); OpenLDAP: (uid={login})',
+          st.user_filter),
+    field('role_map','Groups → roles',
+          'one per line: CN=QA Leads,OU=Groups,DC=company,DC=local=admin',
+          st.role_map,'area'),
+    field('default_role','Role for everyone else',
+          'viewer, reviewer or admin — applied when no group matches',
+          st.default_role));
+
+  const grab=()=>({
+    enabled,
+    server:$('#ld_server').value.trim(),
+    base_dn:$('#ld_base_dn').value.trim(),
+    bind_dn:$('#ld_bind_dn').value.trim(),
+    user_filter:$('#ld_user_filter').value.trim(),
+    role_map:$('#ld_role_map').value,
+    default_role:$('#ld_default_role').value.trim().toLowerCase(),
+  });
+
+  const out=el('div');out.style.marginTop='12px';
+  const probe=el('input','inp');
+  probe.placeholder='a login to check, optional';
+  probe.style.cssText='max-width:220px;margin-right:10px';
+
+  const test=el('button','btn','Test the connection');
+  test.onclick=async()=>{
+    out.innerHTML='';test.disabled=true;
+    try{
+      const r=await api('/api/ldap/test',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({settings:grab(),login:probe.value.trim()})});
+      const box2=el('div','info'+(r.ok?'':' bad'));
+      box2.innerHTML=(r.steps||[]).map(s=>'· '+esc(s)).join('<br>')
+        +(r.error?('<br><b>'+esc(r.error)+'</b>'):'<br><b>the directory answered</b>');
+      out.append(box2);
+    }catch(e){out.append(el('div','info bad',esc(e.message)));}
+    finally{test.disabled=false;}
+  };
+
+  const save=el('button','btn dark','Save');
+  save.style.marginLeft='10px';
+  save.onclick=async()=>{
+    save.disabled=true;
+    try{
+      await api('/api/ldap',{method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(grab())});
+      toast('Directory settings saved');
+      renderDirectory(box);
+    }catch(e){alert(e.message);}
+    finally{save.disabled=false;}
+  };
+
+  const row=el('div');
+  row.style.cssText='display:flex;align-items:center;margin-top:6px';
+  row.append(probe,test,save);
+  c.append(row,out);
+  box.append(c);
+}
+
+/* ------- лицензия -------
+   Панель отвечает на два вопроса сразу, и порознь они бесполезны: что куплено
+   и что используется. «10 проектов» ничего не значит без «подключено 7», а
+   именно это число нужно перед разговором о продлении.
+
+   Ключ вставляется прямо здесь: заказчик получает его файлом или строкой в
+   письме, и заставлять администратора идти на машину сервиса ради копирования
+   файла — то же самое, чем была форма первого администратора до того, как её
+   сделали. */
+async function renderLicense(box){
+  let st;
+  try{st=await api('/api/license');}catch(e){box.append(errCard(e));return;}
+  box.innerHTML='';
+  const c=el('div','set-card');
+
+  const term=st.perpetual?'perpetual'
+    :st.days_left>=0?`${st.days_left} days left (until ${esc(st.expires_at)})`
+    :st.blocked?`ended ${esc(st.expires_at)} — new runs are refused`
+    :`ended ${esc(st.expires_at)}, ${st.grace_days+st.days_left} days of grace left`;
+
+  const tone=st.blocked?'fail':(st.expired||st.over_limit.users||st.over_limit.projects)?'warn':'pass';
+  c.innerHTML=`<div class="storage-row">
+      <div><div class="v">${esc(st.edition)}</div><div class="k">edition</div></div>
+      <div><div class="v">${esc(st.customer||'—')}</div><div class="k">licensed to</div></div>
+      <div><div class="v ${tone}">${term}</div><div class="k">term</div></div>
+    </div>`;
+
+  const limit=(used,cap,what)=>cap>0
+    ? `${used} of ${cap} ${what}`
+    : `${used} ${what} (no limit)`;
+  const use=el('div','muted');
+  use.style.cssText='font-size:13px;margin-top:14px;display:flex;gap:18px;flex-wrap:wrap';
+  use.innerHTML=`<span${st.over_limit.projects?' class="fail"':''}>`
+    +`${limit(st.usage.projects,st.limits.projects,'projects')}</span>`
+    +`<span${st.over_limit.users?' class="fail"':''}>`
+    +`${limit(st.usage.users,st.limits.users,'active users')}</span>`;
+  c.append(use);
+
+  if(!st.signed){
+    c.append(el('div','info-note',
+      'This installation runs on the free tier. It is fully usable — the '
+      +'limits above are the whole difference.'));
+  }
+  if(st.note)c.append(el('div','info-note',esc(st.note)));
+
+  const label=el('div','muted');
+  label.style.cssText='font-size:12.5px;margin:16px 0 6px';
+  label.textContent='Paste a licence key to install or renew:';
+  const input=el('textarea','inp');
+  input.rows=3;input.placeholder='eyJlZGl0aW9uIjoicHJvIiw…';
+  input.style.cssText='width:100%;font-family:var(--mono);font-size:12px';
+  const apply=el('button','btn dark','Install the key');
+  apply.style.marginTop='10px';
+  apply.onclick=async()=>{
+    const key=input.value.trim();
+    if(!key)return;
+    apply.disabled=true;
+    try{
+      await api('/api/license',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({key})});
+      toast('The licence key is installed');
+      renderLicense(box);
+      licenseBanner();
+    }catch(e){ alert(e.message); }
+    finally{ apply.disabled=false; }
+  };
+  c.append(label,input,apply);
+  box.append(c);
 }
 
 function envRow(v){

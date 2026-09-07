@@ -235,3 +235,46 @@ def test_a_corrupt_setting_falls_back_to_the_default(db):
     """Мусор в настройке не должен превращаться в «удалить всё»."""
     retention.set_text(db, retention.KEEP_LAST, "не число", "test")
     assert retention.settings(db)["keep_last"] == retention.DEFAULT_KEEP_LAST
+
+
+# --------------------------------------------------------------------------- #
+#  Артефакты одиночных проверок
+# --------------------------------------------------------------------------- #
+def test_check_artifacts_are_swept_by_age(tmp_path):
+    """Единственный каталог, до которого уборка не доставала вовсе.
+
+    Она ходит по прогонам в базе и удаляет `artifacts/<id>`. Проверка из
+    чужого набора (`POST /api/check`) прогона не создаёт — её картинки ложатся
+    в `artifacts/checks/<run_key>`, и в базе про них нет ничего. На активном CI
+    это росло бесконечно, а заметить можно было только по кончившемуся диску.
+    """
+    import os
+    import time
+
+    from vistest.api import retention
+
+    checks = tmp_path / "checks"
+    old = checks / "ci-100"
+    fresh = checks / "ci-200"
+    for d in (old, fresh):
+        d.mkdir(parents=True)
+        (d / "actual.png").write_bytes(b"x" * 2048)
+    long_ago = time.time() - 40 * 86400
+    os.utime(old, (long_ago, long_ago))
+
+    result = retention.sweep_checks(checks, days=30)
+
+    assert result["deleted"] == 1
+    assert not old.exists() and fresh.exists()
+
+
+def test_sweeping_checks_off_deletes_nothing(tmp_path):
+    """Политика «без срока» не должна означать «удалить всё»."""
+    from vistest.api import retention
+
+    checks = tmp_path / "checks"
+    (checks / "ci-1").mkdir(parents=True)
+
+    assert retention.sweep_checks(checks, days=None)["deleted"] == 0
+    assert retention.sweep_checks(checks, days=0)["deleted"] == 0
+    assert (checks / "ci-1").exists()

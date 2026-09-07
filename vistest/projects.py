@@ -43,6 +43,7 @@ import re
 import shutil
 import sys
 from dataclasses import asdict, dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 
 # Method names that test suites usually use for comparison with the baseline.
@@ -58,8 +59,11 @@ BASELINE_DIR_HINTS = (
     "__screenshots__", "expected", "reference",
 )
 
-ACTUAL_PREFIXES = ("actual_", "actual-", "current_", "received_", "test_")
-DIFF_PREFIXES = ("diff_", "diff-", "combined_", "combined-")
+#  Правила имён снимков живут в профилях набора (`vistest/suites`), а не здесь.
+#  Здесь стояли два кортежа префиксов, и они были единственным, что решало,
+#  какая картинка — факт, а какая эталон. Префикс — соглашение одного
+#  инструмента: у Playwright, Cypress и jest-image-snapshot имя строится
+#  суффиксом, и по этим правилам ни один их снимок фактом не считался.
 
 
 # --------------------------------------------------------------------------- #
@@ -151,6 +155,37 @@ class Project:
     # зелёное по всем трём и создаёт уверенность в покрытии, которого нет.
     # Лучше отказаться и назвать причину.
     browser_option: str = "auto"
+
+    # Which testing tool this suite is built around.
+    #
+    #   "auto"  — decide by the markers in their repository (playwright.config,
+    #             cypress.config, backstop.json, pom.xml, conftest.py …)
+    #   <id>    — a profile from `vistest.suites`, chosen by a person
+    #
+    # The profile answers the three questions that differ between ecosystems
+    # and nothing else: how the suite is started, where the pictures land, and
+    # which picture is which. Adding a language is a profile, not a change here.
+    suite: str = "auto"
+    # Corrections on top of the profile: one regular expression per kind, each
+    # with a (?P<name>…) group. There is always a suite whose layout nobody
+    # predicted, and refusing those would make the profile list a ceiling.
+    naming: dict[str, str] = field(default_factory=dict)
+    # Extra folders to look in after a run, relative to the root. For the
+    # suites whose output path is decided by their own config.
+    search_dirs: list[str] = field(default_factory=list)
+    # Keep the folder a picture was found in as part of the snapshot name.
+    # Off by default because the name is what the history is keyed by, and a
+    # name that changes shape splits a snapshot's past in two. On for the
+    # suites where two specs legitimately hold a `login.png` each — otherwise
+    # the second silently overwrites the first.
+    keep_dir: bool = False
+
+    # ---------------- profile ----------------
+    def profile(self):
+        """The effective suite profile: choice, then detection, then fallback."""
+        from . import suites
+
+        return suites.resolve(self)
 
     # ---------------- paths ----------------
     @property
@@ -295,6 +330,20 @@ class Project:
         d["own_baselines"] = self.uses_own_baselines()
         d["project_venv"] = self.detect_venv()
         d["requirements"] = [str(p) for p in self.requirements_files()]
+        # The resolved profile travels with the project so the interface can
+        # say which tool it decided on, and refuse honestly instead of
+        # offering a button that cannot work — «Snap VisTest baselines» on a
+        # suite whose comparison we never see, for instance.
+        try:
+            profile = self.profile()
+        except Exception:                                  # pragma: no cover
+            profile = None
+        if profile is not None:
+            d["suite_resolved"] = profile.id
+            d["suite_title"] = profile.title
+            d["suite_note"] = profile.note
+            d["can_intercept"] = bool(profile.intercept)
+            d["browser_control"] = self.browser_control()
         return d
 
     @classmethod
@@ -327,6 +376,11 @@ class Project:
             runner=(raw.get("runner") or "pytest").lower(),
             command=list(raw.get("command") or []),
             browser_option=(raw.get("browser_option") or "auto").lower(),
+            suite=(raw.get("suite") or "auto").strip().lower(),
+            naming={str(k): str(v) for k, v in (raw.get("naming") or {}).items()
+                    if str(v).strip()},
+            search_dirs=[str(d) for d in (raw.get("search_dirs") or []) if str(d).strip()],
+            keep_dir=bool(raw.get("keep_dir") or False),
         )
 
     def validate(self) -> list[str]:
@@ -360,6 +414,20 @@ class Project:
         if self.runner == "command" and not self.command:
             problems.append(
                 "runner=command, but the command itself is not specified")
+        if self.suite and self.suite != "auto":
+            from . import suites
+
+            if suites.get(self.suite) is None:
+                problems.append(
+                    f"unknown suite profile: {self.suite!r} "
+                    f"(auto | {' | '.join(suites.ids())})")
+        for kind, pattern in (self.naming or {}).items():
+            if kind not in ("actual", "expected", "diff", "strip"):
+                continue
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                problems.append(f"the «{kind}» naming rule does not compile: {e}")
         if self.browser_option not in BROWSER_OPTIONS:
             problems.append(
                 f"unknown browser_option: {self.browser_option!r} "
@@ -378,7 +446,14 @@ class Project:
             # Своя команда: `npx playwright test`, `mvn`, `dotnet test`. Куда
             # там вписывать браузер — знают только они, и угадывать нельзя:
             # неверный аргумент уронит прогон, верный по случайности — соврёт.
-            return "none"
+            #
+            # Угадывать и не приходится там, где инструмент опознан: у
+            # Playwright это `--project`, у Cypress `--browser`, а у `mvn test`
+            # такого аргумента нет вовсе — и профиль отвечает ровно это.
+            option = (self.browser_option or "auto").lower()
+            if option in ("env", "flag", "none"):
+                return option
+            return "profile" if self.profile().browser_arg else "none"
         return self.browser_option or "auto"
 
     def browser_refusal(self) -> str:
@@ -387,11 +462,12 @@ class Project:
             return ""
         if not self.uses_pytest():
             return (
-                f"Проект «{self.name or self.key}» запускается своей командой "
-                f"({' '.join(self.command[:3]) or '—'}…), и куда в ней вписать "
-                "браузер, знаем не мы. Добавьте выбор браузера в саму команду — "
-                "например через переменную окружения VISTEST_BROWSER, которую "
-                "VisTest всегда выставляет, — и поставьте browser_option=env.")
+                f"The suite «{self.name or self.key}» is started by its own "
+                f"command ({' '.join(self.command[:3]) or '—'}…), and the "
+                f"«{self.profile().id}» profile names no argument that would "
+                "carry the browser choice into it. Add the choice to the "
+                "command itself — VisTest always sets VISTEST_BROWSER, so "
+                "reading that variable is enough — and set browser_option=env.")
         return (
             f"У проекта «{self.name or self.key}» отключено управление браузером "
             "(browser_option=none). Прогон во всех браузерах при этом трижды "
@@ -461,6 +537,8 @@ def discover(root: str | Path) -> dict:
     edited before saving. Guessing silently in a foreign project is a bad
     idea, but sparing someone from filling in six fields by hand is a good one.
     """
+    from . import suites
+
     root = Path(root).expanduser().resolve()
     out: dict = {
         "root": str(root),
@@ -474,13 +552,28 @@ def discover(root: str | Path) -> dict:
         "env_vars": [],
         "docker": [],
         "notes": [],
+        "suite": "",
+        "runner": "pytest",
+        "command": [],
+        "search_dirs": [],
     }
     if not root.exists():
         out["notes"].append("Directory not found")
         return out
 
-    skip = {".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-            ".pytest_cache", ".idea", ".vscode", "dist", "build", ".tox"}
+    # Which tool this is decides what everything below looks for. Guessing
+    # «pytest» for a repository whose only marker is `playwright.config.ts`
+    # used to be the first step of a connection that could not work.
+    profile = suites.detect(root)
+    if profile is not None:
+        out["suite"] = profile.id
+        out["runner"] = profile.runner
+        out["command"] = list(profile.command)
+        out["search_dirs"] = [d for d in profile.search_dirs
+                              if (root / d).exists()]
+    hints = tuple(profile.baseline_dirs) if profile else BASELINE_DIR_HINTS
+
+    skip = set(suites.SKIP_DIRS) | {"dist", "build"}
 
     py_files: list[Path] = []
     baseline_dirs: list[Path] = []
@@ -489,7 +582,12 @@ def discover(root: str | Path) -> dict:
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in skip]
         here = Path(dirpath)
-        if here.name in BASELINE_DIR_HINTS and any(
+        rel_here = here.relative_to(root).as_posix()
+        # A hint may name a nested path — BackstopJS keeps its reference set in
+        # `backstop_data/bitmaps_reference`, and matching on the last segment
+        # alone would also accept somebody's unrelated `bitmaps_reference`.
+        if any(fnmatch(here.name, h) or fnmatch(rel_here, h)
+               or rel_here.endswith("/" + h) for h in hints) and any(
                 f.lower().endswith(".png") for f in filenames):
             baseline_dirs.append(here)
         for f in filenames:
@@ -582,11 +680,21 @@ def discover(root: str | Path) -> dict:
         if (root / name).exists():
             out["docker"].append(name)
 
+    if profile is not None:
+        out["notes"].append(f"Recognised as: {profile.title}")
+        if profile.note:
+            out["notes"].append(profile.note)
+    else:
+        out["notes"].append(
+            "The testing tool was not recognised by the files in the root. The "
+            "suite will connect under the widest set of naming rules; if the "
+            "run finds no pairs, pick a profile or describe the layout in "
+            "«Snapshot naming».")
     if not out["baselines"]:
         out["notes"].append(
             "No baseline folders found. Specify the path manually -- we looked for "
-            + ", ".join(BASELINE_DIR_HINTS))
-    if not out["adapter_candidates"]:
+            + ", ".join(hints))
+    if not out["adapter_candidates"] and out["runner"] == "pytest":
         out["notes"].append(
             "The baseline comparison method was not found automatically. Without it "
             "the project will connect in the mode of parsing ready-made PNGs.")
@@ -642,6 +750,10 @@ def suggest(root: str | Path, key: str = "") -> Project:
                    for b in info["baselines"]],
         adapter=Adapter(target=candidate["target"] if candidate else ""),
         note="; ".join(info["notes"])[:500],
+        suite=info.get("suite") or "auto",
+        runner=info.get("runner") or "pytest",
+        command=list(info.get("command") or []),
+        search_dirs=list(info.get("search_dirs") or []),
     )
 
 
@@ -661,23 +773,30 @@ def _best_candidate(candidates: list[dict]) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
-def classify_png(path: Path) -> str:
-    """Whether this is a baseline, an actual or a diff. Needed by the ready-PNG parsing mode."""
-    name = path.name.lower()
-    if any(name.startswith(p) for p in DIFF_PREFIXES):
-        return "diff"
-    if any(name.startswith(p) for p in ACTUAL_PREFIXES):
-        return "actual"
-    return "baseline"
+def classify_png(path: Path, profile=None) -> str:
+    """Whether this is a baseline, an actual or a diff.
+
+    The rules belong to the tool that drew the file, so they live in a suite
+    profile and this function only asks. Without one it asks the pytest
+    profile, which is what every caller meant before profiles existed.
+
+    The answer keeps the old vocabulary — «baseline» for anything that is not
+    an actual or a diff — because that is what the review mode acts on.
+    """
+    from . import suites
+
+    profile = profile or suites.DEFAULT
+    kind = profile.classify(path).kind
+    return kind if kind in ("actual", "diff") else "baseline"
 
 
-def baseline_name_of(path: Path) -> str:
-    """`actual_login_filled.png` -> `login_filled.png`."""
-    name = path.name
-    for prefix in ACTUAL_PREFIXES:
-        if name.lower().startswith(prefix):
-            return name[len(prefix):]
-    return name
+def baseline_name_of(path: Path, profile=None) -> str:
+    """`actual_login_filled.png` -> `login_filled.png`; `a-actual.png` -> `a`."""
+    from . import suites
+
+    profile = profile or suites.DEFAULT
+    found = profile.classify(path)
+    return found.name if found.kind != "other" else path.name
 
 
 def which_python(project: Project) -> str | None:

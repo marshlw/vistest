@@ -449,7 +449,31 @@ MIGRATIONS: list[tuple[str, str]] = [
               " ON audit(who, action, at DESC)"),
     ("audit", "CREATE INDEX IF NOT EXISTS ix_audit_target_action"
               " ON audit(target, action, at DESC)"),
+    # Откуда взялась учётная запись: 'local' или 'ldap'. Нужна не для отчёта.
+    # Пользователь из каталога не имеет пригодного хеша пароля, и локальный
+    # вход ему запрещён — иначе «уволили и отключили в AD» перестало бы что-то
+    # значить, пока в VisTest остаётся пароль, который человек когда-то знал.
+    ("user", "ALTER TABLE user ADD COLUMN source TEXT NOT NULL DEFAULT 'local'"),
+    ("user", "ALTER TABLE user ADD COLUMN external_dn TEXT"),
 ]
+
+
+#  Номер схемы, который знает ЭТА версия кода.
+#
+#  Поднимается на единицу, когда в `MIGRATIONS` добавляется шаг. Номер лежит в
+#  самой базе (`PRAGMA user_version`) и отвечает на вопрос, который до сих пор
+#  задать было некому: «эта база новее кода или старее?».
+#
+#  Старее — обычное дело, миграции догонят. Новее — беда: старый образ,
+#  поднятый на томе, который успел поработать под новой версией, читает чужую
+#  схему и молча пишет в неё половину того, что нужно. Хуже отказа стартовать
+#  ровно тем, что заметно это станет через неделю и по совершенно другим
+#  симптомам.
+SCHEMA_VERSION = len(MIGRATIONS)
+
+
+class SchemaTooNew(RuntimeError):
+    """База поработала под более новой версией VisTest."""
 
 
 class Database:
@@ -463,8 +487,21 @@ class Database:
             c.executescript(SCHEMA)
         self._migrate()
 
+    def schema_version(self) -> int:
+        with self.connect() as c:
+            return int(c.execute("PRAGMA user_version").fetchone()[0])
+
     def _migrate(self) -> None:
         with self.connect() as c:
+            found = int(c.execute("PRAGMA user_version").fetchone()[0])
+            if found > SCHEMA_VERSION:
+                raise SchemaTooNew(
+                    f"The database at {self.path} has schema version {found}, "
+                    f"and this VisTest knows version {SCHEMA_VERSION}. It has "
+                    "been opened by a newer version. Update VisTest, or point "
+                    "VISTEST_ROOT at a different data volume — writing into a "
+                    "schema we do not know would corrupt it quietly.")
+
             existing = {r[0] for r in c.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             for table, statement in MIGRATIONS:
@@ -479,6 +516,12 @@ class Database:
                     # place that has nothing to do with the cause.
                     if "duplicate column" not in str(e).lower():
                         raise
+            # Отметка ставится ПОСЛЕ шагов и только вверх: свежая база
+            # получает номер сразу, база из прошлой версии — после того, как
+            # догнала. `PRAGMA` не принимает параметр, отсюда подстановка —
+            # значение здесь целое из кода, не из запроса.
+            if found < SCHEMA_VERSION:
+                c.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
 
     def _conn(self) -> sqlite3.Connection:
         """Соединение на поток — и на файл.
@@ -498,8 +541,39 @@ class Database:
             conn = sqlite3.connect(self.path, check_same_thread=False, timeout=15)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys=ON")
+            # Явно, а не по умолчанию, и обе строки стоят денег в проде.
+            #
+            # `busy_timeout` — тот же пятнадцатисекундный `timeout` выше, но
+            # сказанный самой базе: при обращении из нескольких процессов
+            # (уборка, `vistest push` рядом с сервисом) писатель ждёт, а не
+            # получает «database is locked» первым же запросом.
+            #
+            # `synchronous=NORMAL` — режим, для которого WAL и придуман:
+            # fsync на контрольной точке, а не на каждой транзакции. FULL
+            # защищает от потери последней транзакции при отключении питания
+            # машины; здесь это история проверок, а не платёжки, и платить за
+            # такую защиту десятикратной ценой записи незачем.
+            conn.execute("PRAGMA busy_timeout=15000")
+            conn.execute("PRAGMA synchronous=NORMAL")
             cache[self.path] = conn
         return conn
+
+    def close(self) -> None:
+        """Закрыть соединение этого потока.
+
+        Соединения кешировались на поток и не закрывались никогда: процесс
+        живёт долго, потоков в пуле десятки, и каждое держит открытым файл
+        базы вместе с её WAL. В однопроцессной установке это незаметно; при
+        остановке сервиса и в тестах, где на каждый случай своя временная
+        база, — вполне заметно.
+        """
+        cache = getattr(_local, "conns", None) or {}
+        conn = cache.pop(self.path, None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     @contextmanager
     def connect(self):
