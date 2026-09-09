@@ -6,22 +6,22 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Перцептивное цветовое пространство и CIEDE2000.
+"""Perceptual color space and CIEDE2000.
 
-Зачем: `cv2.absdiff` в sRGB не имеет отношения к тому, что видит человек.
-Разница в 10 единиц RGB в тенях бросается в глаза, в светах — невидима.
-CIEDE2000 — стандарт CIE, где 1.0 ≈ порог различимости (JND) независимо
-от того, в какой части пространства находятся цвета.
+Why: `cv2.absdiff` in sRGB has nothing to do with what humans see.
+A difference of 10 RGB units in shadows jumps out at you, in highlights — invisible.
+CIEDE2000 is a CIE standard where 1.0 ≈ the threshold of perceptibility (JND)
+regardless of where in the color space the colors are.
 
-Всё векторизовано и считается блоками по строкам, чтобы полностраничный
-скриншот 1920×8000 не съел всю память на промежуточных массивах.
+Everything is vectorized and computed in row blocks so a full-page screenshot
+1920×8000 doesn't consume all memory on intermediate arrays.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-try:  # cv2 даёт быстрый и точный float32-путь
+try:  # cv2 provides a fast and accurate float32 path
     import cv2
 except ImportError:  # pragma: no cover
     cv2 = None
@@ -30,7 +30,7 @@ _POW25_7 = 25.0 ** 7
 _DEG = np.float32(180.0 / np.pi)
 _RAD = np.float32(np.pi / 180.0)
 
-# Матрица sRGB(linear) -> XYZ, D65
+# sRGB(linear) → XYZ matrix, D65
 _M = np.array(
     [[0.4124564, 0.3575761, 0.1804375],
      [0.2126729, 0.7151522, 0.0721750],
@@ -48,7 +48,7 @@ def srgb_to_lab(rgb_u8: np.ndarray) -> np.ndarray:
     rgb = rgb_u8.astype(np.float32) / np.float32(255.0)
 
     if cv2 is not None:
-        # cv2 ждёт float32 в [0,1]; отдаёт L∈[0,100], a,b∈[-127,127]
+        # cv2 expects float32 in [0,1]; returns L∈[0,100], a,b∈[-127,127]
         return cv2.cvtColor(rgb, cv2.COLOR_RGB2Lab)
 
     # --- numpy fallback ---
@@ -66,10 +66,10 @@ def srgb_to_lab(rgb_u8: np.ndarray) -> np.ndarray:
 
 
 def luminance(rgb_u8: np.ndarray) -> np.ndarray:
-    """Канал L* (перцептивная светлота) как uint8 — вход для SSIM/Canny.
+    """The L* channel (perceptual lightness) as uint8 — input for SSIM/Canny.
 
-    Именно L*, а не cv2 grayscale: grayscale линеен по sRGB и искажает
-    контраст в тенях, из-за чего SSIM «не замечает» изменения на тёмных темах.
+    Specifically L*, not cv2 grayscale: grayscale is linear in sRGB and distorts
+    contrast in shadows, so SSIM "misses" changes on dark themes.
     """
     lab = srgb_to_lab(rgb_u8)
     return np.clip(lab[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
@@ -84,7 +84,7 @@ def delta_e_ciede2000(
     kH: float = 1.0,
     chunk_rows: int = 512,
 ) -> np.ndarray:
-    """Попиксельная ΔE00 между двумя Lab-изображениями -> float32 (H,W)."""
+    """Per-pixel ΔE00 between two Lab images -> float32 (H,W)."""
     if lab1.shape != lab2.shape:
         raise ValueError(f"Shapes differ: {lab1.shape} vs {lab2.shape}")
 
@@ -114,7 +114,7 @@ def _de2000_block(lab1, lab2, kL, kC, kH):
 
     h1p = np.degrees(np.arctan2(b1, a1p)) % 360.0
     h2p = np.degrees(np.arctan2(b2, a2p)) % 360.0
-    # Определение: при нулевой хроме оттенок не определён -> 0
+    # Definition: with zero chroma, hue is undefined -> 0
     zero1 = (np.abs(a1p) + np.abs(b1)) == 0
     zero2 = (np.abs(a2p) + np.abs(b2)) == 0
     h1p = np.where(zero1, 0.0, h1p)
@@ -167,8 +167,8 @@ def _de2000_block(lab1, lab2, kL, kC, kH):
 
 
 def delta_e_76(lab1: np.ndarray, lab2: np.ndarray) -> np.ndarray:
-    """Евклидова ΔE в Lab. Быстрее ΔE00 в ~15 раз, точность ниже.
-    Используется как предфильтр: ΔE76 — верхняя оценка, где она мала,
-    ΔE00 заведомо мала, и полную формулу считать не нужно."""
+    """Euclidean ΔE in Lab. ~15 times faster than ΔE00, lower accuracy.
+    Used as a pre-filter: ΔE76 is an upper bound, where it is small,
+    ΔE00 is definitely small, and the full formula need not be computed."""
     d = lab1.astype(np.float32) - lab2.astype(np.float32)
     return np.sqrt(np.einsum("...i,...i->...", d, d)).astype(np.float32)

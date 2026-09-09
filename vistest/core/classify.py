@@ -6,12 +6,12 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Классификация регионов и расчёт severity.
+"""Region classification and severity calculation.
 
-Идея: бинарного «значимо / незначимо» недостаточно. Сдвиг подписи на 2 px и
-пропавшая кнопка «Оплатить» — оба «значимы» по площади, но это события разного
-масштаба. Поэтому каждому региону присваивается класс и непрерывная severity
-0..100, а порог падения задаётся политикой в конфиге.
+Idea: binary "significant/insignificant" is not enough. A label shifted 2 px
+and a disappeared "Pay" button are both "significant" by area, but these are
+events of different scales. So each region gets a class and a continuous
+severity score 0..100, and the failure threshold is set by policy in config.
 """
 
 from __future__ import annotations
@@ -22,23 +22,23 @@ from ..models import ChangeKind, DiffRegion
 from .align import find_local_shift
 from .structure import edge_density, local_ssim
 
-# Насколько класс изменения важен сам по себе.
+# How important the change class is in itself.
 KIND_WEIGHT: dict[ChangeKind, float] = {
     ChangeKind.NOISE: 0.0,
     ChangeKind.ANTIALIAS: 0.0,
-    ChangeKind.MOVED: 0.35,      # переопределяется diff.moved_severity_scale
+    ChangeKind.MOVED: 0.35,      # overridden by diff.moved_severity_scale
     ChangeKind.RESIZED: 0.80,
     ChangeKind.COLOR: 0.90,
     ChangeKind.TEXT: 1.00,
     ChangeKind.CONTENT: 1.00,
     ChangeKind.ADDED: 1.20,
-    ChangeKind.REMOVED: 1.25,    # исчезнувший элемент — почти всегда баг
+    ChangeKind.REMOVED: 1.25,    # a disappeared element is almost always a bug
 }
 
-_FLAT_STD = 4.0          # ниже — считаем область однородной («пусто»)
+_FLAT_STD = 4.0          # below this, we consider the area uniform ("empty")
 _FLAT_EDGES = 0.012
-_TEXT_EDGES = 0.10       # выше — плотность краёв как у текста
-_COLOR_STRUCT_OK = 0.90  # структура сохранена => изменился только цвет
+_TEXT_EDGES = 0.10       # above this, edge density looks like text
+_COLOR_STRUCT_OK = 0.90  # structure is preserved => only color changed
 
 
 def classify_region(
@@ -81,7 +81,7 @@ def classify_region(
         edge_density=max(ed_exp, ed_act),
     )
 
-    # --- 1. Не уехал ли блок целиком? ---
+    # --- 1. Did the block move entirely? ---
     if detect_moved:
         dx, dy, ncc = find_local_shift(
             gray_exp, gray_act, (x, y, w, h), search_px=move_search_px
@@ -93,7 +93,7 @@ def classify_region(
                                         above_fold_px, above_fold_weight)
             return region
 
-    # --- 2. Появление / исчезновение ---
+    # --- 2. Appearance / disappearance ---
     std_exp = float(crop_exp.std()) if crop_exp.size else 0.0
     std_act = float(crop_act.std()) if crop_act.size else 0.0
     empty_exp = std_exp < _FLAT_STD and ed_exp < _FLAT_EDGES
@@ -103,10 +103,10 @@ def classify_region(
         region.kind = ChangeKind.ADDED
     elif empty_act and not empty_exp:
         region.kind = ChangeKind.REMOVED
-    # --- 3. Только цвет: структура на месте ---
+    # --- 3. Color only: structure is intact ---
     elif ssim_local >= _COLOR_STRUCT_OK and de_mean >= 2.0:
         region.kind = ChangeKind.COLOR
-    # --- 4. Текст ---
+    # --- 4. Text ---
     elif max(ed_exp, ed_act) >= _TEXT_EDGES:
         region.kind = ChangeKind.TEXT
     else:
@@ -125,12 +125,12 @@ def _severity(
     above_fold_px: int,
     above_fold_weight: float,
 ) -> float:
-    """0..100. Три ортогональных вклада + вес класса + вес позиции.
+    """0..100. Three orthogonal contributions + class weight + position weight.
 
-    size   — сколько пикселей реально изменилось (маска, не bbox).
-             Референс — 0.2% площади экрана: столько занимает заметный элемент.
-    color  — насколько сильно изменился цвет (ΔE 12 = «явно другой цвет»).
-    struct — насколько разошлась структура.
+    size   — how many pixels actually changed (mask, not bbox).
+             Reference — 0.2% of screen area: a noticeable element.
+    color  — how much color changed (ΔE 12 = "clearly different color").
+    struct — how much structure diverged.
     """
     ref = max(total_pixels * 0.002, 400.0)
     size_term = min(1.0, (r.pixel_count / ref) ** 0.5)

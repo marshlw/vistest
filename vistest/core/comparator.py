@@ -6,7 +6,7 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Оркестратор сравнения. Здесь собирается весь каскад."""
+"""Orchestrator of comparison. All stages of the cascade are assembled here."""
 
 from __future__ import annotations
 
@@ -55,13 +55,13 @@ def compare(
     ignore_mask: np.ndarray | None = None,
     ai_hooks=None,
 ) -> CompareResult:
-    """Сравнить два RGB-изображения (uint8, H×W×3).
+    """Compare two RGB images (uint8, H×W×3).
 
-    ignore_mask: bool-маска «сюда не смотреть» (маски пользователя,
-                 stability-маска, вечные ignore-регионы из истории).
-    ai_hooks:    объект с необязательными методами
-                 `perceptual_filter(regions, exp, act)` и
-                 `attribute(regions)`. См. vistest.ai.pipeline.AIPipeline.
+    ignore_mask: bool mask "don't look here" (user masks, stability mask,
+                 persistent ignore regions from history).
+    ai_hooks:    object with optional methods
+                 `refine(regions, exp, act)` and
+                 `attribute(regions)`. See vistest.ai.pipeline.AIPipeline.
     """
     t0 = time.perf_counter()
     cfg = cfg or DiffConfig()
@@ -74,7 +74,7 @@ def compare(
     res.size_expected = (int(expected_rgb.shape[1]), int(expected_rgb.shape[0]))
     res.size_actual = (int(actual_rgb.shape[1]), int(actual_rgb.shape[0]))
 
-    # ---------- 0. Размеры ----------
+    # ---------- 0. Sizes ----------
     exp, act, padded = _align.reconcile_sizes(expected_rgb, actual_rgb)
     if padded:
         res.size_changed = True
@@ -89,12 +89,12 @@ def compare(
     h, w = exp.shape[:2]
     res.total_pixels = h * w
 
-    # ---------- 1. Перцептивная светлота ----------
+    # ---------- 1. Perceptual lightness ----------
     lab_exp = _color.srgb_to_lab(exp)
     gray_exp = np.clip(lab_exp[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
     gray_act_raw = _color.luminance(act)
 
-    # ---------- 2. Глобальное выравнивание ----------
+    # ---------- 2. Global alignment ----------
     act_aligned, al = _align.align_images(
         exp, act, gray_exp, gray_act_raw,
         enabled=cfg.align_enabled,
@@ -107,7 +107,7 @@ def compare(
     lab_act = _color.srgb_to_lab(act_aligned)
     gray_act = np.clip(lab_act[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
 
-    # ---------- 3. Перцептивная и структурная карты ----------
+    # ---------- 3. Perceptual and structural maps ----------
     de_map = _color.delta_e_ciede2000(lab_exp, lab_act)
     smap, ssim_global = _struct.ssim_map(gray_exp, gray_act)
     res.ssim_global = ssim_global
@@ -115,17 +115,17 @@ def compare(
     color_hit = de_map > cfg.delta_e_threshold
     struct_hit = smap < cfg.ssim_threshold
 
-    # ---------- 4. Кандидаты: КОНСЕНСУС, а не OR ----------
+    # ---------- 4. Candidates: CONSENSUS, not OR ----------
     if cfg.require_consensus:
-        # Исключение: очень сильная цветовая разница на плоской заливке
-        # структуру не меняет (SSIM остаётся высоким), поэтому пропускаем её
-        # мимо консенсуса — иначе смена цвета фона осталась бы незамеченной.
+        # Exception: very strong color difference on a flat fill doesn't change
+        # structure (SSIM stays high), so we skip it past consensus — otherwise
+        # a background color change would go unnoticed.
         strong_color = de_map > (cfg.delta_e_threshold * 4.0)
         candidate = (color_hit & struct_hit) | strong_color
     else:
         candidate = color_hit | struct_hit
 
-    # ---------- 5. Подавление известного шума ----------
+    # ---------- 5. Known noise suppression ----------
     suppress = np.zeros((h, w), dtype=bool)
     if cfg.antialias_filter:
         suppress |= _aa.antialias_mask(gray_exp, gray_act, tolerance=cfg.aa_tolerance)
@@ -140,7 +140,7 @@ def compare(
     res.de_p95 = float(np.percentile(de_masked, 95)) if de_masked.size else 0.0
     res.changed_area_pct = 100.0 * res.changed_pixels / max(res.total_pixels, 1)
 
-    # ---------- 6. Сегментация ----------
+    # ---------- 6. Segmentation ----------
     cleaned = _seg.clean_mask(mask, open_px=cfg.morph_open_px, close_px=cfg.morph_close_px)
     _, boxes = _seg.components(
         cleaned,
@@ -150,7 +150,7 @@ def compare(
     )
     boxes = _seg.merge_close_boxes(boxes, gap=max(cfg.morph_close_px * 2, 10))
 
-    # ---------- 7. Классификация ----------
+    # ---------- 7. Classification ----------
     regions: list[DiffRegion] = []
     for (x, y, bw, bh, px, fill, _lbl) in boxes:
         regions.append(
@@ -168,14 +168,14 @@ def compare(
             )
         )
 
-    # ---------- 8. AI-слой (опционально) ----------
+    # ---------- 8. AI layer (optional) ----------
     if ai_hooks is not None and regions:
         try:
             regions = ai_hooks.refine(regions, exp, act_aligned, res)
-        except Exception as e:  # AI никогда не должен ронять тест
+        except Exception as e:  # AI should never fail the test
             res.notes.append(f"AI layer skipped: {type(e).__name__}: {e}")
 
-    # ---------- 9. Разделение и вердикт ----------
+    # ---------- 9. Separation and verdict ----------
     ignore_kinds = {ChangeKind(k) for k in cfg.ignore_kinds}
     for r in regions:
         if r.kind in ignore_kinds or r.suppressed_by:
@@ -187,7 +187,7 @@ def compare(
     res.verdict = _verdict(res, cfg)
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
-    # Сохраняем карты для рендера артефактов (не сериализуются в JSON).
+    # Keep maps for artifact rendering (not serialized to JSON).
     res.artifacts["_de_map"] = de_map          # type: ignore[assignment]
     res.artifacts["_mask"] = cleaned           # type: ignore[assignment]
     res.artifacts["_aligned_actual"] = act_aligned  # type: ignore[assignment]
@@ -207,11 +207,10 @@ def _verdict(res: CompareResult, cfg: DiffConfig) -> Verdict:
         reasons.append(f"severity {res.max_severity:.1f} ≥ {cfg.fail_severity}")
 
     if res.changed_area_pct >= cfg.max_changed_area_pct:
-        # Площадь считается до сегментации: в неё попадают и пиксели, которые
-        # дальше отброшены как слишком мелкие. Если после фильтрации не
-        # осталось ни одного региона — движок сам признал всё найденное
-        # незначимым, и падать по сумме отброшенного значит спорить с
-        # собственным решением.
+        # Area is counted before segmentation: it includes pixels that are
+        # later discarded as too small. If no region passes filtering —
+        # the engine recognized everything as insignificant, and failing by the
+        # sum of discarded pixels means disagreeing with its own decision.
         diffuse = not res.regions
         huge = res.changed_area_pct >= cfg.area_hard_fail_pct
 
@@ -239,7 +238,7 @@ def _verdict(res: CompareResult, cfg: DiffConfig) -> Verdict:
 
 
 def _fit_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
-    """Подгоняет маску под размер изображения (обрезка/дополнение False)."""
+    """Fit the mask to image shape (crop/pad with False)."""
     out = np.zeros(shape, dtype=bool)
     hh = min(shape[0], mask.shape[0])
     ww = min(shape[1], mask.shape[1])
@@ -248,7 +247,7 @@ def _fit_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
 
 
 def strip_internal(res: CompareResult) -> CompareResult:
-    """Убрать numpy-массивы из artifacts перед сериализацией."""
+    """Remove numpy arrays from artifacts before serialization."""
     for k in list(res.artifacts):
         if k.startswith("_"):
             res.artifacts.pop(k)
