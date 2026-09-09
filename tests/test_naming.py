@@ -18,15 +18,20 @@ indistinguishable from «your tests are broken».
 The tests are grouped by method, and `with_overrides` gets the most of them on
 purpose. It is the escape hatch a project uses when its layout was not
 predicted, so it is edited by people who are already confused, and every one of
-its rules is a silent one: an unknown key does nothing, an empty value does
-nothing, a bare string becomes a one-element tuple, and `search_dirs` adds
+its rules needs stating: an unknown key is refused, an empty value means «not
+specified», a bare string becomes a one-element tuple, and `search_dirs` adds
 rather than replaces. None of that is guessable from the signature.
+
+The asymmetry between the first two is the interesting part and is tested from
+both sides. A typo in a key is a mistake nobody can see afterwards — the
+built-in patterns keep working and the correction is simply absent — so it
+fails at once. An empty value is what the connection form sends for every
+field a person left alone, so it has to keep meaning «leave this as it is».
 """
 
 from __future__ import annotations
 
 import dataclasses
-import re
 from pathlib import Path
 
 import pytest
@@ -37,6 +42,7 @@ from vistest.core.naming import (
     EXPECTED,
     OTHER,
     SKIP_DIRS,
+    NamingError,
     NamingProfile,
     Snapshot,
 )
@@ -226,8 +232,22 @@ def test_an_override_replaces_the_defaults_rather_than_adding_to_them():
     assert SUFFIXED.actual[0] not in got.actual
 
 
-def test_an_unknown_key_is_ignored_and_changes_nothing():
-    assert SUFFIXED.with_overrides(naming={"nonsense": "x"}) is SUFFIXED
+def test_an_unknown_key_is_refused_by_name():
+    """A dropped key is indistinguishable from a key that works.
+
+    This is the failure the library mode cannot afford: the correction is
+    written into somebody else's `vistest.yaml`, the patterns quietly stay the
+    built-in ones, and the only symptom is that the setting «does nothing».
+    """
+    with pytest.raises(NamingError) as e:
+        SUFFIXED.with_overrides(naming={"nonsense": "x"})
+    assert "nonsense" in str(e.value)
+    assert "actual" in str(e.value)          # the known keys are listed
+
+
+def test_the_naming_patch_itself_must_be_an_object():
+    with pytest.raises(NamingError):
+        SUFFIXED.with_overrides(naming="actual=login")
 
 
 @pytest.mark.parametrize("empty", ["", [], (), None, 0, False])
@@ -296,16 +316,29 @@ def test_overrides_of_a_subclass_return_that_subclass():
     assert got.id == "x" and got.actual == ("b",)
 
 
-def test_a_pattern_that_does_not_compile_is_refused_when_it_is_used():
-    """Validation is the project layer's job; the engine fails loudly, not silently.
+def test_a_pattern_that_does_not_compile_is_refused_where_it_is_written():
+    """The regex is compiled while the profile is built, not while it is used.
 
-    `vistest.projects` compiles the rules when a project is saved and reports
-    them by name. This records what the engine does with one that got through:
-    it raises, rather than quietly matching nothing.
+    It used to survive until `classify`, which is the worst place available for
+    it to surface: a bare `re.error` in the middle of a walk, with a file name
+    in the traceback and no mention of the setting that is wrong. In the
+    library mode that traceback lands in somebody else's CI.
     """
-    broken = SUFFIXED.with_overrides(naming={"actual": "(unclosed"})
-    with pytest.raises(re.error):
-        broken.classify(Path("/x/login-actual.png"))
+    with pytest.raises(NamingError) as e:
+        SUFFIXED.with_overrides(naming={"actual": "(unclosed"})
+    assert "actual" in str(e.value) and "unclosed" in str(e.value)
+
+
+def test_a_broken_pattern_is_refused_on_the_profile_itself_too():
+    """Not only through `with_overrides`: the constructor is a way in as well."""
+    with pytest.raises(NamingError):
+        NamingProfile(actual=("(unclosed",))
+
+
+def test_a_bare_string_field_is_normalised_rather_than_iterated():
+    """`actual="x"` used to be read as one pattern per character, in silence."""
+    assert NamingProfile(actual=r"(?P<name>.+)\.png").actual == \
+        (r"(?P<name>.+)\.png",)
 
 
 # --------------------------------------------------------------------------- #

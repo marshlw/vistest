@@ -28,6 +28,7 @@ from .core.settings import (
     AIConfig,
     AuthConfig,
     CaptureConfig,
+    ConfigError,
     DiffConfig,
     MatrixConfig,
     PathsConfig,
@@ -36,10 +37,70 @@ from .core.settings import (
 )
 
 __all__ = [
-    "AIConfig", "AuthConfig", "CaptureConfig", "DiffConfig", "MatrixConfig",
-    "PathsConfig", "RenderConfig", "ServiceConfig", "VisTestConfig",
+    "AIConfig", "AuthConfig", "CaptureConfig", "ConfigError", "DiffConfig",
+    "MatrixConfig", "PathsConfig", "RenderConfig", "ServiceConfig",
+    "VisTestConfig", "env_flag", "env_float", "env_int", "env_text",
     "platform_key",
 ]
+
+
+# --------------------------------------------------------------------------- #
+#  Reading the environment
+#
+#  Four functions rather than four inline `try: int(...) except: pass` blocks,
+#  and the difference is the whole point of them: garbage in a variable used to
+#  leave the default in place without a word. The setting appeared to be
+#  ignored, and the only way to find out why was to read this file.
+#
+#  In the library mode that costs more than an afternoon. The variable is set
+#  in somebody else's CI, by somebody who has never seen this repository, and
+#  the symptom they get is «vistest does not respect our threshold» — with no
+#  error, no warning and nothing in the log.
+#
+#  So: a variable that is set and unreadable stops the run, and the message
+#  names the variable, the value and what was expected. A variable that is not
+#  set at all is not a mistake and never was.
+# --------------------------------------------------------------------------- #
+_TRUE = ("1", "true", "yes", "on")
+_FALSE = ("0", "false", "no", "off")
+
+
+def env_text(name: str, default: str = "") -> str:
+    """The variable, stripped. Unset and empty are the same thing here."""
+    return (os.getenv(name) or "").strip() or default
+
+
+def env_flag(name: str, *, default: bool = False) -> bool:
+    raw = env_text(name)
+    if not raw:
+        return default
+    if raw.lower() in _TRUE:
+        return True
+    if raw.lower() in _FALSE:
+        return False
+    raise ConfigError(
+        f"{name}: {raw!r} is not a yes/no value "
+        f"({'/'.join(_TRUE)} or {'/'.join(_FALSE)})")
+
+
+def env_int(name: str, *, default: int | None = None) -> int | None:
+    raw = env_text(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ConfigError(f"{name}: {raw!r} is not an integer") from None
+
+
+def env_float(name: str, *, default: float | None = None) -> float | None:
+    raw = env_text(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise ConfigError(f"{name}: {raw!r} is not a number") from None
 
 
 @dataclass
@@ -97,8 +158,19 @@ class VisTestConfig:
         try:
             import yaml
         except ImportError as e:  # pragma: no cover
-            raise RuntimeError(
-                "Reading vistest.yaml requires PyYAML: pip install pyyaml") from e
+            #  There is a config file here and we cannot read it. Falling back
+            #  to the defaults would run somebody's suite under thresholds they
+            #  did not choose and never see — so this stops, and says which
+            #  file it stopped over.
+            #  PyYAML is a base dependency, so reaching this means it was
+            #  removed from the environment on purpose. Falling back to the
+            #  defaults would run somebody's suite under thresholds they did
+            #  not choose and never see, so this stops and names the file.
+            raise ConfigError(
+                f"{path}: reading it requires PyYAML, which is installed with "
+                "vistest but is missing from this environment. Reinstall it "
+                "with `pip install pyyaml`, or remove the file to run on the "
+                "defaults.") from e
 
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         cfg = cls.preset_of(raw.get("preset", "balanced"))
@@ -149,32 +221,32 @@ class VisTestConfig:
 
     @staticmethod
     def _apply_env(cfg: VisTestConfig) -> VisTestConfig:
-        if v := os.getenv("VISTEST_API_URL"):
+        if v := env_text("VISTEST_API_URL"):
             cfg.service = replace(cfg.service, api_url=v)
-        if v := os.getenv("VISTEST_PROJECT"):
+        if v := env_text("VISTEST_PROJECT"):
             cfg.service = replace(cfg.service, project=v)
-        # Два имени, потому что оба встречаются в дикой природе: у пайплайна,
-        # который уже льёт прогоны, переменная называется INGEST.
-        if v := (os.getenv("VISTEST_TOKEN")
-                 or os.getenv("VISTEST_INGEST_TOKEN")):
+        # Two names, because both occur in the wild: in a pipeline that is
+        # already pushing runs the variable is called INGEST.
+        if v := (env_text("VISTEST_TOKEN") or env_text("VISTEST_INGEST_TOKEN")):
             cfg.service = replace(cfg.service, token=v)
-        if v := os.getenv("VISTEST_ROOT"):
+        if v := env_text("VISTEST_ROOT"):
             cfg.paths = replace(cfg.paths, root=v)
-        if os.getenv("VISTEST_UPDATE_BASELINES", "").lower() in ("1", "true", "yes"):
+        if env_flag("VISTEST_UPDATE_BASELINES"):
             cfg.update_baselines = True
-        if os.getenv("VISTEST_PERCEPTUAL", "").lower() in ("1", "true", "yes"):
+        if env_flag("VISTEST_PERCEPTUAL"):
             cfg.ai = replace(cfg.ai, perceptual_enabled=True)
 
-        # The engine's memory limit. It is a `DiffConfig` field like any
-        # other, so the only thing that happens here is what happens to every
-        # environment variable: it is read once, at load, in the loader.
-        # Garbage does not fail a run — the config value stands, exactly as
-        # for the verdict thresholds below.
-        if raw_limit := os.getenv("VISTEST_ENGINE_MAX_PIXELS"):
-            try:
-                cfg.diff = replace(cfg.diff, max_pixels=int(raw_limit))
-            except ValueError:
-                pass
+        # The engine's memory limit. A `DiffConfig` field like any other, so
+        # the only thing that happens here is what happens to every environment
+        # variable: it is read once, at load, in the loader — and a value that
+        # cannot be read stops the run instead of quietly leaving the default,
+        # which is what it used to do.
+        if (limit := env_int("VISTEST_ENGINE_MAX_PIXELS")) is not None:
+            if limit < 0:
+                raise ConfigError(
+                    f"VISTEST_ENGINE_MAX_PIXELS: {limit} is negative "
+                    "(0 turns the check off)")
+            cfg.diff = replace(cfg.diff, max_pixels=limit)
 
         # Verdict thresholds set from the interface. The service keeps them in
         # its own database, but a run of a connected project is a separate
@@ -183,17 +255,23 @@ class VisTestConfig:
         # reaches someone else's pytest; without this the setting would apply
         # to the service's own runs and silently not to project runs — the kind
         # of discrepancy that costs days to find.
+        #
+        # Validated through the same function the interface validates with, so
+        # a number outside its range is refused here too. It used to be dropped
+        # in silence, which made «the threshold does not work» a bug report
+        # about the engine rather than about the value that was typed.
+        from .core.thresholds import ThresholdError, validate
+
         patch = {}
         for name in ("fail_severity", "max_changed_area_pct"):
-            raw = os.getenv(f"VISTEST_{name.upper()}")
-            if not (raw or "").strip():
+            variable = f"VISTEST_{name.upper()}"
+            raw = env_float(variable)
+            if raw is None:
                 continue
             try:
-                patch[name] = float(raw)
-            except ValueError:
-                # Garbage in the variable must not fail a run: the threshold
-                # stays what the config says.
-                continue
+                patch[name] = validate(name, raw)
+            except ThresholdError as e:
+                raise ConfigError(f"{variable}: {e}") from None
         if patch:
             cfg.diff = replace(cfg.diff, **patch)
 
@@ -242,7 +320,10 @@ def platform_key(browser: str = "chromium", scale: float = 1.0,
     """
     import platform as _p
 
-    if os.getenv("VISTEST_IN_DOCKER") == "1":
+    #  Read as a flag rather than compared with "1": an image that sets it to
+    #  `true` used to fall through to the host's platform key, and the whole
+    #  set of baselines silently moved to another directory.
+    if env_flag("VISTEST_IN_DOCKER"):
         system = "docker"
     else:
         system = {"Windows": "win", "Linux": "linux", "Darwin": "mac"}.get(

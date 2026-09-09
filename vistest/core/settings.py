@@ -29,6 +29,34 @@ from __future__ import annotations
 from dataclasses import dataclass, fields, replace
 from typing import Any
 
+__all__ = [
+    "AIConfig", "AuthConfig", "CaptureConfig", "ConfigError", "DiffConfig",
+    "MatrixConfig", "PathsConfig", "RenderConfig", "ServiceConfig",
+]
+
+
+# --------------------------------------------------------------------------- #
+#  Configuration errors
+#
+#  One exception type for «the configuration says something that cannot be
+#  obeyed», raised at load time and never later. The rule it serves is the same
+#  everywhere in the package: a configuration mistake is loud, and a missing
+#  optional part is a warning.
+#
+#  Loud means the message names three things — the file or variable, the key,
+#  and the value that was there. In the library mode this text is the whole
+#  bug report: it surfaces in somebody else's CI, in a project we have never
+#  seen, and nobody there is going to attach a debugger to find out which of
+#  their eleven environment variables we disliked.
+#
+#  A `ValueError`, deliberately. Config mistakes used to be raised as plain
+#  `ValueError` from `VisTestConfig.load`, and callers catch that; narrowing
+#  the type without keeping the base would silently stop those handlers from
+#  firing.
+# --------------------------------------------------------------------------- #
+class ConfigError(ValueError):
+    """A configuration value is wrong — the message says which one and where."""
+
 
 # --------------------------------------------------------------------------- #
 #  Comparison thresholds

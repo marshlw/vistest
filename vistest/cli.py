@@ -316,6 +316,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="glob of snapshot names; may be repeated")
     bl_ex.add_argument("--with-history", action="store_true",
                        help="include previous versions, several times the size")
+    bl_ex.add_argument("--baselines", default="", metavar="PATH",
+                       help="directory to read from; the installation's own set "
+                            "by default. A library project passes its committed "
+                            "one, e.g. tests/__vistest__")
 
     bl_im = bl_sub.add_parser("import", help="merge an archive into this installation")
     bl_im.add_argument("archive")
@@ -328,6 +332,14 @@ def main(argv: list[str] | None = None) -> int:
     bl_im.add_argument("--dry-run", action="store_true",
                        help="say what would happen and change nothing")
     bl_im.add_argument("--who", default="", help="name to record on imported versions")
+    bl_im.add_argument("--baselines", default="", metavar="PATH",
+                       help="directory to write into; the installation's own set "
+                            "by default")
+    bl_im.add_argument("--layout", default="auto", choices=["auto", "server", "flat"],
+                       help="shape to write in. auto: whatever is already there, "
+                            "server when the target is empty. flat: one PNG per "
+                            "snapshot, as a project using vistest as a library "
+                            "keeps them")
 
     bk = sub.add_parser("backup", help="pack baselines and the database into an archive")
     bk.add_argument("archive", help="where to write it, for example vistest-2026-09-05.tar.gz")
@@ -438,7 +450,8 @@ def _baselines_transfer(args) -> int:
 
     selection = Selection(project=args.project, platform=args.platform,
                           names=tuple(args.names))
-    root = _baselines_root()
+    root = Path(args.baselines) if getattr(args, "baselines", "") \
+        else _baselines_root()
 
     if args.sub == "export":
         try:
@@ -466,7 +479,7 @@ def _baselines_transfer(args) -> int:
           f"{len(manifest.get('snapshots') or [])} snapshots")
 
     steps = plan(args.archive, baselines_root=root, mode=args.mode,
-                 selection=selection)
+                 selection=selection, layout=args.layout)
     if not steps:
         print("Nothing in this archive matches the selection.")
         return 1
@@ -480,7 +493,7 @@ def _baselines_transfer(args) -> int:
         return 0
 
     result = import_(args.archive, baselines_root=root, mode=args.mode,
-                     selection=selection, who=args.who)
+                     selection=selection, who=args.who, layout=args.layout)
     counts = result["counts"]
     print(f"\nadded {counts['added']}, new versions {counts['updated']}, "
           f"replaced {counts['replaced']}, skipped {counts['skipped']}")

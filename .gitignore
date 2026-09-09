@@ -9,14 +9,23 @@
 #  In a project that USES VisTest the rule is the opposite: commit your
 #  baselines, or CI has nothing to compare against and the first run will
 #  silently create new ones from whatever state it finds, broken included.
-#  There, add these lines to your own .gitignore instead:
+#
+#  In the library mode that is already the layout — baselines live in
+#  tests/__vistest__/ and only the artifacts are ignored, so one line is
+#  enough there:
+#
+#      .vistest/
+#
+#  With the service, the baselines are under .vistest/ too and have to be
+#  brought back:
 #
 #      !.vistest/baselines/
 #      !.vistest/baselines/**
 #
 #  PNGs grow git fast, so baselines are better off in LFS:
 #      git lfs install
-#      git lfs track ".vistest/baselines/**/*.png"
+#      git lfs track "tests/__vistest__/**/*.png"     # library mode
+#      git lfs track ".vistest/baselines/**/*.png"    # with the service
 #      git add .gitattributes
 # =============================================================================
 
@@ -290,3 +299,10 @@ temp/
 
 # Backups left by `vistest record` when it overwrites a test
 *.py.bak
+
+# Scratch folders that assistants and editors drop next to the source. Neither
+# the project's nor anybody's to publish — and untracked-but-not-ignored is the
+# one state in which scripts/check_i18n.py would start counting their contents
+# as this repository's debt.
+Claude outputs/
+.claude/

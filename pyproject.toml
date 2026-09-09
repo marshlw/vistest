@@ -20,11 +20,26 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 
-# Ядро сравнения работает на трёх зависимостях. Всё остальное — опционально.
+# What `pip install vistest` brings: the comparison engine, and the parser for
+# its config file. In the library mode this package goes into somebody else's
+# test environment, next to their own pins, and every name here is one they
+# have to resolve against — so the list is short on purpose.
+#
+# Short, not empty. PyYAML is here because the alternative was worse: install
+# the package, write a `vistest.yaml`, and be told to install something else.
+# That is the first five minutes of using this tool, spent on a 700 KB pure
+# Python wheel. What the base install is meant to keep out is a web server —
+# fastapi, uvicorn, starlette — not a config parser.
+#
+# `tests/test_library_install.py` fails if this list grows, and separately if
+# any module reachable from `import vistest` starts pulling something outside
+# it. The second check is the one that matters: a dependency list cannot notice
+# an import.
 dependencies = [
     "numpy>=1.24",
     "opencv-python-headless>=4.8",
     "pillow>=10.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -34,14 +49,19 @@ dependencies = [
 # и запуск падает: "Executable doesn't exist ... Please update docker image".
 # Меняете версию — меняйте её ОДНОВРЕМЕННО здесь, в full и в BASE_IMAGE образов.
 browser = ["playwright==1.47.0", "pytest>=7.4"]
-service = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
-           "requests>=2.31", "pyyaml>=6.0"]
+# The server: the review interface, the API, the database. Renamed from
+# `service` in 0.2 — one word for one thing, and the library mode made the
+# distinction worth being exact about. `pip install "vistest[service]"` no
+# longer resolves; the new spelling is `vistest[server]`.
+server  = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
+           "requests>=2.31"]
 ai      = ["onnxruntime>=1.17"]
 # ldap3 — чистый Python: ни компилятора, ни системных библиотек, ставится
 # внутри закрытого контура. Без него вход через каталог просто выключен.
 ldap    = ["ldap3>=2.9"]
 report  = ["allure-pytest>=2.13"]
-dev     = ["pytest>=7.4", "pytest-cov", "ruff", "httpx>=0.27"]
+dev     = ["pytest>=7.4", "pytest-cov", "pytest-xdist>=3.5", "ruff",
+           "httpx>=0.27", "tomli>=2.0; python_version<'3.11'"]
 full    = [
     "playwright==1.47.0", "pytest>=7.4",   # см. комментарий у browser: версия = версии образа
     "fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
@@ -72,7 +92,11 @@ vistest = ["ai/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["visual: visual checks",
-           "e2e: run of our own interface in a browser"]
+           "e2e: run of our own interface in a browser",
+           # Registered here so the mark is known even without pytest-xdist
+           # installed. It groups the jsdom screen checks onto one worker
+           # under `--dist loadgroup`: they contend for the disk, not the CPU.
+           "xdist_group: run these together on one xdist worker"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
