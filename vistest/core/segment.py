@@ -6,13 +6,12 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Сегментация маски изменений в регионы.
+"""Segmentation of the change mask into regions.
 
-`findContours` из исходной версии заменён на `connectedComponentsWithStats`:
-он сразу отдаёт площадь **маски** (а не bbox), центроид и метку каждого
-пикселя. Это принципиально: фильтр «площадь bbox < 1200» одновременно
-пропускает длинную тонкую полосу шума (bbox огромный, пикселей мало)
-и выбрасывает изменившуюся иконку 24×24.
+`findContours` from the original version was replaced with `connectedComponentsWithStats`:
+it immediately returns the area of the **mask** (not bbox), centroid, and label of
+each pixel. This is critical: a filter "bbox area < 1200" simultaneously passes
+a long thin noise strip (huge bbox, few pixels) and discards a changed 24×24 icon.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ def clean_mask(
     open_px: int = 2,
     close_px: int = 6,
 ) -> np.ndarray:
-    """open (убрать соль) → close (склеить буквы в слово/блок)."""
+    """open (remove salt) → close (merge letters into word/block)."""
     if cv2 is None:
         return mask
     m = (mask.astype(np.uint8)) * 255
@@ -53,7 +52,7 @@ def components(
 ):
     """-> (labels, [(x, y, w, h, pixel_count, fill_ratio, label_id), ...])
 
-    Отсортировано по числу пикселей маски по убыванию.
+    Sorted by mask pixel count, descending.
     """
     if cv2 is None:
         return np.zeros(mask.shape, np.int32), []
@@ -82,10 +81,10 @@ def components(
 
 
 def merge_close_boxes(boxes, gap: int = 12):
-    """Схлопывает соседние боксы: 20 отдельных букв → одна строка.
+    """Collapses nearby boxes: 20 separate letters → one line.
 
-    Без этого отчёт превращается в облако из сотни рамок, в котором ничего
-    не разобрать.
+    Without this, the report becomes a cloud of hundreds of boxes,
+    incomprehensible.
     """
     if not boxes:
         return []

@@ -6,11 +6,11 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Структурные метрики: SSIM-карта, градиентное подобие, плотность краёв.
+"""Structural metrics: SSIM map, gradient similarity, edge density.
 
-SSIM реализован на cv2-свёртках, чтобы не тянуть scikit-image в обязательные
-зависимости и чтобы получить карту, а не одно число: одно число по
-полностраничному скриншоту почти всегда > 0.99 и как gate бесполезно.
+SSIM is implemented with cv2 convolutions to avoid pulling scikit-image into
+mandatory dependencies and to get a map, not a single number: a single number
+over a full-page screenshot is almost always > 0.99 and useless as a gate.
 """
 
 from __future__ import annotations
@@ -27,15 +27,15 @@ _C2 = (0.03 * 255) ** 2
 
 
 def _blur(img: np.ndarray, sigma: float = 1.5) -> np.ndarray:
-    # Ядро не должно превышать изображение: на маленьких кропах 11×11
-    # выходит за границы и даёт нестабильный результат.
+    # Kernel size must not exceed image: on small crops 11×11 goes out of bounds
+    # and gives unstable results.
     k = min(11, (min(img.shape[:2]) // 2) * 2 + 1)
     k = max(3, k if k % 2 else k - 1)
     return cv2.GaussianBlur(img, (k, k), sigma, borderType=cv2.BORDER_REFLECT)
 
 
 def ssim_map(gray_exp: np.ndarray, gray_act: np.ndarray, sigma: float = 1.5):
-    """Возвращает (карта SSIM float32 в [-1,1], среднее по карте)."""
+    """Return (SSIM map float32 in [-1,1], mean across the map)."""
     if cv2 is None:
         raise RuntimeError("SSIM requires opencv-python")
 
@@ -57,12 +57,12 @@ def ssim_map(gray_exp: np.ndarray, gray_act: np.ndarray, sigma: float = 1.5):
 
 
 def local_ssim(gray_exp: np.ndarray, gray_act: np.ndarray) -> float:
-    """SSIM небольшого фрагмента. Для крошечных кропов окно уменьшается."""
+    """SSIM of a small fragment. For tiny crops the window shrinks."""
     if cv2 is None or gray_exp.size == 0 or gray_exp.shape != gray_act.shape:
         return 0.0
     h, w = gray_exp.shape[:2]
     if min(h, w) < 4:
-        # Слишком мало для оконной статистики — падаем на нормированную разницу.
+        # Too small for window statistics — fall back to normalized difference.
         d = np.abs(gray_exp.astype(np.float32) - gray_act.astype(np.float32)).mean()
         return float(max(0.0, 1.0 - d / 255.0))
     sigma = 1.5 if min(h, w) >= 11 else max(0.6, min(h, w) / 7.0)
@@ -77,10 +77,10 @@ def gradient_magnitude(gray: np.ndarray) -> np.ndarray:
 
 
 def gradient_similarity(gray_exp: np.ndarray, gray_act: np.ndarray) -> np.ndarray:
-    """GMS-карта (Gradient Magnitude Similarity), 1 = формы совпадают.
+    """GMS map (Gradient Magnitude Similarity), 1 = shapes match.
 
-    Дополняет SSIM: чувствительна именно к смещению/появлению границ, при этом
-    почти игнорирует равномерные изменения яркости (например, другой gamma).
+    Complements SSIM: sensitive specifically to edge displacement/appearance,
+    while almost ignoring uniform brightness changes (e.g., different gamma).
     """
     if cv2 is None:
         return np.ones(gray_exp.shape, dtype=np.float32)
@@ -91,7 +91,7 @@ def gradient_similarity(gray_exp: np.ndarray, gray_act: np.ndarray) -> np.ndarra
 
 
 def edge_density(gray: np.ndarray) -> float:
-    """Доля краевых пикселей. Высокая (>0.10) — почти наверняка текст."""
+    """Fraction of edge pixels. High (>0.10) — almost certainly text."""
     if cv2 is None or gray.size == 0:
         return 0.0
     if min(gray.shape[:2]) < 3:

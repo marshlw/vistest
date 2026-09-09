@@ -6,26 +6,25 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Подавление субпиксельного анти-алиасинга.
+"""Suppression of subpixel anti-aliasing.
 
-Главный источник ложных срабатываний в реальных проектах. Один и тот же
-текст, отрендеренный дважды, даёт границы букв, отличающиеся на десятки
-единиц яркости — из-за subpixel hinting, GPU-растеризации, дробного DPR.
+The main source of false positives in real projects. The same text rendered
+twice produces letter boundaries differing by tens of brightness units —
+due to subpixel hinting, GPU rasterization, fractional DPR.
 
-Критерий (обобщение эвристики pixelmatch, векторизованное):
+Criterion (generalization of pixelmatch heuristic, vectorized):
 
-    Пиксель — анти-алиасинг, если его новое значение лежит ВНУТРИ диапазона
-    значений соседей 3×3 в другом изображении (и наоборот), И вокруг него
-    действительно есть градиент.
+    A pixel is anti-aliasing if its new value lies INSIDE the range of values
+    of neighbors 3×3 in the other image (and vice versa), AND there is a real
+    gradient around it.
 
-Почему это верно:
-  * АА-пиксель — результат смешения цветов границы, поэтому его значение
-    всегда между цветами по обе стороны границы, то есть внутри локального
-    диапазона.
-  * Реальное изменение (кнопка сменила цвет, текст стал другим) даёт
-    значение ВНЕ локального диапазона — такой пиксель не подавляется.
-  * На плоской заливке min == max, диапазон нулевой → ничего не подавляется.
-    То есть фильтр физически не может спрятать изменение цвета фона.
+Why this works:
+  * AA-pixel is a blend of edge colors, so its value always lies between the
+    colors on both sides of the edge, i.e., within the local range.
+  * Real change (button changed color, text is different) produces a value
+    OUTSIDE the local range — such a pixel is not suppressed.
+  * On a flat fill min == max, range is zero → nothing is suppressed.
+    So the filter physically cannot hide a background color change.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ def antialias_mask(
     tolerance: float = 0.10,
     min_gradient: float = 12.0,
 ) -> np.ndarray:
-    """bool-маска пикселей, объяснимых анти-алиасингом."""
+    """Boolean mask of pixels explainable by anti-aliasing."""
     if cv2 is None:
         return np.zeros(gray_exp.shape, dtype=bool)
 
@@ -63,12 +62,12 @@ def antialias_mask(
     af = a.astype(np.float32)
     bf = b.astype(np.float32)
 
-    # actual объясним соседями expected и наоборот — симметричность важна,
-    # иначе исчезнувший тонкий элемент был бы принят за АА.
+    # actual is explainable by expected neighbors and vice versa — symmetry
+    # is important, otherwise a disappeared thin element would be accepted as AA.
     b_in_a = (bf >= lo_a - tol) & (bf <= hi_a + tol)
     a_in_b = (af >= lo_b - tol) & (af <= hi_b + tol)
 
-    # Подавляем только там, где есть настоящая граница.
+    # Suppress only where there is a real edge.
     gradient = np.maximum(hi_a - lo_a, hi_b - lo_b)
     on_edge = gradient >= min_gradient
 
@@ -82,11 +81,11 @@ def text_shift_mask(
     radius: int = 1,
     tolerance: float = 10.0,
 ) -> np.ndarray:
-    """Пиксели, совпадающие со сдвигом на ±radius.
+    """Pixels that match with a shift of ±radius.
 
-    Ловит «текст переехал на пиксель из-за другого кернинга»: значение пикселя
-    в actual встречается где-то в окне radius в expected. В отличие от
-    глобального выравнивания работает локально — для отдельных строк текста.
+    Catches "text moved by one pixel due to different kerning": the pixel value
+    in actual is found somewhere within a radius-sized window in expected.
+    Unlike global alignment, it works locally — for individual text lines.
     """
     if cv2 is None:
         return np.zeros(gray_exp.shape, dtype=bool)
