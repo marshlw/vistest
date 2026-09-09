@@ -35,7 +35,7 @@ lives outside and passes the result in.
 from .comparator import ImageTooLarge, compare, strip_internal
 from .naming import NamingProfile, Snapshot
 from .regions import Resolved
-from .settings import DiffConfig
+from .settings import ConfigError, DiffConfig
 from .thresholds import ThresholdError, ThresholdStore
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "strip_internal",
     "ImageTooLarge",
     "DiffConfig",
+    "ConfigError",
     "NamingProfile",
     "Snapshot",
     "Resolved",

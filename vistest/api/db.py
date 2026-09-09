@@ -338,6 +338,14 @@ CREATE TABLE IF NOT EXISTS setting (
   scope       TEXT NOT NULL DEFAULT 'global',
   project_key TEXT NOT NULL DEFAULT '',
   name        TEXT NOT NULL,
+  -- TEXT and staying TEXT, although every value in here is a number.
+  --
+  -- Rows are read one at a time, by name, and parsed with float(); nothing
+  -- sorts or compares them in SQL, which is the only thing the affinity would
+  -- change. So REAL would buy nothing and cost a migration over a column that
+  -- also holds rows written by every earlier version. Values are bound as
+  -- numbers at the write site (api/thresholds.py) so their shape is SQLite's
+  -- and not some caller's repr.
   value       TEXT NOT NULL,
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_by  TEXT NOT NULL DEFAULT '',

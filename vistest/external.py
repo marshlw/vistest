@@ -505,17 +505,29 @@ def run_project(project: Project, *, cfg: VisTestConfig | None = None,
 
 
 def _threshold_env(project_key: str) -> dict[str, str]:
-    """Overrides for someone else's process — best effort, never fatal.
+    """Overrides handed to somebody else's process as environment variables.
 
     `external` is also imported by the CLI, where there is no service database
-    at all. A missing one means «no overrides», not «the run cannot start».
+    at all. That — and only that — means «no overrides»: an `ImportError` here
+    is the absence of the service, not a failure of it.
+
+    Anything else is raised, with the project named. A thresholds table that
+    cannot be read has to stop the run rather than start it under the defaults:
+    the whole reason these variables exist is that the project's own
+    `vistest.yaml` says something different, so «could not read them» and «there
+    are none» produce two different verdicts on the same screenshots.
     """
     try:
         from .api.main import db
         from .api.thresholds import env_for
-        return env_for(db, project_key)
-    except Exception:
+    except ImportError:
         return {}
+    try:
+        return env_for(db, project_key)
+    except Exception as e:
+        raise RuntimeError(
+            f"cannot read the verdict thresholds for project "
+            f"{project_key!r}: {type(e).__name__}: {e}") from e
 
 
 def _write_run(run: ExternalRun, run_dir: Path) -> None:

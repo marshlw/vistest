@@ -36,7 +36,7 @@ from fastapi.responses import PlainTextResponse
 
 from ..capture import dom as _dom
 from ..capture import stabilize as _stab
-from ..config import VisTestConfig
+from ..config import VisTestConfig, env_int
 from ..models import Verdict
 from ..service import CheckService, slug
 
@@ -104,13 +104,18 @@ def scoped(name: str, project: str | None) -> str:
 #  два разных потолка на две двери, ведущие в один каталог, разошлись бы на
 #  первой же правке.
 # --------------------------------------------------------------------------- #
-MAX_IMAGE_BYTES = int(os.getenv("VISTEST_MAX_ARTIFACT_MB", "40")) * 1024 * 1024
-# Кадры нужны для распознавания анимации: два-три достаточно, десяток — это
-# уже не динамика, а способ занять память.
-MAX_FRAMES = int(os.getenv("VISTEST_MAX_FRAMES", "8"))
-# Пиксели, а не байты: PNG в 2 МБ разворачивается в гигабайты. Ограничение
-# считается ДО `convert("RGB")`, то есть до выделения памяти.
-MAX_PIXELS = int(os.getenv("VISTEST_MAX_PIXELS", str(60_000_000)))
+#  Read through `env_int`, not `int(os.getenv(...))`. The difference shows up
+#  exactly once, and badly: a typo in one of these variables used to raise a
+#  bare `ValueError: invalid literal for int()` while this module was being
+#  imported — before the application exists, with a traceback that names
+#  neither the variable nor the value. The service simply failed to start.
+MAX_IMAGE_BYTES = env_int("VISTEST_MAX_ARTIFACT_MB", default=40) * 1024 * 1024
+# Frames are needed to recognise animation: two or three are enough, a dozen
+# is no longer dynamics but a way to fill memory.
+MAX_FRAMES = env_int("VISTEST_MAX_FRAMES", default=8)
+# Pixels, not bytes: a 2 MB PNG unfolds into gigabytes. The limit is checked
+# BEFORE `convert("RGB")`, that is, before any allocation.
+MAX_PIXELS = env_int("VISTEST_MAX_PIXELS", default=60_000_000)
 
 
 async def _read_limited(upload, what: str = "image") -> bytes:

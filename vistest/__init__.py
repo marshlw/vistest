@@ -48,9 +48,18 @@ if TYPE_CHECKING:
     from .integrations import VisualTestCase as VisualTestCase
     from .integrations import visual_check as visual_check
     from .integrations import visual_session as visual_session
+    from .library import BaselineMissing as BaselineMissing
+    from .library import ScreenshotMismatch as ScreenshotMismatch
+    from .library import VisTestWarning as VisTestWarning
+    from .library import VisualCheckError as VisualCheckError
+    from .library import expect_screenshot as expect_screenshot
     from .runner import VisualMismatch as VisualMismatch
     from .runner import VisualTester as VisualTester
     from .service import CheckService as CheckService
+    from .storage import FileStore as FileStore
+    from .storage import SnapshotKey as SnapshotKey
+    from .storage import SnapshotMeta as SnapshotMeta
+    from .storage import SnapshotStore as SnapshotStore
 
 __version__ = "0.1.0"
 
@@ -62,6 +71,18 @@ _LAZY = {
     #  engine is configured with `vistest.core.settings.DiffConfig`, which is
     #  plain data and stays eager.
     "VisTestConfig": ".config",
+    #  The library mode. Deferred for the same reason as everything else here,
+    #  and for one more: `vistest.library` reads the config and touches the
+    #  filesystem, and `import vistest` must keep doing neither.
+    "expect_screenshot": ".library",
+    "BaselineMissing": ".library",
+    "ScreenshotMismatch": ".library",
+    "VisualCheckError": ".library",
+    "VisTestWarning": ".library",
+    "SnapshotKey": ".storage",
+    "SnapshotMeta": ".storage",
+    "SnapshotStore": ".storage",
+    "FileStore": ".storage",
     "VisualTester": ".runner",
     "VisualMismatch": ".runner",
     "CheckService": ".service",
@@ -100,6 +121,17 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    # the library mode
+    "expect_screenshot",
+    "BaselineMissing",
+    "ScreenshotMismatch",
+    "VisualCheckError",
+    "VisTestWarning",
+    "SnapshotKey",
+    "SnapshotMeta",
+    "SnapshotStore",
+    "FileStore",
+    # the service
     "VisualTester",
     "VisualMismatch",
     "VisTestConfig",

@@ -41,24 +41,59 @@ SUITEFORM = ROOT / "tests" / "ui" / "project_suite_view.mjs"
 FRONTEND = ROOT / "frontend"
 
 
+#  All eight of these on one worker under `pytest -n --dist loadgroup`.
+#  Each spawns a node process whose first act is to import jsdom — several
+#  hundred files out of `node_modules` — so what they contend for is the disk,
+#  not the CPU. Run in parallel on a slow or networked filesystem they slow
+#  each other down past any sane timeout, and the failure then looks like a
+#  broken interface rather than a busy machine.
+pytestmark = pytest.mark.xdist_group("jsdom")
+
+#  Ten minutes, and that is not generosity. Importing jsdom is pure I/O: on a
+#  laptop it takes under a second, on a network mount or a loaded runner it can
+#  take a minute and more, with the process using no CPU at all the while. A
+#  timeout tuned to the fast case turns a slow machine into a red build about
+#  the front end, which is the wrong thing to be looking at.
+NODE_TIMEOUT_S = 600
+
+
 def _jsdom_available(node: str) -> bool:
     return subprocess.run(
         [node, "-e", "require.resolve('jsdom')"],
         cwd=ROOT, capture_output=True).returncode == 0
 
 
-def test_the_interface_reaches_its_first_screen():
+def _screen(script: Path, complaint: str) -> None:
+    """Run one jsdom screen check, or say why it could not be run.
+
+    One helper rather than eight copies of the same six lines: the timeout and
+    what to say when it is hit are exactly the settings that have to change
+    together, and eight places to change them is how they end up different.
+    """
     node = shutil.which("node")
     if not node:
-        pytest.skip("нет node — проверка запуска интерфейса пропущена")
+        pytest.skip("нет node — проверки интерфейса в jsdom пропущены")
     if not _jsdom_available(node):
         pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
 
-    done = subprocess.run([node, str(SMOKE), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
+    try:
+        done = subprocess.run([node, str(script), str(FRONTEND)],
+                              cwd=ROOT, capture_output=True, text=True,
+                              timeout=NODE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"{script.name} не уложился в {NODE_TIMEOUT_S} с. Это почти всегда "
+            "не про интерфейс: node тратит основное время на импорт jsdom из "
+            "node_modules, то есть на ввод-вывод. Медленный или сетевой диск, "
+            "загруженный раннер, несколько таких проверок разом — вот обычные "
+            "причины. Под `pytest -n` добавьте `--dist loadgroup`: все эти "
+            "проверки помечены одной группой и тогда идут на одном воркере.")
     assert done.returncode == 0, (
-        "интерфейс не дошёл до первого экрана:\n"
-        + (done.stderr or done.stdout).strip())
+        complaint + ":\n" + (done.stderr or done.stdout).strip())
+
+
+def test_the_interface_reaches_its_first_screen():
+    _screen(SMOKE, "интерфейс не дошёл до первого экрана")
 
 
 def test_the_run_page_shows_the_matrix_as_one_snapshot_with_variants():
@@ -67,17 +102,7 @@ def test_the_run_page_shows_the_matrix_as_one_snapshot_with_variants():
     Шесть строк `checkout.png` подряд отвечают на вопрос «что упало» словом
     «всё»: экономия внимания, ради которой матрица делалась, теряется в списке.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка показа матрицы пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(MATRIX), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "интерфейс показывает матрицу не так:\n"
-        + (done.stderr or done.stdout).strip())
+    _screen(MATRIX, "интерфейс показывает матрицу не так")
 
 
 def test_the_zone_editor_shows_what_holds_each_zone():
@@ -87,16 +112,7 @@ def test_the_zone_editor_shows_what_holds_each_zone():
     показать её — значит оставить всё как было: человек рисует рамку и не
     знает, что получил.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка редактора зон пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(ZONES), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "редактор зон показывает не то:\n" + (done.stderr or done.stdout).strip())
+    _screen(ZONES, "редактор зон показывает не то")
 
 
 def test_the_run_menu_offers_three_shapes_and_explains_the_refusal():
@@ -106,16 +122,7 @@ def test_the_run_menu_offers_three_shapes_and_explains_the_refusal():
     пункты обязаны быть видимыми и отключёнными с причиной, иначе человек
     гадает, почему у соседнего проекта выбор есть, а у его нет.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка меню запуска пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(RUNMENU), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "меню запуска показывает не то:\n" + (done.stderr or done.stdout).strip())
+    _screen(RUNMENU, "меню запуска показывает не то")
 
 
 def test_a_ci_token_is_shown_once_and_leaves_no_trace():
@@ -125,16 +132,7 @@ def test_a_ci_token_is_shown_once_and_leaves_no_trace():
     перерисовывается, копируется в тикеты и открыт на чужом мониторе на
     планёрке. Токен в нём — это токен, который утёк.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка экрана токенов пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(CITOKENS), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "экран токенов показывает не то:\n" + (done.stderr or done.stdout).strip())
+    _screen(CITOKENS, "экран токенов показывает не то")
 
 
 def test_the_browser_pick_dropdowns_on_a_project_card_open_where_they_were_clicked():
@@ -152,17 +150,7 @@ def test_the_browser_pick_dropdowns_on_a_project_card_open_where_they_were_click
     уже исчез, — то есть в пустоте посреди страницы), выбор НЕПУСТОГО набора
     для «Open VisTest snapshots» и пометка движка, которого в окружении нет.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка выпадашек на карточке пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(CARDMENU), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "выпадашки выбора браузера на карточке проекта не раскрываются:\n"
-        + (done.stderr or done.stdout).strip())
+    _screen(CARDMENU, "выпадашки выбора браузера на карточке проекта не раскрываются")
 
 
 def test_the_baselines_screen_asks_browser_and_window_separately():
@@ -178,17 +166,7 @@ def test_the_baselines_screen_asks_browser_and_window_separately():
     продолжал видеть чужие эталоны внизу) и что сравнение по движкам
     объединяет варианты по ИМЕНИ снимка, а не по их порядку в наборе.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка экрана эталонов пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(BASELINES), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "экран эталонов показывает не то:\n"
-        + (done.stderr or done.stdout).strip())
+    _screen(BASELINES, "экран эталонов показывает не то")
 
 
 def test_the_connection_form_sends_the_profile_and_the_naming_rules():
@@ -203,14 +181,4 @@ def test_the_connection_form_sends_the_profile_and_the_naming_rules():
     не открывалась ВООБЩЕ, ни у одного проекта, — потому что `append()`
     возвращает `undefined`, а не добавленный узел.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("нет node — проверка формы подключения пропущена")
-    if not _jsdom_available(node):
-        pytest.skip("нет jsdom (`npm install jsdom`) — проверка пропущена")
-
-    done = subprocess.run([node, str(SUITEFORM), str(FRONTEND)],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, (
-        "подключение чужого набора настраивается не тем:\n"
-        + (done.stderr or done.stdout).strip())
+    _screen(SUITEFORM, "подключение чужого набора настраивается не тем")

@@ -14,7 +14,7 @@
 #
 # Обновление — осознанное действие, а не побочный эффект сборки:
 #
-#   pip install "vistest[service]" --upgrade --dry-run     # посмотреть, что новее
+#   pip install "vistest[server]" --upgrade --dry-run     # посмотреть, что новее
 #   pip freeze > constraints-service.txt                   # в чистом venv
 #
 # Профили `browser`, `ai` и `report` сюда не входят: playwright прибит к версии

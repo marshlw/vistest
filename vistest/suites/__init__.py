@@ -26,6 +26,7 @@ The rules for naming and classifying the pictures are `NamingProfile` in
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -51,6 +52,11 @@ _BY_ID = {p.id: p for p in PROFILES}
 #  `__image_snapshots__`. A monorepo is not a reason to walk forever, and a
 #  marker that deep is not evidence of anything anyway.
 _DETECT_DEPTH = 4
+#  How many paths detection is willing to look at. Named rather than inline so
+#  that the number in the warning and the number in the loop cannot drift.
+_INDEX_LIMIT = 20000
+
+log = logging.getLogger("vistest.suites")
 
 
 def get(profile_id: str) -> SuiteProfile | None:
@@ -114,7 +120,20 @@ def _detect_uncached(root: Path) -> SuiteProfile | None:
 
 
 def _shallow_index(root: Path) -> set[str]:
-    """Relative posix paths near the top of the tree, for glob matching."""
+    """Relative posix paths near the top of the tree, for glob matching.
+
+    The walk stops at `_INDEX_LIMIT` entries, and that limit stays: detection
+    runs while somebody waits for a dialog, and a monorepo can hold a million
+    paths.
+
+    What changed is that stopping is now said out loud. Detection is decided by
+    what is in this set, and `os.walk` visits directories in whatever order the
+    filesystem hands them over — so on a tree big enough to hit the limit, the
+    answer to «which test suite is this» depends on that order and can differ
+    between two runs on the same repository. «Nothing was found» and «we
+    stopped looking» produced the same silence, and only one of them means the
+    project genuinely has no suite.
+    """
     found: set[str] = set()
     root_len = len(root.parts)
     for dirpath, dirnames, filenames in os.walk(root):
@@ -126,7 +145,13 @@ def _shallow_index(root: Path) -> set[str]:
                        if d not in SKIP_DIRS and not d.startswith(".")]
         for name in (*filenames, *dirnames):
             found.add((here / name).relative_to(root).as_posix())
-        if len(found) > 20000:
+        if len(found) > _INDEX_LIMIT:
+            log.warning(
+                "suite detection stopped after %d entries under %s — the tree "
+                "is larger than the scan limit, so the result depends on the "
+                "order the filesystem returned. Set the suite explicitly on "
+                "the project if detection picks the wrong one.",
+                len(found), root)
             break
     return found
 

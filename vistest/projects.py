@@ -421,8 +421,16 @@ class Project:
                 problems.append(
                     f"unknown suite profile: {self.suite!r} "
                     f"(auto | {' | '.join(suites.ids())})")
+        from .core.naming import PATTERN_FIELDS
+
         for kind, pattern in (self.naming or {}).items():
-            if kind not in ("actual", "expected", "diff", "strip"):
+            if kind not in PATTERN_FIELDS:
+                #  Was a `continue`, and that made a typo invisible: the
+                #  project saved, the rule was dropped, and the run went on
+                #  with the built-in patterns as if nothing had been written.
+                problems.append(
+                    f"unknown naming rule: {kind!r} "
+                    f"({' | '.join(PATTERN_FIELDS)})")
                 continue
             try:
                 re.compile(pattern)

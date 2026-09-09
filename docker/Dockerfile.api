@@ -27,7 +27,7 @@ COPY frontend ./frontend
 #
 # `-c constraints-service.txt` фиксирует и транзитивные версии: две сборки
 # одного коммита, разнесённые на неделю, обязаны давать одно и то же.
-RUN pip install --no-cache-dir -c constraints-service.txt ".[service]"
+RUN pip install --no-cache-dir -c constraints-service.txt ".[server]"
 
 VOLUME /data
 EXPOSE 8420

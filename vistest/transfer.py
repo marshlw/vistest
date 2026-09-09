@@ -39,11 +39,26 @@ it — copying it into another installation would fabricate a decision nobody
 made there. What travels is the picture, its passport, its masks and its
 version number; the receiving installation records the import itself, under the
 name of whoever performed it.
+
+**Two layouts, one archive.** Baselines live on disk in one of two shapes. The
+service keeps a directory per snapshot — `baseline.png` with `meta.json`, masks
+and `history/` beside it. The library mode keeps plain files in the user's
+repository — `login.png` with an optional `login.json` — because there they are
+reviewed in pull requests, and a pull request showing a picture is worth more
+than one showing a directory of bookkeeping.
+
+The archive is the same either way, and that is what makes this module the
+migration path between them: a project that started with the library and
+outgrew it runs `vistest baselines export` and imports the result into an
+installation, with no re-approval and no renaming. The layout is detected from
+what is on disk; `layout=` overrides the guess when the target is empty and
+there is nothing to detect.
 """
 
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import shutil
 import tarfile
@@ -85,24 +100,50 @@ class Selection:
         return True
 
 
+SERVER, FLAT, EMPTY = "server", "flat", "empty"
+LAYOUTS = (SERVER, FLAT)
+
+
 def _store_root(root: Path, platform: str) -> Path:
     """Where one platform's baselines live on disk."""
     return root / platform if platform else root
 
 
-def platforms_of(baselines_root: Path) -> list[str]:
-    """Platform directories under the baselines root.
+def detect_layout(baselines_root: str | Path) -> str:
+    """Which of the two shapes this directory is in.
 
-    A baseline directory is recognised by its passport: `meta.json` next to a
-    `baseline.png`. Anything else down there is not ours to move.
+    `server` is recognised by a passport next to a picture — `meta.json` and
+    `baseline.png` in one directory. `flat` is any other PNG. The order matters
+    and not the other way round: a server store also contains PNGs, so looking
+    for those first would call every installation flat.
     """
-    if not baselines_root.exists():
+    root = Path(baselines_root)
+    if not root.exists():
+        return EMPTY
+    for meta in root.rglob("meta.json"):
+        if (meta.parent / "baseline.png").exists():
+            return SERVER
+    for png in root.rglob("*.png"):
+        if png.name != "baseline.png" and not png.name.startswith("."):
+            return FLAT
+    return EMPTY
+
+
+def platforms_of(baselines_root: Path, layout: str | None = None) -> list[str]:
+    """Platform directories under the baselines root, in either layout."""
+    root = Path(baselines_root)
+    if not root.exists():
         return []
+    layout = layout or detect_layout(root)
     out = []
-    for child in sorted(baselines_root.iterdir()):
+    for child in sorted(root.iterdir()):
         if not child.is_dir():
             continue
-        if any(child.rglob("meta.json")):
+        if layout == SERVER and any(child.rglob("meta.json")):
+            out.append(child.name)
+        elif layout == FLAT and any(
+                p.name != "baseline.png" and not p.name.startswith(".")
+                for p in child.rglob("*.png")):
             out.append(child.name)
     return out
 
@@ -113,6 +154,55 @@ def _snapshot_dirs(platform_root: Path) -> list[Path]:
 
 def _name_of(platform_root: Path, snapshot_dir: Path) -> str:
     return snapshot_dir.relative_to(platform_root).as_posix()
+
+
+# --------------------------------------------------------------------------- #
+#  Reading a flat store
+# --------------------------------------------------------------------------- #
+def _flat_pngs(platform_root: Path) -> list[Path]:
+    return sorted(p for p in platform_root.rglob("*.png")
+                  if p.name != "baseline.png" and not p.name.startswith("."))
+
+
+def _flat_meta(png: Path, name: str) -> dict:
+    """The passport for one flat baseline, in the archive's shape.
+
+    Reconstructed from the picture when there is no sidecar, because in this
+    layout the sidecar is optional by design: a PNG a person dropped into the
+    directory by hand is a valid baseline, and it has to survive the move.
+    """
+    from .core import pngio
+    from .storage.base import SnapshotMeta
+
+    sidecar = png.with_suffix(".json")
+    meta = None
+    if sidecar.exists():
+        meta = SnapshotMeta.from_json(sidecar.read_text("utf-8"),
+                                      source=str(sidecar))
+    if meta is None:
+        raw = png.read_bytes()
+        width, height = pngio.dimensions(raw, source=png)
+        meta = SnapshotMeta(version=1, width=width, height=height)
+    return {**meta.to_dict(), "name": name}
+
+
+def _archive_meta_to_passport(raw: dict):
+    """A server passport -> the library's, keeping only what it can hold.
+
+    The service records things the library mode has nowhere to put — who
+    approved a snapshot, against which commit, the accumulated masks. Those are
+    dropped on the way in rather than refused: the picture and its thresholds
+    are what a comparison needs, and stopping an import over a field we do not
+    store would make the migration path unusable in the one direction people
+    actually take it.
+    """
+    from .storage.base import SnapshotMeta
+
+    known = {"version", "width", "height", "sha256", "updated_at",
+             "tool_version", "thresholds", "ignore_boxes"}
+    return SnapshotMeta.from_dict(
+        {k: v for k, v in (raw or {}).items() if k in known and v is not None},
+        source="the archive")
 
 
 # --------------------------------------------------------------------------- #
@@ -138,47 +228,31 @@ def export(archive: str | Path, *, baselines_root: str | Path,
 
     import vistest
 
+    layout = detect_layout(baselines_root)
     entries: list[dict] = []
     with tempfile.TemporaryDirectory() as tmp, tarfile.open(archive, "w:gz") as tar:
-        for platform in platforms_of(baselines_root) or [""]:
-            platform_root = _store_root(baselines_root, platform)
-            for snapshot_dir in _snapshot_dirs(platform_root):
-                folder = _name_of(platform_root, snapshot_dir)
+        staged = Path(tmp)
+        for platform, folder, name, meta, files in _scan(
+                baselines_root, layout, with_history=with_history,
+                staged=staged):
+            if not selection.matches(name, platform, folder):
+                continue
 
-                meta = {}
-                try:
-                    meta = json.loads((snapshot_dir / "meta.json")
-                                      .read_text("utf-8"))
-                except (OSError, ValueError):
-                    # Снимок без читаемого паспорта не переносим: на той
-                    # стороне он стал бы эталоном без версии, то есть
-                    # выключил бы защиту от гонки решений.
-                    continue
+            arc_base = f"baselines/{platform}/{folder}" if platform \
+                else f"baselines/{folder}"
+            for arcname, source in files:
+                tar.add(source, arcname=f"{arc_base}/{arcname}")
 
-                # Имя снимка живёт в паспорте: каталог называется без
-                # расширения (`checkout.png` → `checkout/`), а человеку в
-                # плане импорта нужно то имя, которое он видит в интерфейсе.
-                name = str(meta.get("name") or folder)
-                if not selection.matches(name, platform, folder):
-                    continue
-
-                arc_base = f"baselines/{platform}/{folder}" if platform \
-                    else f"baselines/{folder}"
-                for item in sorted(snapshot_dir.iterdir()):
-                    if item.name == "history" and not with_history:
-                        continue
-                    tar.add(item, arcname=f"{arc_base}/{item.name}")
-
-                entries.append({
-                    "name": name,
-                    "dir": folder,
-                    "platform": platform,
-                    "version": int(meta.get("version", 1)),
-                    "width": meta.get("width"),
-                    "height": meta.get("height"),
-                    "updated_at": meta.get("updated_at", ""),
-                    "ignore_boxes": len(meta.get("ignore_boxes") or []),
-                })
+            entries.append({
+                "name": name,
+                "dir": folder,
+                "platform": platform,
+                "version": int(meta.get("version", 1)),
+                "width": meta.get("width"),
+                "height": meta.get("height"),
+                "updated_at": meta.get("updated_at", ""),
+                "ignore_boxes": len(meta.get("ignore_boxes") or []),
+            })
 
         manifest = {
             "tool": "vistest",
@@ -186,6 +260,7 @@ def export(archive: str | Path, *, baselines_root: str | Path,
             "version": getattr(vistest, "__version__", "?"),
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "with_history": bool(with_history),
+            "layout": layout,
             "selection": {"project": selection.project,
                           "platform": selection.platform,
                           "names": list(selection.names)},
@@ -200,6 +275,61 @@ def export(archive: str | Path, *, baselines_root: str | Path,
     manifest["size_kb"] = round(archive.stat().st_size / 1024)
     manifest["count"] = len(entries)
     return manifest
+
+
+def _scan(baselines_root: Path, layout: str, *, with_history: bool,
+          staged: Path):
+    """Every baseline under the root, in the archive's terms, whatever the layout.
+
+    Yields `(platform, folder, name, meta, files)`, where `files` are the pairs
+    that go into the archive under `baselines/<platform>/<folder>/`. Both
+    layouts produce the same pairs — `baseline.png` and `meta.json` — which is
+    the whole reason a set can be moved from one to the other.
+    """
+    for platform in platforms_of(baselines_root, layout) or [""]:
+        platform_root = _store_root(baselines_root, platform)
+
+        if layout == FLAT:
+            for png in _flat_pngs(platform_root):
+                folder = png.relative_to(platform_root).with_suffix("").as_posix()
+                name = f"{folder}.png"
+                meta = _flat_meta(png, name)
+                #  The generated passport is staged under the same relative
+                #  path, so two snapshots cannot collide over one temp file.
+                target = staged / (platform or "_") / f"{folder}.json"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(meta, indent=2, ensure_ascii=False),
+                                  encoding="utf-8")
+                yield platform, folder, name, meta, [("baseline.png", png),
+                                                     ("meta.json", target)]
+            continue
+
+        for snapshot_dir in _snapshot_dirs(platform_root):
+            folder = _name_of(platform_root, snapshot_dir)
+            try:
+                meta = json.loads((snapshot_dir / "meta.json").read_text("utf-8"))
+            except (OSError, ValueError):
+                # A snapshot with no readable passport is not moved: on the
+                # other side it would become a baseline without a version, that
+                # is, with the protection against racing decisions switched off.
+                continue
+
+            # The snapshot's name lives in the passport: the directory is named
+            # without the extension (`checkout.png` -> `checkout/`), and the
+            # import plan has to show a person the name they see in the
+            # interface.
+            name = str(meta.get("name") or folder)
+            files = [(item.name, item) for item in sorted(snapshot_dir.iterdir())
+                     if not (item.name == "history" and not with_history)]
+            yield platform, folder, name, meta, files
+
+
+def _exists_at(root: Path, layout: str, platform: str, folder: str) -> bool:
+    """Is this snapshot already in the target store."""
+    where = _store_root(root, platform)
+    if layout == FLAT:
+        return (where / f"{folder}.png").exists()
+    return (where / folder / "meta.json").exists()
 
 
 def _open(archive: Path) -> tarfile.TarFile:
@@ -251,8 +381,26 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
     tar.extractall(dest, members=members)
 
 
+def _target_layout(baselines_root: Path, layout: str) -> str:
+    """Which shape to write in. Detected, unless the caller insisted.
+
+    An empty target has nothing to detect, and the answer there is `server`:
+    this function is reached from the service's CLI and its API, and quietly
+    laying out an installation's baselines the library's way would leave the
+    review screen looking at an empty directory. A library user passes
+    `layout="flat"` — the CLI has a flag for it.
+    """
+    if layout and layout != "auto":
+        if layout not in LAYOUTS:
+            raise ValueError(f"layout must be one of: {', '.join(LAYOUTS)}")
+        return layout
+    found = detect_layout(baselines_root)
+    return SERVER if found == EMPTY else found
+
+
 def plan(archive: str | Path, *, baselines_root: str | Path,
-         mode: str = "new", selection: Selection | None = None) -> list[dict]:
+         mode: str = "new", selection: Selection | None = None,
+         layout: str = "auto") -> list[dict]:
     """What the import would do to each snapshot — without doing it.
 
     Exists because the answer to «what happens to my baselines» must be
@@ -263,6 +411,7 @@ def plan(archive: str | Path, *, baselines_root: str | Path,
 
     selection = selection or Selection()
     baselines_root = Path(baselines_root)
+    target_layout = _target_layout(baselines_root, layout)
     manifest = inspect(archive)
 
     out = []
@@ -271,8 +420,7 @@ def plan(archive: str | Path, *, baselines_root: str | Path,
         folder = entry.get("dir") or name
         if not selection.matches(name, platform, folder):
             continue
-        target = _store_root(baselines_root, platform) / folder
-        exists = (target / "meta.json").exists()
+        exists = _exists_at(baselines_root, target_layout, platform, folder)
 
         if not exists:
             action, why = "add", "not here yet"
@@ -285,22 +433,29 @@ def plan(archive: str | Path, *, baselines_root: str | Path,
 
         out.append({"name": name, "dir": folder, "platform": platform,
                     "version": entry.get("version", 1),
+                    "layout": target_layout,
                     "action": action, "reason": why})
     return out
 
 
 def import_(archive: str | Path, *, baselines_root: str | Path,
             mode: str = "new", selection: Selection | None = None,
-            who: str = "") -> dict:
-    """Merge an archive into this installation's baselines."""
+            who: str = "", layout: str = "auto") -> dict:
+    """Merge an archive into this installation's baselines.
+
+    `layout` decides the shape written on this side and defaults to whatever is
+    already there. It is the other half of the migration path: an archive made
+    from a repository's `tests/__vistest__/` imports into a service store
+    unchanged, and an archive made from a service imports into a repository the
+    same way.
+    """
     if mode not in MODES:
         raise ValueError(f"mode must be one of: {', '.join(MODES)}")
 
     selection = selection or Selection()
     baselines_root = Path(baselines_root)
+    target_layout = _target_layout(baselines_root, layout)
     baselines_root.mkdir(parents=True, exist_ok=True)
-
-    from .storage import BaselineRecord, FileBaselineStore
 
     result = {"added": [], "updated": [], "replaced": [], "skipped": [],
               "failed": []}
@@ -330,54 +485,105 @@ def import_(archive: str | Path, *, baselines_root: str | Path,
                 if not selection.matches(name, platform, folder):
                     continue
 
-                target = target_platform / folder
-                exists = (target / "meta.json").exists()
+                exists = _exists_at(baselines_root, target_layout, platform,
+                                    folder)
                 try:
                     if exists and mode == "new":
                         result["skipped"].append(name)
                         continue
 
-                    if exists and mode == "replace":
-                        shutil.rmtree(target, ignore_errors=True)
-                        shutil.copytree(snapshot_dir, target)
-                        result["replaced"].append(name)
-                        continue
-
-                    if not exists:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copytree(snapshot_dir, target)
-                        result["added"].append(name)
-                        continue
-
-                    # mode == "update": через `store.save`, а не копированием.
-                    #
-                    # Копирование поверх стёрло бы то, что здесь уже решили:
-                    # версию, историю и — главное — маски игнорирования,
-                    # которые ставила ЭТА команда под свои условия съёмки.
-                    # `save` архивирует предыдущую версию и поднимает номер,
-                    # то есть импорт становится обратимым.
-                    store = FileBaselineStore(target_platform)
-                    from .capture.playwright_capture import read_png
-
-                    image = read_png(snapshot_dir / "baseline.png")
-                    dom = None
-                    dom_path = snapshot_dir / "dom.json"
-                    if dom_path.exists():
-                        try:
-                            dom = json.loads(dom_path.read_text("utf-8"))
-                        except ValueError:
-                            dom = None
-
-                    store.save(BaselineRecord(
-                        name=name, image=image, dom=dom,
-                        meta={"imported_by": who or "import",
-                              "imported_from_version":
-                                  int(incoming_meta.get("version", 1))}))
-                    result["updated"].append(name)
+                    action = "replaced" if exists and mode == "replace" \
+                        else ("added" if not exists else "updated")
+                    writer = (_write_flat if target_layout == FLAT
+                              else _write_server)
+                    writer(target_platform, folder, name, snapshot_dir,
+                           incoming_meta, action=action, who=who)
+                    result[action].append(name)
                 except Exception as e:
                     result["failed"].append(
                         {"name": name, "error": f"{type(e).__name__}: {e}"})
 
     result["counts"] = {k: len(v) for k, v in result.items() if isinstance(v, list)}
     result["mode"] = mode
+    result["layout"] = target_layout
     return result
+
+
+# --------------------------------------------------------------------------- #
+#  Writing one snapshot into either shape
+# --------------------------------------------------------------------------- #
+def _write_server(platform_root: Path, folder: str, name: str,
+                  snapshot_dir: Path, incoming_meta: dict, *, action: str,
+                  who: str) -> None:
+    target = platform_root / folder
+    if action == "replaced":
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.copytree(snapshot_dir, target)
+        return
+    if action == "added":
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(snapshot_dir, target)
+        return
+
+    # action == "updated": through `store.save`, not by copying.
+    #
+    # Copying over would erase what has already been decided here: the version,
+    # the history and — above all — the ignore masks this team drew for its own
+    # capture conditions. `save` archives the previous version and raises the
+    # number, which is what makes the import reversible.
+    from .capture.playwright_capture import read_png
+    from .storage import BaselineRecord, FileBaselineStore
+
+    store = FileBaselineStore(platform_root)
+    dom = None
+    dom_path = snapshot_dir / "dom.json"
+    if dom_path.exists():
+        try:
+            dom = json.loads(dom_path.read_text("utf-8"))
+        except ValueError:
+            dom = None
+
+    store.save(BaselineRecord(
+        name=name, image=read_png(snapshot_dir / "baseline.png"), dom=dom,
+        meta={"imported_by": who or "import",
+              "imported_from_version": int(incoming_meta.get("version", 1))}))
+
+
+def _write_flat(platform_root: Path, folder: str, name: str,
+                snapshot_dir: Path, incoming_meta: dict, *, action: str,
+                who: str = "") -> None:
+    """Into a repository: one PNG and one passport, and nothing else.
+
+    `name` and `who` are taken and not used: the two writers are called through
+    one variable and a repository records neither. The name is the file name
+    here, and who imported a file is what `git log` is for.
+
+    Masks, the DOM snapshot and the previous versions do not come along. There
+    is nowhere for them to go that a person reviewing a pull request would
+    thank us for, and the history they carry is the sending installation's, not
+    this repository's.
+    """
+    from .storage import atomic
+    from .storage.base import SnapshotKey
+    from .storage.file import FileStore
+
+    png = (snapshot_dir / "baseline.png").read_bytes()
+    passport = _archive_meta_to_passport(incoming_meta)
+
+    if action == "updated":
+        #  Through the store, so the version becomes this repository's own
+        #  count rather than the sender's: what the file looked like before is
+        #  already recorded by git, and two numbering schemes in one passport
+        #  would answer «which version is this» twice.
+        FileStore(platform_root).put(SnapshotKey(name=f"{folder}.png"), png,
+                                     meta=passport)
+        return
+
+    #  Added or replaced: nothing here to count from, so the sender's version
+    #  is kept as it stands. It is the only record of where this picture came
+    #  from that survives the move.
+    target = platform_root / f"{folder}.png"
+    atomic.write_bytes(target, png)
+    atomic.write_text(
+        target.with_suffix(".json"),
+        passport.with_(sha256=hashlib.sha256(png).hexdigest()).to_json())

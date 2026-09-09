@@ -38,6 +38,8 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
+from .settings import ConfigError
+
 #  Directories nobody ever wants walked. `node_modules` is the reason this
 #  list exists at all: a single Playwright project holds tens of thousands of
 #  files there, and a run used to pay for that walk twice.
@@ -52,6 +54,45 @@ ACTUAL = "actual"
 EXPECTED = "expected"
 DIFF = "diff"
 OTHER = "other"
+
+#  The fields a project may correct, and the only keys accepted under `naming`.
+PATTERN_FIELDS = ("actual", "expected", "diff", "strip")
+
+
+class NamingError(ConfigError):
+    """A naming rule cannot be obeyed — the message names the field and the value.
+
+    Raised while the profile is being built, never while a directory is being
+    read. That is the whole point of the class: a broken regular expression
+    used to travel all the way to `classify`, where it surfaced as a bare
+    `re.error` in the middle of a run, hundreds of files after the mistake was
+    made and with nothing in the text to say which setting was to blame.
+    """
+
+
+def _patterns_of(field_name: str, value, *, source: str = "") -> tuple[str, ...]:
+    """One pattern or several -> a validated tuple. Loud on anything else."""
+    where = f", {source}" if source else ""
+    patterns = (value,) if isinstance(value, str) else value
+    try:
+        patterns = tuple(patterns)
+    except TypeError:
+        raise NamingError(
+            f"naming.{field_name}{where}: {value!r} is neither a regular "
+            f"expression nor a list of them") from None
+
+    for pattern in patterns:
+        if not isinstance(pattern, str):
+            raise NamingError(
+                f"naming.{field_name}{where}: {pattern!r} is not a regular "
+                f"expression, it is {type(pattern).__name__}")
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            raise NamingError(
+                f"naming.{field_name}{where}: {pattern!r} is not a valid "
+                f"regular expression: {e}") from None
+    return patterns
 
 
 @dataclass(frozen=True)
@@ -105,6 +146,20 @@ class NamingProfile:
     keep_dir: bool = False
 
     # ------------------------------------------------------------------ #
+    def __post_init__(self) -> None:
+        """Every pattern is compiled here, once, before anything is read.
+
+        Also normalises a bare string into a one-element tuple. Without that,
+        `NamingProfile(actual=r"x-(?P<name>.+)")` iterates the string character
+        by character and every single character is treated as a pattern — a
+        mistake that produces no error and no matches.
+        """
+        for field_name in PATTERN_FIELDS:
+            object.__setattr__(
+                self, field_name,
+                _patterns_of(field_name, getattr(self, field_name)))
+
+    # ------------------------------------------------------------------ #
     def with_overrides(self, naming: dict | None = None,
                        search_dirs=None, keep_dir=None) -> NamingProfile:
         """The project's own corrections on top of the profile.
@@ -113,14 +168,37 @@ class NamingProfile:
         with paths from its own `pom.xml`, a fork of a tool with renamed
         folders. Refusing those would make the profile list a ceiling instead
         of a floor, so a project may override any pattern and add directories.
+
+        **An unknown key is an error.** It used to be dropped in silence, which
+        made a typo (`actuals:`, `expect:`) indistinguishable from a setting
+        that works: the project kept being read with the built-in patterns, and
+        the correction the person had written was nowhere in the picture. The
+        cost of that is highest exactly where it is hardest to see — in
+        somebody else's CI, with no interface to look at.
+
+        **An empty value still means «not specified».** That is deliberate and
+        is not the same rule: the connection form sends an empty string for
+        every field a person left alone, so treating that as «match nothing»
+        would break every snapshot the moment somebody opened the dialog and
+        pressed save.
         """
-        naming = {k: v for k, v in (naming or {}).items() if v}
+        if naming is not None and not isinstance(naming, dict):
+            raise NamingError(
+                f"naming must be an object, got {type(naming).__name__}")
+        naming = dict(naming or {})
+
+        unknown = sorted(set(naming) - set(PATTERN_FIELDS))
+        if unknown:
+            raise NamingError(
+                f"unknown naming keys: {', '.join(repr(k) for k in unknown)}. "
+                f"Known keys: {', '.join(PATTERN_FIELDS)}.")
+
         patch: dict = {}
-        for field_name in ("actual", "expected", "diff", "strip"):
-            if field_name in naming:
-                value = naming[field_name]
-                patch[field_name] = tuple(
-                    [value] if isinstance(value, str) else value)
+        for field_name in PATTERN_FIELDS:
+            value = naming.get(field_name)
+            if not value:
+                continue
+            patch[field_name] = _patterns_of(field_name, value)
         if keep_dir is not None:
             patch["keep_dir"] = bool(keep_dir)
         if search_dirs:
@@ -154,6 +232,12 @@ class NamingProfile:
         image accepted as a result is worse than no result — the engine would
         compare a picture of red rectangles against the baseline and report a
         regression that does not exist.
+
+        Every pattern here compiled successfully when the profile was built, so
+        this method cannot fail on a bad regular expression. It is the only
+        place that used to, and it was the worst one available: by then the
+        walk is under way, and the traceback points at a file name rather than
+        at the setting that is wrong.
         """
         for kind, patterns in ((DIFF, self.diff), (EXPECTED, self.expected),
                                (ACTUAL, self.actual)):

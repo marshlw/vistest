@@ -416,3 +416,47 @@ def test_a_backstop_run_reads_its_two_parallel_folders(tmp_path, monkeypatch):
 
     assert [r["name"] for r in run.results] == ["site_home_0_body_0_desktop.png"]
     assert run.results[0]["verdict"] == "pass"
+
+
+# --------------------------------------------------------------------------- #
+#  Detection on a tree bigger than the scan limit
+# --------------------------------------------------------------------------- #
+def test_a_truncated_scan_says_so_instead_of_answering_quietly(
+        tmp_path, monkeypatch, caplog):
+    """«Nothing was found» and «we stopped looking» are not the same answer.
+
+    The limit itself is right: detection runs while somebody waits for a
+    dialog, and a monorepo holds more paths than anyone wants walked. What was
+    wrong is that hitting it looked exactly like an empty repository — and past
+    the limit the result depends on the order `os.walk` happens to return
+    directories in, so the same repository can detect differently twice.
+    """
+    monkeypatch.setattr(suites, "_INDEX_LIMIT", 5)
+    root = tmp_path / "monorepo"
+    (root / "packages").mkdir(parents=True)
+    for i in range(40):
+        (root / "packages" / f"module_{i:02d}.txt").write_text("x", "utf-8")
+
+    with caplog.at_level("WARNING", logger="vistest.suites"):
+        suites._shallow_index(root)
+
+    said = caplog.text
+    assert "suite detection stopped after" in said
+    assert str(root) in said
+    assert "set the suite explicitly" in said.lower()
+    #  The count is in the message: «we stopped» without a number does not say
+    #  whether the tree is twice the limit or a thousand times it.
+    assert any(part.isdigit() for part in said.split())
+
+
+def test_a_small_tree_is_scanned_whole_and_says_nothing(
+        tmp_path, caplog):
+    root = tmp_path / "small"
+    (root / "tests").mkdir(parents=True)
+    (root / "package.json").write_text("{}", "utf-8")
+
+    with caplog.at_level("WARNING", logger="vistest.suites"):
+        names = suites._shallow_index(root)
+
+    assert "package.json" in names
+    assert caplog.records == []

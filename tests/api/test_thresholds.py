@@ -92,6 +92,77 @@ def test_a_saved_value_comes_back_and_is_marked_as_an_override(service):
     assert again["values"]["fail_severity"] == 42.0
 
 
+def test_validate_always_hands_back_a_float():
+    """The contract the write site leans on, pinned rather than assumed.
+
+    Everything that reaches the database goes through this function, and the
+    stored shape depends on the type it returns: an int would be written as
+    `42`, a float as `42.0`, and both read back the same — so the difference
+    would surface as nothing at all until something stopped parsing.
+    """
+    import typing
+
+    from vistest.core.thresholds import validate
+
+    assert typing.get_type_hints(validate)["return"] is float
+
+    for given in (42, 42.0, "42", "4.2e1", True):
+        got = validate("fail_severity", given)
+        assert type(got) is float, (given, type(got))
+        assert got in (42.0, 1.0)          # True is 1.0, and that is a number
+
+
+def test_the_value_is_stored_as_a_number_and_not_as_python_repr(service):
+    """The column used to receive `repr(number)`.
+
+    That puts Python's idea of what a float looks like into a database: the
+    shape depends on the type that reached the write and on the interpreter
+    that ran it, and everything on the way out goes through `float()`, so
+    nothing would report the difference until something failed to parse. Today
+    a float's `repr` and SQLite's own conversion agree — which is exactly why
+    this is worth pinning: the agreement is a coincidence, not a rule.
+    """
+    client, mainmod = service
+    _admin(mainmod)
+    _sign_in(client)
+    client.put("/api/settings/thresholds",
+               json={"values": {"fail_severity": 42, "max_changed_area_pct": 0.5}})
+
+    rows = mainmod.db.query(
+        "SELECT name, value, typeof(value) AS kind FROM setting ORDER BY name")
+    stored = {r["name"]: r["value"] for r in rows}
+    assert stored == {"fail_severity": "42.0", "max_changed_area_pct": "0.5"}
+    #  Text, because the column has TEXT affinity and that is not being
+    #  migrated; the point is that SQLite wrote it, not `repr`.
+    assert {r["kind"] for r in rows} == {"text"}
+
+
+def test_rows_written_by_earlier_versions_are_still_read(service):
+    """No migration, and this is what makes that safe.
+
+    Everything ever written to this column was a decimal string, and the reader
+    parses with `float()`, which takes all of the spellings below. A row from
+    an installation upgraded mid-week has to keep working — silently going back
+    to the config default there would be the exact failure this whole round is
+    about.
+    """
+    client, mainmod = service
+    _admin(mainmod)
+    _sign_in(client)
+
+    for value in ("42.0", "42", "4.2e1", " 42 "):
+        mainmod.db.execute("DELETE FROM setting")
+        mainmod.db.execute(
+            "INSERT INTO setting(scope, project_key, name, value, updated_by)"
+            " VALUES('global','','fail_severity',?,'legacy')", (value,))
+
+        from vistest.api.thresholds import overrides
+
+        assert overrides(mainmod.db) == {"fail_severity": 42.0}, value
+        assert client.get("/api/settings/thresholds").json()[
+            "values"]["fail_severity"] == 42.0
+
+
 def test_a_project_override_beats_the_global_one(service):
     client, mainmod = service
     _admin(mainmod)
@@ -220,10 +291,36 @@ def test_the_override_reaches_someone_elses_pytest(service):
             os.environ.pop(key, None)
 
 
-def test_a_broken_environment_variable_does_not_fail_a_run(service, monkeypatch):
+def test_a_broken_environment_variable_stops_the_run_and_names_itself(
+        service, monkeypatch):
+    """It used to leave the default in place without a word.
+
+    That was the wrong half of the rule. The variable is set on purpose, by a
+    pipeline, to override a threshold — so a value that cannot be read means
+    the override is not happening, and the run that follows measures something
+    other than what was asked for. Silence there produces a bug report about
+    the engine ignoring a setting, months later, with nothing in any log.
+
+    The library mode is what made it urgent: the variable is set in somebody
+    else's CI, and this message is the only thing they will see.
+    """
+    from vistest.config import ConfigError, VisTestConfig
+
     monkeypatch.setenv("VISTEST_FAIL_SEVERITY", "не число")
-    from vistest.config import VisTestConfig
-    assert VisTestConfig.load().diff.fail_severity == 25.0
+    with pytest.raises(ConfigError) as e:
+        VisTestConfig.load()
+    assert "VISTEST_FAIL_SEVERITY" in str(e.value)
+    assert "не число" in str(e.value)
+
+
+def test_a_threshold_outside_its_range_is_refused_too(service, monkeypatch):
+    """A number is not the same as a valid one; both layers check now."""
+    from vistest.config import ConfigError, VisTestConfig
+
+    monkeypatch.setenv("VISTEST_MAX_CHANGED_AREA_PCT", "900")
+    with pytest.raises(ConfigError) as e:
+        VisTestConfig.load()
+    assert "VISTEST_MAX_CHANGED_AREA_PCT" in str(e.value)
 
 
 # --------------------------------------------------------------------------- #

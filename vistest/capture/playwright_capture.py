@@ -17,6 +17,7 @@ import numpy as np
 
 from ..config import CaptureConfig
 from ..core import noise as _noise
+from ..core import pngio as _pngio
 from ..models import Shot
 from . import dom as _dom
 
@@ -85,26 +86,14 @@ def save_shot(
     )
 
 
+#  The two historical names. The decoding itself moved to `vistest.core.pngio`
+#  when the library mode needed a PNG reader that does not drag the capture
+#  layer — and with it the config loader — into somebody else's test process.
+#  Kept here as thin wrappers because they are imported by name from six
+#  modules and by tests.
 def _write_png(path: Path, rgb: np.ndarray) -> None:
-    try:
-        import cv2
-
-        cv2.imwrite(str(path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-    except ImportError:  # pragma: no cover
-        from PIL import Image
-
-        Image.fromarray(rgb).save(path)
+    _pngio.write(path, rgb)
 
 
 def read_png(path: str | Path) -> np.ndarray:
-    try:
-        import cv2
-
-        img = cv2.imread(str(path), cv2.IMREAD_COLOR)
-        if img is None:
-            raise FileNotFoundError(path)
-        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    except ImportError:  # pragma: no cover
-        from PIL import Image
-
-        return np.array(Image.open(path).convert("RGB"))
+    return _pngio.read(path)

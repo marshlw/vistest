@@ -43,8 +43,13 @@ from ..capture.playwright_capture import _write_png, read_png
 from ..core import noise as _noise
 from .base import BaselineRecord, BaselineStore
 
-_KEEP = "-_.() "
+#  Re-exported, not just used: `MAX_DEPTH`, `split_project` and `_safe` were
+#  defined in this module before the second layout needed one copy of the
+#  mapping, and `from vistest.storage.fs import ...` is what the rest of the
+#  package and the tests still say.
+from .paths import MAX_DEPTH, safe_name, split_project
 
+__all__ = ["MAX_DEPTH", "FileBaselineStore", "split_project"]
 
 # --------------------------------------------------------------------------- #
 #  Атомарная запись и блокировка каталога снимка
@@ -122,66 +127,11 @@ def _write_atomic_png(path: Path, image: np.ndarray) -> None:
     os.replace(tmp, path)
 
 
-def _safe_segment(part: str) -> str:
-    cleaned = "".join(c if c.isalnum() or c in _KEEP else "_" for c in part).strip()
-    cleaned = cleaned.strip(".")          # ".." и скрытые каталоги недопустимы
-    return cleaned or "snapshot"
-
-
-MAX_DEPTH = 4
-
-
-def _safe(name: str) -> str:
-    """Имя снимка → относительный путь.
-
-    Слэш в имени означает проект: `shop.example/login.png` ляжет в
-    `shop.example/login`. Каждый сегмент санируется отдельно, `..` вырезается —
-    имена приходят снаружи (из UI, из чужих тестов по HTTP), и выйти за
-    пределы каталога эталонов через них быть не должно.
-
-    **Про глубину.** Раньше здесь стояло `"/".join(parts[-4:])`: начало
-    глубокого имени молча отбрасывалось. Два разных снимка с общим хвостом из
-    четырёх сегментов —
-
-        billing/eu/checkout/payment/form.png
-        billing/us/checkout/payment/form.png
-
-    — ложились в ОДИН каталог и перезаписывали эталон друг друга. Ошибка
-    беззвучная и худшая из возможных для хранилища: человек видит дифф между
-    европейской и американской формой и не понимает, откуда он взялся.
-
-    Ограничение глубины оставлено (путь не должен расти без предела), но
-    отброшенное начало больше не исчезает бесследно: от него берётся короткий
-    хеш и приписывается к первому сохранённому сегменту. Имена остаются
-    читаемыми, а разными — разными.
-
-    Для имён глубиной до четырёх сегментов — а это подавляющее большинство —
-    результат не изменился, то есть существующие эталоны остались на месте.
-    Глубокие имена переедут, но они и были сломаны: до сих пор они делили
-    каталог с однофамильцами.
-    """
-    name = str(name).replace("\\", "/").removesuffix(".png")
-    parts = [_safe_segment(p) for p in name.split("/") if p.strip(" .")]
-    if not parts:
-        return "snapshot"
-    if len(parts) <= MAX_DEPTH:
-        return "/".join(parts)
-
-    import hashlib
-
-    dropped = "/".join(parts[:-MAX_DEPTH])
-    digest = hashlib.sha1(dropped.encode("utf-8")).hexdigest()[:8]
-    kept = parts[-MAX_DEPTH:]
-    return "/".join([f"{kept[0]}-{digest}", *kept[1:]])
-
-
-def split_project(name: str) -> tuple[str, str]:
-    """`shop.example/login.png` -> ("shop.example", "login.png")."""
-    text = str(name).replace("\\", "/")
-    if "/" not in text:
-        return "", text
-    head, _, tail = text.rpartition("/")
-    return head, tail
+#  Name sanitising lives in `.paths` now: the library-mode store has to map a
+#  name to a path by exactly the same rules, and two copies of that mapping
+#  would quietly diverge — which is the one thing `vistest baselines export`
+#  cannot survive, since it is what makes the two layouts one format.
+_safe = safe_name
 
 
 class FileBaselineStore(BaselineStore):

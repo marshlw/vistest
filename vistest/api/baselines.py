@@ -137,16 +137,25 @@ def _cfg_fresh() -> VisTestConfig:
 
 
 def _cfg_with_thresholds(project_key: str | None = None) -> VisTestConfig:
-    """Config plus the verdict thresholds set from the interface."""
+    """Config plus the verdict thresholds set from the interface.
+
+    The only tolerated failure is «there is no service here»: this module is
+    also reachable from the CLI, where `vistest.api.main` does not import and
+    the database does not exist. That is an absent optional part and the config
+    values are the right answer to it.
+
+    Everything else is raised. A threshold that a person set in the interface
+    and that we then could not read is not the same thing as a threshold that
+    was never set, and swallowing the difference is how a setting comes to be
+    described as «not working» with nothing in any log to say why.
+    """
     cfg = _cfg_fresh()
     try:
         from .main import db
         from .thresholds import apply
-        return apply(cfg, db, project_key)
-    except Exception:
-        # A threshold that could not be read must not cost a run: the config
-        # value is a perfectly good answer.
+    except ImportError:
         return cfg
+    return apply(cfg, db, project_key)
 
 
 # --------------------------------------------------------------------------- #

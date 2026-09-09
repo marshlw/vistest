@@ -34,6 +34,8 @@ something.
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 from dataclasses import replace
 
 from ..config import VisTestConfig
@@ -49,27 +51,64 @@ from ..core.thresholds import (
 GLOBAL = "global"
 PROJECT = "project"
 
+log = logging.getLogger("vistest.thresholds")
+#  Said once per process: a fresh database is a normal state, and a line per
+#  request would bury the log.
+_warned_no_table = False
+
 __all__ = ["EDITABLE", "GLOBAL", "PROJECT", "SettingStore", "ThresholdError",
            "apply", "effective", "env_for", "overrides", "put", "validate"]
 
 
 def _rows(db, scope: str, project_key: str = "") -> dict[str, float]:
+    """The overrides stored for one scope.
+
+    Two failures used to look identical here, and that was the problem. A
+    database with no `setting` table yet — a fresh installation, before the
+    first migration — genuinely means «no overrides», and a run must not stop
+    over it. A table that is there and unreadable, or a row holding something
+    that is not a number, means the setting a person made is being ignored;
+    answering «no overrides» to that is how a threshold silently stops working
+    and stays that way for months.
+
+    So the first case is answered, once, with a line in the log. Everything
+    else is raised.
+    """
     out: dict[str, float] = {}
     try:
         rows = db.query(
             "SELECT name, value FROM setting WHERE scope=? AND project_key=?",
             (scope, project_key or ""))
-    except Exception:
-        # A missing table must not fail a run: the thresholds simply stay what
-        # the config says.
+    except sqlite3.OperationalError as e:
+        if "no such table" not in str(e).lower():
+            raise
+        global _warned_no_table
+        if not _warned_no_table:
+            _warned_no_table = True
+            log.warning("the `setting` table does not exist yet, so the "
+                        "thresholds are the ones in vistest.yaml (%s)", e)
         return out
+
     for r in rows:
-        if r["name"] not in EDITABLE:
+        name = r["name"]
+        if name not in EDITABLE:
+            #  Rows are written through `validate`, so a name outside the
+            #  editable set is either an older version's leftover or a hand
+            #  edit. Neither is ours to obey, and neither is worth stopping a
+            #  run for; it is worth saying out loud once.
+            log.warning("setting %r (scope %s, project %r) is not an editable "
+                        "threshold and is ignored", name, scope,
+                        project_key or "")
             continue
         try:
-            out[r["name"]] = float(r["value"])
+            out[name] = float(r["value"])
         except (TypeError, ValueError):
-            continue
+            raise ThresholdError(
+                f"the stored threshold {name!r} (scope {scope}, project "
+                f"{project_key or '-'}) is {r['value']!r}, which is not a "
+                "number. It was written through validation, so the row has "
+                "been damaged — fix or delete it in the settings screen."
+            ) from None
     return out
 
 
@@ -145,13 +184,34 @@ def put(db, values: dict, *, project_key: str | None = None,
             cleared.append(name)
             continue
         number = validate(name, raw)
+        #  The number is bound as a number. It used to be written as
+        #  `repr(number)`, which puts Python's idea of how a float looks into a
+        #  database column — a shape that depends on the type that reached this
+        #  line and on the interpreter that ran it. A numpy scalar or an int
+        #  would each have written something different, and every one of them
+        #  reads back through `float()` on the way out, so nothing would have
+        #  complained until the day it did.
+        #
+        #  `float()` around it although `validate` already returns one: that
+        #  is one line of insurance against the day something else fills this
+        #  in. A float and its `repr` happen to agree today; an int, a Decimal
+        #  or a numpy scalar would each write a different shape, and every one
+        #  of them reads back through `float()` on the way out, so nothing
+        #  would complain until something failed to parse.
+        #
+        #  The column keeps its TEXT affinity, so SQLite still stores the value
+        #  as text and comparisons in SQL remain lexicographic. Changing that
+        #  is a column migration and is deliberately not done here; nothing in
+        #  this package compares or orders these values in SQL — `_rows` reads
+        #  them out and `float()` parses them, which is also why rows written
+        #  by earlier versions keep working untouched.
         db.execute(
             "INSERT INTO setting(scope, project_key, name, value, updated_at,"
             " updated_by) VALUES(?,?,?,?,datetime('now'),?)"
             " ON CONFLICT(scope, project_key, name) DO UPDATE SET"
             " value=excluded.value, updated_at=excluded.updated_at,"
             " updated_by=excluded.updated_by",
-            (scope, key, name, repr(number), who))
+            (scope, key, name, float(number), who))
         written[name] = number
 
     return {"written": written, "cleared": cleared, "scope": scope,

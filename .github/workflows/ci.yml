@@ -39,7 +39,7 @@ jobs:
       - name: Install
         # Без браузерных зависимостей: e2e исключены ниже, а всё остальное
         # обходится ядром и сервисом.
-        run: pip install -e ".[service,dev]" numpy opencv-python-headless pillow
+        run: pip install -e ".[server,dev]" numpy opencv-python-headless pillow
 
       - name: Lint
         run: ruff check vistest/ tests/
@@ -51,6 +51,24 @@ jobs:
           pytest tests/ -q
           --ignore=tests/e2e
           --ignore=tests/test_benchmark.py
+
+  # The English-only ratchet. A separate job, and for the same reason as the
+  # audit below: a red ratchet means somebody wrote a Russian comment, not that
+  # the code is broken, and one status for both is how you stop reading either.
+  i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # check_i18n.py reads the tracked file list from git.
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: No new Russian text
+        run: python scripts/check_i18n.py
 
   # Уязвимости в зависимостях. Отдельной работой, а не шагом в основной:
   # красный `pip-audit` — это «есть CVE», а не «код сломан», и смешивать эти
@@ -65,7 +83,7 @@ jobs:
           cache: pip
       - name: Install
         run: |
-          pip install -c constraints-service.txt ".[service]"
+          pip install -c constraints-service.txt ".[server]"
           pip install pip-audit
       - name: Известные уязвимости в зависимостях
         run: pip-audit --strict --desc
@@ -87,7 +105,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: pip install -e ".[service,dev]" numpy opencv-python-headless pillow
+        run: pip install -e ".[server,dev]" numpy opencv-python-headless pillow
 
       - name: База прошлого релиза открывается этим кодом
         run: |

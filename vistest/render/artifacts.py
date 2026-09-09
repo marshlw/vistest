@@ -27,7 +27,10 @@ from pathlib import Path
 
 import numpy as np
 
-from ..config import RenderConfig
+#  From the engine's settings rather than from the loader: the library
+#  mode draws diff pictures without ever reading a config file, and
+#  `vistest.config` is the module that searches for one.
+from ..core.settings import RenderConfig
 from ..models import ChangeKind, CompareResult
 from .palette import kind_color, severity_band, severity_color
 

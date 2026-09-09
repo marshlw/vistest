@@ -269,6 +269,131 @@ vistest compare expected.png actual.png -o diff/
 
 ---
 
+## Режим библиотеки: без сервера и без интерфейса
+
+VisTest можно подключить так же, как встроенный скриншот-тест Playwright —
+библиотекой внутри вашего прогона, с эталонами в вашем репозитории и без
+единого запущенного процесса на стороне.
+
+```bash
+pip install vistest            # numpy, opencv, pillow, pyyaml. Без веб-сервера.
+```
+
+```python
+from vistest import expect_screenshot
+
+
+def test_home(page):
+    page.goto("https://example.com")
+    expect_screenshot(page, "home.png")
+```
+
+Первый прогон падает: эталона ещё нет, а проверка, которая проходит до того,
+как картинку кто-то увидел, — это не проверка:
+
+```
+vistest: no baseline for 'home.png' (linux-chromium-1x-1440x900)
+  expected: tests/__vistest__/linux-chromium-1x-1440x900/home.png
+  captured: .vistest/actual/linux-chromium-1x-1440x900/home.png
+  create it with: pytest --vistest-update
+```
+
+Запускаете `pytest --vistest-update`, смотрите на PNG, коммитите. Дальше
+проверка сравнивает с ним, и когда краснеет — говорит, где что лежит:
+
+```
+vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
+  severity 61.2 (limit 25.0), changed area 3.40% (limit 0.15%)
+  reason: text in 2 regions; largest 96x24 at (320, 180), .header .price
+  baseline: tests/__vistest__/linux-chromium-1x-1440x900/home.png
+  actual:   .vistest/actual/linux-chromium-1x-1440x900/home.png
+  diff:     .vistest/diff/linux-chromium-1x-1440x900/home.png
+  report:   .vistest/report/index.html
+  accept it with: pytest --vistest-update
+```
+
+`expect_screenshot` принимает `Page` или `Locator` из Playwright, байты PNG,
+`PIL.Image`, массив numpy и путь к файлу — то есть работает и с вашей
+собственной обёрткой над страницей, и вообще без браузера. Playwright при этом
+не импортируется ни разу.
+
+```python
+expect_screenshot(
+    page, "checkout.png",
+    platform="chromium-1440x900",      # в каком каталоге лежит эталон
+    threshold=40,                      # или {"fail_severity": 40, ...}
+    mask=["#promo", (0, 0, 320, 64)],  # селекторы закрашиваются, боксы игнорируются
+    full_page=False,
+)
+```
+
+### Где что лежит
+
+```
+tests/__vistest__/                 <- коммитится, ревьюится в пул-реквестах
+  linux-chromium-1x-1440x900/
+    home.png                       эталон
+    home.json                      паспорт: версия, размер, пороги (необязателен)
+    shop/checkout.png
+
+.vistest/                          <- игнорируется
+  actual/…  diff/…  report/index.html
+```
+
+Одна строка в ваш `.gitignore`:
+
+```gitignore
+# VisTest artifacts. Baselines live in tests/__vistest__/ and MUST be committed.
+.vistest/
+```
+
+PNG быстро раздувают репозиторий, поэтому эталоны обычно лучше держать в LFS:
+
+```bash
+git lfs install
+git lfs track "tests/__vistest__/**/*.png"
+```
+
+### Флаги
+
+| Флаг | `pyproject.toml` | Что делает |
+| --- | --- | --- |
+| `--vistest-update` | — | принять текущие снимки как эталоны |
+| `--vistest-baselines=PATH` | `vistest_baselines` | где лежат эталоны (по умолчанию `tests/__vistest__`) |
+| `--vistest-platform=NAME` | `vistest_platform` | каталог платформы; без него берётся со страницы |
+| `--vistest-report=PATH` | `vistest_report` | куда положить HTML-отчёт |
+
+Командная строка сильнее `pyproject.toml`, тот сильнее `vistest.yaml`, тот —
+сильнее умолчаний. Цель, которая не является живой страницей — байты, файл,
+массив, — не несёт ни браузера, ни размера окна, поэтому такие эталоны ложатся
+прямо в корень каталога эталонов, и об этом один раз за прогон говорит
+предупреждение: задайте `vistest_platform` сами, если картинки зависят от
+машины, снявшей их, иначе macOS разработчика и linux-CI сравнятся с одним
+файлом.
+
+Отчёт — один самодостаточный HTML: картинки внутри, ни CDN,
+ни шрифтов, ни одного запроса наружу. Открывается на машине без сети и
+прикладывается к задаче.
+
+`pytest -n auto` поддержан: любая запись идёт через временный файл и атомарное
+переименование, общего индекса и блокировок нет, а отчёт собирается один раз в
+конце из строк, которые оставил каждый воркер.
+
+### Когда станет тесно
+
+Раскладка, которую пишет библиотека, и архив `vistest baselines export` — один
+формат, поэтому набор переезжает в полную инсталляцию без переутверждения:
+
+```bash
+vistest baselines export set.tar.gz --baselines tests/__vistest__
+vistest baselines import set.tar.gz --mode new          # на сервере
+```
+
+Работает и в обратную сторону: `--layout flat` выкладывает эталоны инсталляции
+обычными файлами в репозиторий.
+
+---
+
 ## Подключение уже написанных тестов
 
 VisTest умеет запускать существующий набор тестов, не меняя в нём ни строки.

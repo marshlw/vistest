@@ -160,6 +160,131 @@ vistest compare expected.png actual.png -o diff/
 
 ---
 
+## Library mode: no server, no interface
+
+VisTest can be used the way Playwright's own screenshot assertion is used — as
+a library inside your test run, with the baselines living in your repository
+and nothing else running anywhere.
+
+```bash
+pip install vistest            # numpy, opencv, pillow, pyyaml. No web server.
+```
+
+```python
+from vistest import expect_screenshot
+
+
+def test_home(page):
+    page.goto("https://example.com")
+    expect_screenshot(page, "home.png")
+```
+
+The first run fails, because there is no baseline yet and a check that passes
+before anyone has looked at the picture is not a check:
+
+```
+vistest: no baseline for 'home.png' (linux-chromium-1x-1440x900)
+  expected: tests/__vistest__/linux-chromium-1x-1440x900/home.png
+  captured: .vistest/actual/linux-chromium-1x-1440x900/home.png
+  create it with: pytest --vistest-update
+```
+
+Run `pytest --vistest-update`, look at the PNG, commit it. From then on the
+check compares against it, and when it goes red it says where everything is:
+
+```
+vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
+  severity 61.2 (limit 25.0), changed area 3.40% (limit 0.15%)
+  reason: text in 2 regions; largest 96x24 at (320, 180), .header .price
+  baseline: tests/__vistest__/linux-chromium-1x-1440x900/home.png
+  actual:   .vistest/actual/linux-chromium-1x-1440x900/home.png
+  diff:     .vistest/diff/linux-chromium-1x-1440x900/home.png
+  report:   .vistest/report/index.html
+  accept it with: pytest --vistest-update
+```
+
+`expect_screenshot` takes a Playwright `Page` or `Locator`, PNG bytes, a
+`PIL.Image`, a numpy array, or a path to a PNG — so it works with a project's
+own page wrapper, and works with no browser at all. Playwright is never
+imported to find out which.
+
+```python
+expect_screenshot(
+    page, "checkout.png",
+    platform="chromium-1440x900",      # which directory the baseline is in
+    threshold=40,                      # or {"fail_severity": 40, ...}
+    mask=["#promo", (0, 0, 320, 64)],  # selectors are painted, boxes are ignored
+    full_page=False,
+)
+```
+
+### Where the files go
+
+```
+tests/__vistest__/                 <- committed, reviewed in pull requests
+  linux-chromium-1x-1440x900/
+    home.png                       the baseline
+    home.json                      its passport: version, size, thresholds (optional)
+    shop/checkout.png
+
+.vistest/                          <- ignored
+  actual/…  diff/…  report/index.html
+```
+
+Add one line to your `.gitignore`:
+
+```gitignore
+# VisTest artifacts. Baselines live in tests/__vistest__/ and MUST be committed.
+.vistest/
+```
+
+PNGs grow a repository quickly, so baselines are usually better off in LFS:
+
+```bash
+git lfs install
+git lfs track "tests/__vistest__/**/*.png"
+```
+
+### Flags
+
+| Flag | `pyproject.toml` | What it does |
+| --- | --- | --- |
+| `--vistest-update` | — | accept the current screenshots as the baselines |
+| `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
+| `--vistest-platform=NAME` | `vistest_platform` | the platform directory; taken from the page when not set |
+| `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
+
+Command line beats `pyproject.toml`, which beats `vistest.yaml`, which beats
+the defaults. A target that is not a live page — `bytes`, a file, an array —
+carries no browser and no window size, so those baselines go straight to the
+root of the baseline directory and a warning says so once per run: set
+`vistest_platform` yourself if the pictures depend on the machine that took
+them, or a developer's macOS and a Linux CI will compare against one file.
+
+The report is one self-contained HTML file — pictures inlined, no
+CDN, no fonts, nothing fetched — so it opens on a machine with no network and
+can be attached to a ticket.
+
+`pytest -n auto` is supported: every write goes through a temporary file and an
+atomic rename, there is no shared index and no lock, and the report is
+assembled once at the end from the rows each worker left behind.
+
+### Growing out of it
+
+The layout the library writes and the archive `vistest baselines export` makes
+are the same format, so a set can be moved into a full installation later
+without re-approving anything:
+
+```bash
+vistest baselines export set.tar.gz --baselines tests/__vistest__
+vistest baselines import set.tar.gz --mode new          # on the server
+```
+
+It works in the other direction too — `--layout flat` writes an installation's
+baselines back out as plain files in a repository.
+
+---
+
 ## Connecting an existing test suite
 
 VisTest can drive a test suite that already exists, without changing a line in
