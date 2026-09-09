@@ -320,17 +320,31 @@ def test_deleting_something_that_does_not_exist_asks_for_rights_first(service):
 #  Предел движка
 # --------------------------------------------------------------------------- #
 def test_the_engine_refuses_an_image_it_cannot_hold():
-    """Убитый по памяти процесс не пишет в лог ничего — отказ должен быть явным."""
+    """Убитый по памяти процесс не пишет в лог ничего — отказ должен быть явным.
+
+    Предел приезжает полем конфига, как и всё остальное в движке, поэтому тест
+    его задаёт, а не патчит модуль. Разница не косметическая: патч модульной
+    переменной переживает тест, если что-то упало между присваиванием и
+    `finally`, и следующий тест сравнивает картинки с чужим пределом.
+    """
     import numpy as _np
     import pytest as _pytest
 
     from vistest.core import comparator
+    from vistest.core.settings import DiffConfig
 
     small = _np.zeros((10, 10, 3), _np.uint8)
-    old = comparator.MAX_PIXELS
-    comparator.MAX_PIXELS = 50
-    try:
-        with _pytest.raises(comparator.ImageTooLarge, match="Mpx"):
-            comparator.compare(small, small)
-    finally:
-        comparator.MAX_PIXELS = old
+    with _pytest.raises(comparator.ImageTooLarge, match="Mpx"):
+        comparator.compare(small, small, cfg=DiffConfig(max_pixels=50))
+
+
+def test_the_engine_limit_can_be_switched_off():
+    """Ноль — «не проверять»: у предела должен быть способ его снять."""
+    import numpy as _np
+
+    from vistest.core import comparator
+    from vistest.core.settings import DiffConfig
+
+    small = _np.zeros((10, 10, 3), _np.uint8)
+    res = comparator.compare(small, small, cfg=DiffConfig(max_pixels=0))
+    assert res is not None

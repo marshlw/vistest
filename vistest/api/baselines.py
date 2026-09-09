@@ -560,36 +560,25 @@ def restore_baseline(request: Request, body: dict = Body(...)):
 
 
 def _clean_thresholds(raw):
-    """Пороги снимка: проверить и привести к числам.
+    """A snapshot's thresholds: validated and turned into numbers.
 
-    Порог, записанный как строка или как -5, не свалит сравнение — движок его
-    молча проигнорирует, — но это худший вариант из возможных: человек выставил
-    значение, интерфейс его показывает, а вердикты считаются по старому. Ошибку
-    надо назвать здесь, в момент сохранения.
+    A threshold written as a string, or as -5, will not bring a comparison
+    down — the engine ignores it silently — but that is the worst of the
+    possible outcomes: a person set a value, the interface shows it, and the
+    verdicts are still computed by the old one. The error has to be named here,
+    at the moment of saving. The rules are `core.thresholds`; what this adds is
+    the HTTP shape of the refusal.
     """
-    from .thresholds import EDITABLE, ThresholdError, validate
+    from ..core.thresholds import ThresholdError, clean
 
     if raw in (None, {}):
-        # Пустой словарь — это «убрать переопределение», и `_write_meta`
-        # понимает `None` как удаление поля.
+        # An empty dict means «drop the override», and `_write_meta` reads
+        # `None` as deleting the field.
         return None
-    if not isinstance(raw, dict):
-        raise HTTPException(400, "thresholds must be an object")
-
-    unknown = set(raw) - set(EDITABLE)
-    if unknown:
-        raise HTTPException(
-            400, f"unknown thresholds: {sorted(unknown)}. "
-                 f"Editable: {', '.join(sorted(EDITABLE))}")
-
-    out = {}
-    for name, value in raw.items():
-        if value is None:
-            continue                    # снять ровно этот порог
-        try:
-            out[name] = validate(name, value)
-        except ThresholdError as e:
-            raise HTTPException(400, str(e)) from None
+    try:
+        out = clean(raw)
+    except ThresholdError as e:
+        raise HTTPException(400, str(e)) from None
     return out or None
 
 
@@ -719,7 +708,7 @@ def set_boxes(request: Request, body: dict = Body(...)):
     if not _store(platform, scope).exists(name):
         raise HTTPException(404, "baseline not found")
 
-    from ..zones import normalize_all
+    from ..core.regions import normalize_all
 
     try:
         boxes = normalize_all(body.get("boxes"))
@@ -735,7 +724,7 @@ def set_boxes(request: Request, body: dict = Body(...)):
     from .main import db
 
     who = current_user(db, request.cookies.get("vistest_session"))["login"]
-    from ..zones import held_by
+    from ..core.regions import held_by
 
     by_element = sum(1 for z in boxes if held_by(z) == "element")
     audit(db, who, "baseline.ignore_boxes", name,
@@ -828,7 +817,7 @@ def _zone_view(zones: list, directory) -> list[dict]:
     молчания здесь и надо избежать.
     """
     from ..capture import dom as domcap
-    from ..zones import find_nodes, held_by
+    from ..core.regions import find_nodes, held_by
 
     snapshot = domcap.load(Path(directory) / "dom.json") or {}
     out = []
@@ -955,27 +944,26 @@ def _rank_nodes(nodes: list[dict], box: dict) -> list[dict]:
 
 
 def _threshold_view(meta: dict, project_key: str = "") -> dict:
-    """Действующие пороги снимка и — обязательно — откуда каждый взялся.
+    """A snapshot's thresholds in force and — always — where each came from.
 
-    Без источника число на экране не отвечает на вопрос, который человек и
-    задаёт: «это я тут выставил или так везде». А от ответа зависит, где чинить
-    — в снимке или в наборе.
+    Without the source, the number on the screen does not answer the question
+    a person is actually asking: «did I set this here, or is it like that
+    everywhere». And the answer decides where to fix it — in the snapshot or
+    in the set.
     """
+    from ..core.thresholds import EDITABLE, from_meta, layer
     from .main import db
-    from .thresholds import EDITABLE, effective
+    from .thresholds import effective
 
     base = effective(db, _cfg_fresh(), project_key or None)
     own = (meta or {}).get("thresholds") or {}
-    values, sources = dict(base["values"]), dict(base["sources"])
-    for name in EDITABLE:
-        if own.get(name) is None:
-            continue
-        try:
-            values[name] = float(own[name])
-            sources[name] = "snapshot"
-        except (TypeError, ValueError):
-            continue
-    return {"values": values, "sources": sources,
+    folded = layer(base["values"], snapshot=from_meta(meta))
+    #  `layer` labels everything it did not touch as «config»; the sources
+    #  below it were already resolved by `effective`, so they are kept.
+    sources = dict(base["sources"])
+    sources.update({name: src for name, src in folded["sources"].items()
+                    if src == "snapshot"})
+    return {"values": folded["values"], "sources": sources,
             "own": {k: v for k, v in own.items() if k in EDITABLE},
             "inherited": base["values"],
             "editable": base["editable"]}

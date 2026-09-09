@@ -203,7 +203,7 @@ class ExternalBaselineStore(BaselineStore):
         side = self.dir_for(name)
         path = side / "meta.json"
         meta = _read_json(path) or {}
-        from ..zones import normalize
+        from ..core.regions import normalize
 
         meta.setdefault("ignore_boxes", []).append(normalize(box))
         path.write_text(json.dumps(meta, indent=2, ensure_ascii=False),
@@ -216,7 +216,7 @@ class ExternalBaselineStore(BaselineStore):
             return None
         mask = rec.stability_mask
         if rec.ignore_boxes:
-            from ..zones import mask as zone_mask
+            from ..core.regions import mask as zone_mask
 
             boxes, _ = zone_mask(shape, rec.ignore_boxes, baseline_dom=rec.dom)
             mask = boxes if mask is None else _noise.merge_masks(mask, boxes)

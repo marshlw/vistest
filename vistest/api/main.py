@@ -1742,7 +1742,7 @@ def ignore_region(comp_id: int, request: Request, body: dict = Body(...)):
     t = _comparison_target(comp_id)
     c = t["comparison"]
 
-    from ..zones import held_by, normalize
+    from ..core.regions import held_by, normalize
 
     # Селектор региона доезжает до зоны, а не теряется по дороге.
     #

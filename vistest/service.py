@@ -26,6 +26,7 @@ import numpy as np
 
 from .config import VisTestConfig, platform_key
 from .core import noise as _noise
+from .core import thresholds as _thresholds
 from .core.comparator import compare, strip_internal
 from .models import CompareResult, Verdict
 from .render.artifacts import render_all
@@ -36,32 +37,11 @@ def slug(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in name).strip("_")
 
 
-# Пороги, которые снимок может держать в собственном паспорте. Список короткий
-# намеренно: это те же две ручки, что настраиваются глобально и на проект, —
-# третий уровень должен управлять тем же, чем первые два, иначе он не третий
-# уровень, а отдельная система с теми же словами.
-SNAPSHOT_THRESHOLDS = ("fail_severity", "max_changed_area_pct")
-
-
-def _snapshot_thresholds(meta: dict | None) -> dict:
-    """Пороги из паспорта эталона. Мусор молча игнорируется.
-
-    Уронить сравнение из-за строки в поле порога значило бы, что одна кривая
-    правка паспорта останавливает весь прогон, а не один снимок.
-    """
-    raw = (meta or {}).get("thresholds") or {}
-    if not isinstance(raw, dict):
-        return {}
-    out = {}
-    for name in SNAPSHOT_THRESHOLDS:
-        value = raw.get(name)
-        if value is None:
-            continue
-        try:
-            out[name] = float(value)
-        except (TypeError, ValueError):
-            continue
-    return out
+#  Kept as module-level names because they have always been importable from
+#  here. The rules themselves live in `core.thresholds`, which is also where
+#  the layering they take part in is written down.
+SNAPSHOT_THRESHOLDS = _thresholds.SNAPSHOT_THRESHOLDS
+_snapshot_thresholds = _thresholds.from_meta
 
 
 class CheckService:
@@ -173,7 +153,7 @@ class CheckService:
             # Единственное место во всём движке, где на руках есть оба DOM'а:
             # эталонный лежит в хранилище, текущий приехал вместе с кадром.
             # Дальше по дороге их уже нет, и опознавать будет нечем.
-            from . import zones as _zones
+            from .core import regions as _zones
 
             boxes_mask, resolved = _zones.mask(
                 rgb.shape[:2], baseline.ignore_boxes,
@@ -185,25 +165,11 @@ class CheckService:
             # тогда, когда смотрит на этот снимок.
             notes.extend(resolved.notes)
 
-        # Пороги: конфиг → проект (уже учтён в `self.cfg`) → **снимок** → вызов.
-        #
-        # Третий уровень появился потому, что двух не хватало: один шумный
-        # дашборд заставлял ослаблять порог для всего набора, то есть чинить
-        # один снимок ценой чувствительности всех остальных. Порог снимка живёт
-        # в его паспорте, а не в базе, и это осознанно — он обязан ехать вместе
-        # с эталоном: в наложение ветки, в спутник чужого проекта, в архив.
-        #
-        # Вызов сильнее паспорта: `assert_screenshot(fail_severity=...)` написан
-        # рядом с конкретной проверкой и о ней знает больше, чем настройка,
-        # выставленная когда-то в интерфейсе.
-        #
-        # Слои складываются в один словарь, а не раскрываются двумя `**`: у них
-        # общие ключи, и Python на таком вызове падает. Заодно это единственное
-        # место, где видно правило — `None` в вызове ничего не стирает, он
-        # означает «не задано», и тогда действует паспорт.
-        layered = dict(_snapshot_thresholds(baseline.meta))
-        layered.update({k: v for k, v in (diff_overrides or {}).items()
-                        if v is not None})
+        # Thresholds: config → project (already folded into `self.cfg`) →
+        # **snapshot** → call. The last two are what this one comparison adds;
+        # `core.thresholds.patch_for` is where that fold is written down, and
+        # why each layer is where it is.
+        layered = _thresholds.patch_for(baseline.meta, diff_overrides)
         diff_cfg = self.cfg.diff.merged(**layered)
         ai_hooks = self._make_ai(baseline.dom, dom)
 

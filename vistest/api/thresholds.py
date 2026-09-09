@@ -6,35 +6,30 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Пороги вердикта, которые можно поменять из интерфейса.
+"""Verdict thresholds, stored in the service database.
 
-Порог падения жил ровно в одном месте — `vistest.yaml`, — а в настройках стоял
-ползунок, который не отправлял никуда ни одного запроса. Он показывал число,
-двигался, и на этом всё заканчивалось: значение умирало при следующей
-перерисовке экрана, а начальное (35) даже не совпадало с настоящим дефолтом
-(25). Это хуже, чем отсутствие настройки: отсутствующей функцией человек не
-пользуется, а этой пользовался и уходил уверенный, что настроил.
+The rules — what is editable, what is a valid value, and which layer beats
+which — are `vistest.core.thresholds`. What is here is the half that needs a
+database: reading the `setting` table, writing to it, and handing the result to
+the core layering.
 
-Здесь — то, чего не хватало, чтобы ползунок стал правдой.
+**Where the values live.** In the `setting` table, not in `vistest.yaml`. The
+config is in git and describes the project; a service that rewrites somebody
+else's versioned file creates conflicts out of nothing and breaks with several
+replicas on one volume. A threshold value belongs to an installation, so that
+is where it is kept.
 
-**Что можно менять.** Только политику вердикта: при какой severity снимок
-считается упавшим и какая доля изменённой площади достаточна сама по себе. Всё
-остальное в `DiffConfig` — параметры движка (пороги ΔE00 и SSIM, морфология,
-поиск сдвигов); их подбирают один раз под задачу и держат в конфиге рядом с
-кодом, а не крутят из веб-интерфейса между прогонами.
+**Who beats whom.** In increasing strength:
 
-**Где живут значения.** В таблице `setting`, а не в `vistest.yaml`. Конфиг
-лежит в git и описывает проект; сервис, переписывающий чужой версионируемый
-файл, создаёт конфликты на ровном месте и ломается при нескольких репликах на
-одном томе. Значение порога принадлежит инсталляции — там и хранится.
+    default / preset  →  vistest.yaml  →  global override  →  project override
 
-**Кто кого перекрывает.** По возрастанию силы:
-
-    дефолт/пресет  →  vistest.yaml  →  глобальный override  →  override проекта
-
-Возвращая эффективное значение, мы всегда говорим и его источник: «35» без
-ответа на вопрос «почему 35» — ровно та же непроверяемая обещалка, что и
-«принять как эталон» без указания, какой именно эталон.
+The history behind this: the failure threshold lived in exactly one place —
+`vistest.yaml` — while the settings screen had a slider that sent no request
+anywhere. It showed a number, it moved, and that was the end of it: the value
+died on the next repaint, and the initial one (35) did not even match the real
+default (25). That is worse than a missing setting — a missing feature goes
+unused, while this one was used, and people left believing they had configured
+something.
 """
 
 from __future__ import annotations
@@ -42,26 +37,20 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ..config import VisTestConfig
+from ..core.thresholds import (
+    EDITABLE,
+    ThresholdError,
+    ThresholdStore,
+    env_patch,
+    layer,
+    validate,
+)
 
 GLOBAL = "global"
 PROJECT = "project"
 
-
-class ThresholdError(ValueError):
-    """Значение не проходит проверку — с текстом, который можно показать."""
-
-
-# name -> (низ, верх, единица, зачем)
-EDITABLE: dict[str, tuple[float, float, str, str]] = {
-    "fail_severity": (
-        0.0, 100.0, "",
-        "Severity at which a snapshot is considered failed. 0 — any visible "
-        "difference is a failure; 100 — only gross breakage."),
-    "max_changed_area_pct": (
-        0.0, 100.0, "%",
-        "Share of the frame that is enough on its own, regardless of severity. "
-        "Catches a page that shifted as a whole."),
-}
+__all__ = ["EDITABLE", "GLOBAL", "PROJECT", "SettingStore", "ThresholdError",
+           "apply", "effective", "env_for", "overrides", "put", "validate"]
 
 
 def _rows(db, scope: str, project_key: str = "") -> dict[str, float]:
@@ -71,8 +60,8 @@ def _rows(db, scope: str, project_key: str = "") -> dict[str, float]:
             "SELECT name, value FROM setting WHERE scope=? AND project_key=?",
             (scope, project_key or ""))
     except Exception:
-        # Отсутствие таблицы не должно ронять прогон: пороги просто останутся
-        # теми, что в конфиге.
+        # A missing table must not fail a run: the thresholds simply stay what
+        # the config says.
         return out
     for r in rows:
         if r["name"] not in EDITABLE:
@@ -84,36 +73,47 @@ def _rows(db, scope: str, project_key: str = "") -> dict[str, float]:
     return out
 
 
+class SettingStore:
+    """The `ThresholdStore` protocol, implemented over the `setting` table.
+
+    This is the only object the core is given: one method, no sqlite in the
+    signature, nothing the engine could reach back through into the service.
+    """
+
+    def __init__(self, db):
+        self._db = db
+
+    def overrides(self, project_key: str | None = None) -> dict[str, float]:
+        merged = dict(_rows(self._db, GLOBAL))
+        if project_key:
+            merged.update(_rows(self._db, PROJECT, project_key))
+        return merged
+
+    def layers(self, project_key: str | None = None
+               ) -> tuple[dict[str, float], dict[str, float]]:
+        """Global and project rows separately, for a view that names the source."""
+        return (_rows(self._db, GLOBAL),
+                _rows(self._db, PROJECT, project_key) if project_key else {})
+
+
 def overrides(db, project_key: str | None = None) -> dict[str, float]:
-    """Что перекрывает конфиг для этого проекта: глобальное + проектное."""
-    merged = dict(_rows(db, GLOBAL))
-    if project_key:
-        merged.update(_rows(db, PROJECT, project_key))
-    return merged
+    """What overrides the config for this project: global plus project."""
+    return SettingStore(db).overrides(project_key)
 
 
 def effective(db, cfg: VisTestConfig | None = None,
               project_key: str | None = None) -> dict:
-    """Действующие значения и — обязательно — откуда каждое взялось."""
+    """The values in force and — always — where each one came from."""
     cfg = cfg or VisTestConfig.load()
     from_yaml = {name: getattr(cfg.diff, name) for name in EDITABLE}
-    glob = _rows(db, GLOBAL)
-    proj = _rows(db, PROJECT, project_key) if project_key else {}
-
-    values, sources = {}, {}
-    for name in EDITABLE:
-        if name in proj:
-            values[name], sources[name] = proj[name], "project"
-        elif name in glob:
-            values[name], sources[name] = glob[name], "global"
-        else:
-            values[name], sources[name] = from_yaml[name], "config"
+    glob, proj = SettingStore(db).layers(project_key)
+    folded = layer(from_yaml, global_overrides=glob, project_overrides=proj)
 
     return {
         "project": project_key or "",
-        "values": values,
-        "sources": sources,
-        "config": from_yaml,          # что сказал бы vistest.yaml без переопределений
+        "values": folded["values"],
+        "sources": folded["sources"],
+        "config": from_yaml,          # what vistest.yaml alone would say
         "global_overrides": glob,
         "project_overrides": proj,
         "preset": cfg.preset,
@@ -124,29 +124,14 @@ def effective(db, cfg: VisTestConfig | None = None,
     }
 
 
-def validate(name: str, value) -> float:
-    if name not in EDITABLE:
-        raise ThresholdError(
-            f"{name!r} is not editable from the interface. "
-            f"Editable: {', '.join(sorted(EDITABLE))}.")
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        raise ThresholdError(f"{name}: {value!r} is not a number") from None
-    lo, hi, unit, _ = EDITABLE[name]
-    if not lo <= number <= hi:
-        raise ThresholdError(
-            f"{name}: {number:g}{unit} is outside {lo:g}{unit}…{hi:g}{unit}")
-    return number
-
-
 def put(db, values: dict, *, project_key: str | None = None,
         who: str = "") -> dict:
-    """Записать или снять переопределения.
+    """Write or clear overrides.
 
-    `None` в значении снимает переопределение — это не то же самое, что «ноль».
-    Ноль здесь осмысленное значение («падать на любом видимом различии»), и без
-    отдельного способа сказать «верни как в конфиге» вернуться было бы нельзя.
+    `None` as a value clears the override — which is not the same as «zero».
+    Zero is a meaningful value here («fail on any visible difference»), and
+    without a separate way to say «put it back to what the config says» there
+    would be no way back.
     """
     scope = PROJECT if project_key else GLOBAL
     key = project_key or ""
@@ -175,11 +160,11 @@ def put(db, values: dict, *, project_key: str | None = None,
 
 def apply(cfg: VisTestConfig, db, project_key: str | None = None
           ) -> VisTestConfig:
-    """Конфиг с наложенными переопределениями — для прогонов внутри сервиса.
+    """The config with the overrides laid on, for runs inside the service.
 
-    Возвращается копия: `VisTestConfig.load()` кешируется в модулях и делится
-    между запросами, а править общий объект ради одного прогона — это разослать
-    чужой порог всем остальным.
+    A copy is returned: `VisTestConfig.load()` is cached in modules and shared
+    between requests, and editing the shared object for the sake of one run
+    means broadcasting somebody's threshold to everyone else.
     """
     patch = overrides(db, project_key)
     if not patch:
@@ -188,13 +173,16 @@ def apply(cfg: VisTestConfig, db, project_key: str | None = None
 
 
 def env_for(db, project_key: str | None = None) -> dict[str, str]:
-    """Переопределения для ЧУЖОГО процесса.
+    """Overrides for SOMEBODY ELSE'S process.
 
-    Прогон подключённого проекта — это отдельный pytest, который читает свой
-    `vistest.yaml` и про нашу базу ничего не знает. Без этого порог, выставленный
-    в интерфейсе, действовал бы на прогоны сервиса и молча не действовал на
-    прогоны проектов — расхождение, которое ищут днями.
+    A run of a connected project is a separate pytest that reads its own
+    `vistest.yaml` and knows nothing about our database. Without this, a
+    threshold set in the interface would apply to the service's own runs and
+    silently not to project runs — a discrepancy that costs days to find.
     """
-    patch = overrides(db, project_key)
-    return {f"VISTEST_{name.upper()}": repr(value)
-            for name, value in patch.items()}
+    return env_patch(overrides(db, project_key))
+
+
+#  A runtime assertion rather than a comment: if the protocol in the core ever
+#  grows a method, this line is where it is noticed, not in a caller.
+assert isinstance(SettingStore(None), ThresholdStore)

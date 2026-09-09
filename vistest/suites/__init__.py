@@ -17,6 +17,11 @@ three different modules, and every new ecosystem meant touching all three.
 Nothing here imports `Project`, deliberately — `projects` imports this module,
 and the reverse would close the circle. The functions take the few attributes
 they need by duck typing.
+
+This module is service-layer: detection walks somebody else's repository and
+caches the answer in a module-level dict, and `resolve` reads a project object.
+The rules for naming and classifying the pictures are `NamingProfile` in
+`vistest.core.naming`, which needs none of that and is re-exported here.
 """
 
 from __future__ import annotations
@@ -24,10 +29,19 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .base import ACTUAL, DIFF, EXPECTED, OTHER, SKIP_DIRS, Snapshot, SuiteProfile
+from .base import (
+    ACTUAL,
+    DIFF,
+    EXPECTED,
+    OTHER,
+    SKIP_DIRS,
+    NamingProfile,
+    Snapshot,
+    SuiteProfile,
+)
 from .builtin import DEFAULT, FALLBACK, PROFILES
 
-__all__ = ["SuiteProfile", "Snapshot", "PROFILES", "SKIP_DIRS",
+__all__ = ["SuiteProfile", "NamingProfile", "Snapshot", "PROFILES", "SKIP_DIRS",
            "ACTUAL", "EXPECTED", "DIFF", "OTHER",
            "get", "ids", "choices", "detect", "forget", "resolve", "for_runner"]
 

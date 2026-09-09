@@ -456,7 +456,7 @@ class FileBaselineStore(BaselineStore):
         историю зон. Паспорт эталона — не то место, где можно позволить себе
         полузапись.
         """
-        from ..zones import normalize
+        from ..core.regions import normalize
 
         # `normalize` до замка: разбирать ввод, держа каталог запертым, незачем,
         # а ошибка в зоне должна прилетать вызывающему, а не оставлять замок.
@@ -493,7 +493,7 @@ class FileBaselineStore(BaselineStore):
             return None
         mask = rec.stability_mask
         if rec.ignore_boxes:
-            from ..zones import mask as zone_mask
+            from ..core.regions import mask as zone_mask
 
             boxes_mask, _ = zone_mask(shape, rec.ignore_boxes, baseline_dom=rec.dom)
             mask = boxes_mask if mask is None else _noise.merge_masks(mask, boxes_mask)

@@ -141,7 +141,7 @@ class BranchBaselineStore(BaselineStore):
             return None
         mask = record.stability_mask
         if record.ignore_boxes:
-            from ..zones import mask as zone_mask
+            from ..core.regions import mask as zone_mask
 
             boxes, _ = zone_mask(shape, record.ignore_boxes, baseline_dom=record.dom)
             mask = boxes if mask is None else _noise.merge_masks(mask, boxes)
