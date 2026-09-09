@@ -10,12 +10,10 @@
 
 from __future__ import annotations
 
-import os
 import time
 
 import numpy as np
 
-from ..config import DiffConfig
 from ..models import ChangeKind, CompareResult, DiffRegion, Verdict
 from . import align as _align
 from . import antialias as _aa
@@ -23,37 +21,27 @@ from . import classify as _cls
 from . import color as _color
 from . import segment as _seg
 from . import structure as _struct
+from .settings import DiffConfig
 
 
 class ImageTooLarge(ValueError):
-    """Кадр больше того, что мы согласны разложить в памяти."""
+    """A frame larger than we agree to unfold in memory."""
 
 
-#  Сколько пикселей мы беремся сравнивать.
-#
-#  Считать надо не в байтах PNG, а здесь: сравнение разворачивает кадр в
-#  несколько массивов float32 размером H×W (и H×W×3 для Lab). Полностраничный
-#  снимок 1440×20000 — это 28 Мпикс, то есть под каждый Lab-массив уходит около
-#  350 МБ, а их в каскаде два, плюс карта ΔE, плюс карта SSIM. Три таких
-#  сравнения параллельно (`MAX_PARALLEL` у фоновых задач ровно три) — и машина
-#  уходит в своп или процесс убивает OOM-killer.
-#
-#  Убитый по памяти процесс — худший из возможных отказов: он не пишет в лог
-#  ничего, прогон просто исчезает, и человек ищет причину где угодно, кроме
-#  размера снимка. Поэтому предел явный, а сообщение называет и размер, и
-#  переменную.
-#
-#  80 Мпикс — это 1920×41666: полная страница любой разумной высоты проходит,
-#  а «случайно сняли карту тайлов на 200 мегапикселей» — нет.
-MAX_PIXELS = int(os.getenv("VISTEST_ENGINE_MAX_PIXELS", str(80_000_000)))
+def _check_size(image: np.ndarray, what: str, limit: int) -> None:
+    """The memory guard, before the first allocation of the cascade.
 
-
-def _check_size(image: np.ndarray, what: str) -> None:
+    The limit arrives as an argument — `DiffConfig.max_pixels`, like every
+    other engine parameter. It used to be a module-level constant read from
+    the environment at import time, which made it the one piece of global
+    state left in the core and meant a test could only change it by patching
+    the module. Reasoning about the number itself lives with the field.
+    """
     h, w = image.shape[:2]
-    if MAX_PIXELS and h * w > MAX_PIXELS:
+    if limit and h * w > limit:
         raise ImageTooLarge(
             f"{what} is {w}×{h} = {h * w // 1_000_000} Mpx, and the engine "
-            f"limit is {MAX_PIXELS // 1_000_000} Mpx. Comparing it would need "
+            f"limit is {limit // 1_000_000} Mpx. Comparing it would need "
             "gigabytes of memory. Capture a smaller area, or raise "
             "VISTEST_ENGINE_MAX_PIXELS deliberately.")
 
@@ -78,9 +66,9 @@ def compare(
     t0 = time.perf_counter()
     cfg = cfg or DiffConfig()
 
-    # До первого выделения памяти: дальше по каскаду отказ уже поздний.
-    _check_size(expected_rgb, "the baseline")
-    _check_size(actual_rgb, "the screenshot")
+    # Before the first allocation: further down the cascade a refusal is late.
+    _check_size(expected_rgb, "the baseline", cfg.max_pixels)
+    _check_size(actual_rgb, "the screenshot", cfg.max_pixels)
 
     res = CompareResult(name=name, verdict=Verdict.PASS)
     res.size_expected = (int(expected_rgb.shape[1]), int(expected_rgb.shape[0]))
