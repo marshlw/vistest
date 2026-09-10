@@ -231,3 +231,108 @@ def test_result_is_json_serializable(base):
 
     r = strip_internal(_c(base, syn.regress_button_color(base)))
     json.loads(r.to_json())
+
+
+# --------------------------------------------------------------------------- #
+#  What a result is allowed to contain
+#
+#  This section exists because of one live run: eleven tests on somebody else's
+#  project, a screenshot that legitimately differed on the fifth, and the whole
+#  session gone with `TypeError: Object of type ndarray is not JSON
+#  serializable` raised from inside a report hook.
+#
+#  The cause was not a metric. `compare` hands the renderer four full-frame
+#  arrays, and it used to hand them over inside `CompareResult.artifacts` —
+#  a field declared `dict[str, str]`, serialised into every report, with a
+#  `# type: ignore[assignment]` on each write. Every caller in the package
+#  stripped them before serialising; the library-mode caller, added later, did
+#  not, because nothing in the type said it had to.
+#
+#  So the checks below are about the shape of a result, not about one field:
+#  every metric a plain Python number, `artifacts` only strings, and the whole
+#  thing serialisable with a bare `json.dumps` — no fallback encoder involved.
+# --------------------------------------------------------------------------- #
+_REGION_NUMBERS = ("x", "y", "w", "h", "severity", "de_mean", "de_max",
+                   "ssim_local", "pixel_count", "fill_ratio", "moved_dx",
+                   "moved_dy", "match_score", "edge_density")
+_RESULT_NUMBERS = ("ssim_global", "de_mean", "de_p95", "changed_pixels",
+                   "total_pixels", "changed_area_pct", "max_severity",
+                   "align_dx", "align_dy", "duration_ms")
+
+
+def _plain(value) -> bool:
+    """A Python int or float, and not a numpy anything wearing that face."""
+    return type(value) in (int, float, bool)
+
+
+@pytest.mark.parametrize("mutate", [
+    syn.regress_button_color,
+    syn.regress_button_removed,
+    syn.regress_layout_moved,          # the MOVED path: dx, dy, match_score
+    syn.regress_tiny_icon,
+    syn.regress_taller_page,           # sizes differ, so padding is involved
+])
+def test_every_metric_of_a_real_comparison_is_a_plain_number(base, mutate):
+    """A metric holding an array is a wrong metric, not a serialisation detail.
+
+    Everything that compares one of these against a threshold would be
+    comparing something else — so this is checked on the values, before any
+    question of JSON comes up.
+    """
+    r = _c(base, mutate(base))
+
+    for field in _RESULT_NUMBERS:
+        assert _plain(getattr(r, field)), (field, type(getattr(r, field)))
+    for pair in (r.size_expected, r.size_actual):
+        assert all(_plain(v) for v in pair), pair
+
+    for region in [*r.regions, *r.suppressed]:
+        for field in _REGION_NUMBERS:
+            value = getattr(region, field)
+            assert _plain(value), (field, type(value), region)
+        for field in ("perceptual_distance", "gate_probability", "region_index"):
+            value = getattr(region, field)
+            assert value is None or _plain(value), (field, type(value))
+
+
+@pytest.mark.parametrize("mutate", [syn.regress_button_color,
+                                    syn.regress_promo_gone])
+def test_a_result_serialises_with_a_bare_json_dumps(base, mutate):
+    """No fallback encoder, no cleanup call, nothing to remember.
+
+    `to_json` has a `default=` safety net, and it must stay — but a test that
+    went through it would pass just as happily with arrays in the result, which
+    is exactly what nobody noticed the first time.
+    """
+    import json
+
+    r = _c(base, mutate(base))
+
+    json.dumps(r.to_dict())            # deliberately without `default=`
+    assert json.loads(r.to_json())["name"] == "t"
+
+    assert all(isinstance(v, str) for v in r.artifacts.values()), r.artifacts
+    assert not any(k.startswith("_") for k in r.artifacts), r.artifacts
+
+
+def test_the_maps_are_handed_over_and_can_be_released(base):
+    """The renderer needs them; everyone else needs them gone.
+
+    `strip_internal` is no longer what makes a result serialisable — it is what
+    stops four screenshot-sized arrays being held for the lifetime of the
+    result, which in a suite of two hundred is the difference between a run and
+    an out-of-memory kill.
+    """
+    from vistest.core.comparator import strip_internal
+
+    r = _c(base, syn.regress_button_color(base))
+    assert set(r.maps) >= {"expected", "aligned_actual", "de_map", "mask"}
+    assert r.maps["de_map"].shape[:2] == r.maps["mask"].shape[:2]
+
+    import json
+
+    json.dumps(r.to_dict())            # serialisable even with the maps present
+
+    strip_internal(r)
+    assert r.maps == {}
+    json.dumps(r.to_dict())

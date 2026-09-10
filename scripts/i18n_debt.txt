@@ -6,12 +6,12 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 12740 lines in 220 files.
+# 12770 lines in 220 files.
 
 52	.github/workflows/ci.yml
 57	.gitlab-ci.example.yml
 7	.vistest/secrets.env.example
-291	CHANGELOG.md
+321	CHANGELOG.md
 1	README.md
 1	SECURITY.md
 280	VISTEST_AUDIT_3.md

@@ -37,6 +37,43 @@ class Verdict(str, Enum):
     ERROR = "error"
 
 
+#  Above this many elements an array is described rather than written out.
+#  A full-page ΔE map is 1440x20000 floats: as nested JSON lists that is
+#  hundreds of megabytes attached to a test report, which is its own outage.
+_MAX_INLINE_ELEMENTS = 64
+
+
+def _json_default(value):
+    """Fallback encoder for values json does not know.
+
+    Metrics travel through numpy on their way here, and a numpy scalar or array
+    is not JSON-serialisable. This used to raise from ``to_json`` — which is
+    called while attaching the diff to a report, i.e. exactly when a test has
+    already failed and the person most needs to see something. A serialiser
+    feeding a report must not be able to fail; anything unknown is degraded to
+    a plain value rather than raising.
+
+    Note this is a safety net, not a licence: a metric field holding an array
+    means the cascade put the wrong thing there, and that is a separate bug.
+
+    Which is why a large array is described, not unrolled. Writing one out
+    would replace a crash with a report nobody can open, and the description
+    says plainly what was found and where — the point of a safety net is to
+    make the underlying mistake visible, not comfortable.
+    """
+    shape = getattr(value, "shape", None)
+    size = getattr(value, "size", None)
+    if shape is not None and size is not None and size > _MAX_INLINE_ELEMENTS:
+        return (f"<{type(value).__name__} shape={tuple(shape)} "
+                f"dtype={getattr(value, 'dtype', '?')} — not a scalar, this "
+                "field was filled with the wrong thing>")
+
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):          # numpy arrays and numpy scalars alike
+        return tolist()
+    return str(value)
+
+
 @dataclass
 class DiffRegion:
     x: int
@@ -106,8 +143,26 @@ class CompareResult:
     size_changed: bool = False
 
     duration_ms: int = 0
+    #  name -> path on disk. Strings, and only strings: this dictionary is
+    #  serialised into every report.
     artifacts: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+
+    #  The maps the cascade produced, handed to the renderer and to `doctor`:
+    #  `expected`, `aligned_actual`, `de_map`, `mask`. Full-frame numpy arrays,
+    #  never serialised, and dropped by `strip_internal` once the pictures are
+    #  drawn.
+    #
+    #  They used to live in `artifacts` under underscore-prefixed keys, with a
+    #  `# type: ignore[assignment]` on every write. It worked for as long as
+    #  every caller remembered to strip them first — and the day one did not,
+    #  `to_json` raised `Object of type ndarray is not JSON serializable` from
+    #  inside a report hook, which pytest turns into INTERNALERROR: a run of
+    #  eleven tests died at the fifth because one screenshot legitimately
+    #  differed. A field that says `dict[str, str]` and holds arrays is a trap
+    #  set for whoever writes the next caller.
+    maps: dict[str, Any] = field(default_factory=dict, repr=False,
+                                 compare=False)
 
     @property
     def failed(self) -> bool:
@@ -144,7 +199,8 @@ class CompareResult:
         }
 
     def to_json(self, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False,
+                          default=_json_default)
 
     def summary(self) -> str:
         """Человекочитаемое сообщение для AssertionError / лога."""

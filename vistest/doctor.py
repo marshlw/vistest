@@ -303,7 +303,7 @@ def analyze(frames: list[Frame], *, cfg: VisTestConfig | None = None,
         rep.suppressed_max_severity = max(rep.suppressed_max_severity,
                                           sup.max_severity)
 
-        m = raw.artifacts.get("_mask")
+        m = raw.maps.get("mask")
         if isinstance(m, np.ndarray):
             inter |= _fit(m.astype(bool), shape)
 

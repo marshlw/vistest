@@ -35,11 +35,22 @@ classifiers = [
 # any module reachable from `import vistest` starts pulling something outside
 # it. The second check is the one that matters: a dependency list cannot notice
 # an import.
+#  Upper bounds by major version, and they are not superstition. OpenCV 5.0
+#  and numpy 2.x reached a user's machine before they reached this repository:
+#  the cascade survived, but finding that out from somebody else's red run is
+#  the wrong order. An unbounded requirement means the next major release of
+#  any of these ships straight into every project that installs vistest, on the
+#  day it is published.
+#
+#  The ceilings are raised deliberately, after the `latest-deps` job in CI has
+#  gone red and somebody has looked at why. That job installs the newest
+#  resolvable version of each of these on purpose, so a new major breaks a
+#  build we own rather than a run we do not.
 dependencies = [
-    "numpy>=1.24",
-    "opencv-python-headless>=4.8",
-    "pillow>=10.0",
-    "pyyaml>=6.0",
+    "numpy>=1.24,<3",
+    "opencv-python-headless>=4.8,<6",
+    "pillow>=10.0,<13",
+    "pyyaml>=6.0,<7",
 ]
 
 [project.optional-dependencies]

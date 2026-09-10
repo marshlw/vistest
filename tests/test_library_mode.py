@@ -345,3 +345,101 @@ def test_a_part_that_cannot_be_read_is_counted_out_loud(project: Path):
 
     body = (project / ".vistest" / "report" / "index.html").read_text("utf-8")
     assert "could not be read into this report" in body
+
+
+# --------------------------------------------------------------------------- #
+#  Blast radius: our hooks run inside somebody else's session
+# --------------------------------------------------------------------------- #
+#  Recorded from a live trial on a foreign project. The fifth of eleven tests
+#  found a real difference, the report hook raised while attaching the diff,
+#  and because that hook is a hookwrapper pytest turned it into INTERNALERROR:
+#  the session died mid-run, the remaining six tests never ran, and no report
+#  was written. A screenshot differing is the most ordinary thing that can
+#  happen to this tool, and it cost a whole run.
+#
+#  What these tests pin is not the specific exception — that one is fixed at
+#  its source — but the property: whatever our decoration does, the session
+#  survives it.
+BREAK_REPORT_HOOK = '''
+import vistest.pytest_plugin as plugin
+
+
+def _explode(result):
+    raise RuntimeError("attaching the diff went wrong")
+
+
+plugin._attach_allure_result = _explode
+'''
+
+BREAK_REPORT_BUILD = '''
+import vistest.report.library as report
+
+
+def _explode(*args, **kwargs):
+    raise RuntimeError("the report could not be built")
+
+
+report.build = _explode
+'''
+
+FAILING_TEST = '''
+import os
+
+import numpy as np
+
+from vistest import expect_screenshot
+from vistest.core import pngio
+
+
+def _screenshot():
+    frame = np.full((80, 120, 3), 40, np.uint8)
+    if os.environ.get("DEMO_STATE") == "after":
+        frame[10:50, 10:90] = 230
+    return pngio.encode(frame)
+
+
+def test_one():
+    expect_screenshot(_screenshot(), "one.png")
+
+
+def test_two():
+    expect_screenshot(_screenshot(), "two.png")
+
+
+def test_three():
+    assert True
+'''
+
+
+def test_a_broken_report_hook_does_not_kill_the_session(project: Path):
+    """The original outage, reproduced through the hook that caused it."""
+    (project / "tests" / "test_visual.py").write_text(FAILING_TEST, "utf-8")
+    (project / "conftest.py").write_text(BREAK_REPORT_HOOK, "utf-8")
+
+    assert run(project, "--vistest-update")[0] == 0          # baselines first
+
+    code, output = run(project, state="after")
+
+    assert "INTERNALERROR" not in output, output
+    assert code == 1, output              # tests failed, the session did not
+    #  Every test ran: two visual failures and the one that does not compare.
+    assert "2 failed, 1 passed" in output, output
+    assert "could not be attached to the report" in output, output
+
+
+def test_a_report_that_cannot_be_built_does_not_kill_the_session(project: Path):
+    """`pytest_sessionfinish` runs after the last test — and can still lose it.
+
+    Nothing measured is at stake by then, which is exactly why an exception
+    here is intolerable: it would turn a run that passed into a run that reads
+    as broken.
+    """
+    (project / "tests" / "test_visual.py").write_text(FAILING_TEST, "utf-8")
+    (project / "conftest.py").write_text(BREAK_REPORT_BUILD, "utf-8")
+
+    code, output = run(project, "--vistest-update")
+
+    assert "INTERNALERROR" not in output, output
+    assert code == 0, output
+    assert "3 passed" in output, output
+    assert "the report could not be assembled" in output, output

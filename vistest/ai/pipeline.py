@@ -80,7 +80,12 @@ class AIPipeline:
                 changes = dom_changes(self.dom_expected, self.dom_actual)
                 if changes.get("counts"):
                     c = changes["counts"]
-                    result.artifacts["_dom_changes"] = changes  # type: ignore[assignment]
+                    #  Into `maps`, like every other non-string the cascade
+                    #  produces. Nothing reads this yet — the counts reach a
+                    #  person through the note below — but a dict parked in a
+                    #  field typed `dict[str, str]` is the same trap that took
+                    #  a run down once already.
+                    result.maps["dom_changes"] = changes
                     if any(c.values()):
                         result.notes.append(
                             f"DOM: +{c['added']} elements, -{c['removed']}, "
