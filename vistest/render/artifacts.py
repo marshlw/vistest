@@ -53,10 +53,10 @@ def render_all(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    exp = res.artifacts.get("_expected")
-    act = res.artifacts.get("_aligned_actual")
-    de_map = res.artifacts.get("_de_map")
-    mask = res.artifacts.get("_mask")
+    exp = res.maps.get("expected")
+    act = res.maps.get("aligned_actual")
+    de_map = res.maps.get("de_map")
+    mask = res.maps.get("mask")
     if exp is None or act is None:
         return {}
 

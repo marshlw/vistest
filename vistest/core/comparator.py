@@ -188,10 +188,12 @@ def compare(
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
     # Keep maps for artifact rendering (not serialized to JSON).
-    res.artifacts["_de_map"] = de_map          # type: ignore[assignment]
-    res.artifacts["_mask"] = cleaned           # type: ignore[assignment]
-    res.artifacts["_aligned_actual"] = act_aligned  # type: ignore[assignment]
-    res.artifacts["_expected"] = exp           # type: ignore[assignment]
+    #  Into `maps`, which is typed for arrays, and not into `artifacts`, which
+    #  is typed for paths and is serialised into every report.
+    res.maps["de_map"] = de_map
+    res.maps["mask"] = cleaned
+    res.maps["aligned_actual"] = act_aligned
+    res.maps["expected"] = exp
     return res
 
 
@@ -247,7 +249,20 @@ def _fit_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
 
 
 def strip_internal(res: CompareResult) -> CompareResult:
-    """Remove numpy arrays from artifacts before serialization."""
+    """Let go of the full-frame maps once the pictures have been drawn.
+
+    Not a serialisation fix any more — `maps` is not serialised, so forgetting
+    this call can no longer produce a broken report. What it still buys is
+    memory: four arrays the size of the screenshot, held for as long as anybody
+    holds the result. In a suite of two hundred snapshots, with the failures
+    kept inside exceptions, that is the difference between a run and an
+    out-of-memory kill.
+
+    The underscore-prefixed keys are still swept out of `artifacts` for results
+    that came from an older version of the engine — through a pickle, a
+    long-lived worker, or a caller that built one by hand.
+    """
+    res.maps.clear()
     for k in list(res.artifacts):
         if k.startswith("_"):
             res.artifacts.pop(k)

@@ -196,12 +196,21 @@ def expect_screenshot(
                     call=call_patch))
 
     boxes = [*(passport.ignore_boxes if passport else ()), *shot.boxes]
-    from ..core.comparator import compare
+    from ..core.comparator import compare, strip_internal
 
     result = compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
                      ignore_mask=_ignore_mask(expected_rgb.shape[:2], boxes),
                      ai_hooks=_ai_hooks(ctx))
     result.duration_ms = _ms(started)
+
+    #  Let go of the full-frame maps. `compare` hands back four arrays the size
+    #  of the screenshot for whoever is going to draw pictures from them;
+    #  nothing here does — the diff is drawn from the regions — and this result
+    #  is about to be returned to somebody's test and, on a failure, held
+    #  inside the exception for as long as pytest keeps it. Two hundred
+    #  snapshots' worth of that is an out-of-memory kill, not a leak nobody
+    #  notices.
+    strip_internal(result)
 
     from ..report.library import describe
 

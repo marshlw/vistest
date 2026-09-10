@@ -34,6 +34,7 @@ that the report is built once per worker, each time from a partial run.
 from __future__ import annotations
 
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -101,6 +102,38 @@ def _is_worker(config) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+#  Advisory work
+#
+#  Every hook this module registers runs inside somebody else's test run, and
+#  most of what they do is decoration: clearing yesterday's rows, assembling a
+#  report, printing a summary. An exception out of any of them is not a failed
+#  test — pytest turns it into INTERNALERROR and the session dies where it
+#  stands, with the remaining tests unreported and no report written. That is
+#  the shape of the outage this wrapper exists to prevent: eleven tests, one
+#  screenshot legitimately different, and the run ends at the fifth.
+#
+#  So the rule the package already follows for optional parts applies to its
+#  own hooks first: an optional piece failing is a warning and the run carries
+#  on. The one deliberate exception is a broken configuration, which is raised
+#  from `pytest_configure` on purpose — a suite running under thresholds
+#  nobody chose is worse than a suite that refuses to start, and it fails
+#  before any test has run rather than in the middle.
+# --------------------------------------------------------------------------- #
+@contextmanager
+def _advisory(what: str):
+    """Do this, or warn about it — but never take the session down."""
+    try:
+        yield
+    except Exception as exc:          # noqa: BLE001 - deliberately everything
+        import warnings
+
+        from .library.errors import VisTestWarning
+
+        warnings.warn(f"vistest: {what} ({exc!r}). The tests themselves are "
+                      "unaffected.", VisTestWarning, stacklevel=3)
+
+
+# --------------------------------------------------------------------------- #
 #  Wiring
 # --------------------------------------------------------------------------- #
 def pytest_configure(config):
@@ -130,17 +163,32 @@ def pytest_configure(config):
         #  at session start because under xdist the controller configures
         #  before any worker exists — clearing later would race the workers
         #  that have already begun writing.
-        shutil.rmtree(ctx.parts_dir, ignore_errors=True)
+        #
+        #  Advisory: a directory that will not delete (a file open in a viewer,
+        #  a permission) costs a stale row in the report, not the run.
+        with _advisory(f"could not clear {ctx.parts_dir}"):
+            shutil.rmtree(ctx.parts_dir, ignore_errors=True)
 
 
 def pytest_unconfigure(config):
-    from .library import context as _context
+    with _advisory("could not release the library context"):
+        from .library import context as _context
 
-    _context.uninstall()
+        _context.uninstall()
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Assemble the report. Once, in the process that owns the run."""
+    """Assemble the report. Once, in the process that owns the run.
+
+    The whole body is advisory. It runs after the last test, so an exception
+    here loses nothing that was measured — but pytest still turns it into
+    INTERNALERROR, and a run that passed would be reported as broken.
+    """
+    with _advisory("the report could not be assembled"):
+        _finish(session, exitstatus)
+
+
+def _finish(session, exitstatus) -> None:
     config = session.config
     ctx = getattr(config, "_vistest_context", None)
     if ctx is None or _is_worker(config):
@@ -152,18 +200,8 @@ def pytest_sessionfinish(session, exitstatus):
 
     from .report.library import build
 
-    try:
-        parts = build(ctx.parts_dir, ctx.report,
-                      title=f"VisTest — {ctx.root.name}")
-    except OSError as e:
-        import warnings
-
-        from .library.errors import VisTestWarning
-
-        warnings.warn(f"vistest: could not write the report to {ctx.report} "
-                      f"({e})", VisTestWarning, stacklevel=1)
-        return
-
+    parts = build(ctx.parts_dir, ctx.report,
+                  title=f"VisTest — {ctx.root.name}")
     config._vistest_parts = parts
 
     if parts.collisions and exitstatus == 0:
@@ -177,6 +215,18 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Print where things went. Advisory to the last line.
+
+    This is the final hook of the run and it prints; there is nothing here
+    worth a session for. It has also been handed `parts` assembled from files
+    written by other processes, which is exactly the kind of input that is
+    occasionally not what it claims.
+    """
+    with _advisory("the summary could not be printed"):
+        _summary(terminalreporter, exitstatus, config)
+
+
+def _summary(terminalreporter, exitstatus, config) -> None:
     parts = getattr(config, "_vistest_parts", None)
     ctx = getattr(config, "_vistest_context", None)
     runs_root = Path(config.rootpath) / ".vistest" / "runs"
@@ -316,8 +366,27 @@ def _browser_name(page) -> str:
 # --------------------------------------------------------------------------- #
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
+    """Attach the visual diff to the report — and never do worse than that.
+
+    This is a hookwrapper, so an exception raised here does not fail one test:
+    pytest turns it into INTERNALERROR and the whole session dies, mid-run,
+    with every remaining test unreported. Decorating a report is the least
+    important thing this package does, and it is not allowed to cost a run.
+    Everything below is therefore advisory: it either decorates, or warns.
+    """
     outcome = yield
-    report = outcome.get_result()
+    try:
+        report = outcome.get_result()
+    except BaseException:
+        #  Somebody else's hook failed, and pytest is already carrying that
+        #  exception. Reading it here must not turn it into ours, and there is
+        #  no report to decorate anyway.
+        return
+    with _advisory("the visual diff could not be attached to the report"):
+        _describe_visual_failure(report, call)
+
+
+def _describe_visual_failure(report, call) -> None:
     if call.when != "call" or call.excinfo is None:
         return
 
