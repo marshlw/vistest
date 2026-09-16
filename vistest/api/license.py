@@ -20,7 +20,7 @@ that means five slightly different things by the third release.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, HTTPException, Request
 
 from .. import licensing
 
@@ -124,126 +124,6 @@ def check_runs() -> None:
 # --------------------------------------------------------------------------- #
 #  Routes
 # --------------------------------------------------------------------------- #
-# --------------------------------------------------------------------------- #
-#  Перенос эталонов между инсталляциями
-#
-#  Живёт рядом с лицензией не по смыслу, а по расписанию: оба роутера
-#  маленькие, и заводить третий модуль ради двух ручек — плодить файлы. Если
-#  перенос обрастёт (выборочный импорт из интерфейса, предпросмотр картинок),
-#  он переедет в свой.
-# --------------------------------------------------------------------------- #
-MAX_IMPORT_BYTES = 500 * 1024 * 1024
-
-
-def _baselines_root():
-    import os
-    from pathlib import Path
-
-    from ..config import VisTestConfig
-
-    root = Path(os.getenv("VISTEST_ROOT", ".vistest"))
-    return root / VisTestConfig.load().paths.baselines
-
-
-@router.get("/api/baselines/export")
-def baselines_export(request: Request, project: str = "", platform: str = "",
-                     name: str = "", with_history: bool = False):
-    """Скачать выбранные эталоны одним архивом.
-
-    Право `reviewer`, а не `viewer`: эталоны — это содержимое снятых страниц,
-    то есть данные той системы, которую тестируют. Отдавать их одним файлом
-    тому, кому дали посмотреть на метрики, — не то же самое, что показать
-    картинку на экране.
-    """
-    import tempfile
-    from pathlib import Path
-
-    from fastapi.responses import FileResponse
-
-    from ..transfer import Selection, export
-    from .main import _require
-
-    _require(request, "reviewer", project or None)
-
-    selection = Selection(project=project.strip(), platform=platform.strip(),
-                          names=tuple(n for n in name.split(",") if n.strip()))
-    tmp = Path(tempfile.mkdtemp(prefix="vistest-export-")) / "baselines.tar.gz"
-    try:
-        info = export(tmp, baselines_root=_baselines_root(),
-                      selection=selection, with_history=with_history)
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e)) from None
-    if not info["count"]:
-        raise HTTPException(404, "Nothing matched the selection")
-
-    stamp = info["created_at"].replace(":", "").replace("-", "")
-    label = (project or "baselines").replace("/", "-")
-    return FileResponse(
-        tmp, media_type="application/gzip",
-        filename=f"vistest-{label}-{stamp}.tar.gz",
-        headers={"X-VisTest-Snapshots": str(info["count"])})
-
-
-@router.post("/api/baselines/import")
-async def baselines_import(request: Request,
-                           file: UploadFile = File(...),
-                           mode: str = Form("new"),
-                           project: str = Form(""),
-                           platform: str = Form(""),
-                           dry_run: bool = Form(False)):
-    """Влить присланный набор. `dry_run` отвечает «что будет», ничего не делая."""
-    import shutil
-    import tempfile
-    from pathlib import Path
-
-    from ..transfer import MODES, Selection, import_, inspect, plan
-    from .auth import audit
-    from .main import _require, db
-
-    user = _require(request, "reviewer", project or None)
-    if mode not in MODES:
-        raise HTTPException(400, f"mode must be one of: {', '.join(MODES)}")
-
-    tmpdir = Path(tempfile.mkdtemp(prefix="vistest-import-"))
-    archive = tmpdir / "incoming.tar.gz"
-    try:
-        written = 0
-        with archive.open("wb") as fh:
-            while chunk := await file.read(1024 * 1024):
-                written += len(chunk)
-                if written > MAX_IMPORT_BYTES:
-                    raise HTTPException(
-                        413, f"The archive is larger than "
-                             f"{MAX_IMPORT_BYTES // (1024 * 1024)} MB")
-                fh.write(chunk)
-
-        selection = Selection(project=project.strip(), platform=platform.strip())
-        try:
-            manifest = inspect(archive)
-            steps = plan(archive, baselines_root=_baselines_root(), mode=mode,
-                         selection=selection)
-        except (OSError, ValueError) as e:
-            raise HTTPException(400, str(e)) from None
-
-        if dry_run:
-            return {"dry_run": True, "made_by": manifest.get("version"),
-                    "created_at": manifest.get("created_at"), "plan": steps}
-
-        try:
-            result = import_(archive, baselines_root=_baselines_root(),
-                             mode=mode, selection=selection,
-                             who=user.get("login", ""))
-        except ValueError as e:
-            raise HTTPException(400, str(e)) from None
-
-        audit(db, user.get("login", ""), "baselines.imported",
-              manifest.get("created_at", ""), mode=mode,
-              **result["counts"])
-        return {"dry_run": False, "plan": steps, **result}
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
 @router.get("/api/license")
 def license_state(request: Request):
     """Everything the licence screen shows — and what the header banner reads."""

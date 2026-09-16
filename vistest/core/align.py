@@ -113,6 +113,79 @@ def align_images(
     return apply_shift(rgb_act, al.dx, al.dy), al
 
 
+#  Two matches count as "equally good" when the runner-up is within this much
+#  NCC of the winner. Template matching of a 16×16 radio button returns 0.999
+#  and 0.998 for two neighbouring radio buttons; picking the first is a coin
+#  toss dressed up as a measurement.
+AMBIGUITY_MARGIN = 0.03
+_MAX_PEAKS = 6
+#  Below this side a template carries too little to search a window with.
+MIN_SEARCH_SIDE = 6
+
+
+def _search(gray_exp, gray_act, bbox, search_px):
+    """-> (NCC surface, window origin) or None when a search is meaningless."""
+    if cv2 is None:
+        return None
+    x, y, w, h = bbox
+    H, W = gray_exp.shape[:2]
+    # Searching for a region nearly filling the screen is pointless (and expensive),
+    # but a 50%-of-screen limit would discard legitimate large blocks.
+    if w < MIN_SEARCH_SIDE or h < MIN_SEARCH_SIDE or w > W * 0.9 or h > H * 0.9:
+        return None
+
+    patch = gray_exp[y:y + h, x:x + w]
+    if patch.size == 0 or float(patch.std()) < 3.0:
+        # A uniform block will match anywhere — the result is meaningless.
+        return None
+
+    sx0, sy0 = max(0, x - search_px), max(0, y - search_px)
+    sx1, sy1 = min(W, x + w + search_px), min(H, y + h + search_px)
+    window = gray_act[sy0:sy1, sx0:sx1]
+    if window.shape[0] < h or window.shape[1] < w:
+        return None
+    return cv2.matchTemplate(window, patch, cv2.TM_CCOEFF_NORMED), (sx0, sy0)
+
+
+def find_shift_candidates(
+    gray_exp: np.ndarray,
+    gray_act: np.ndarray,
+    bbox: tuple[int, int, int, int],
+    *,
+    search_px: int = 64,
+    margin: float = AMBIGUITY_MARGIN,
+) -> list[tuple[int, int, float]]:
+    """Every place in actual where the region's content fits about as well
+    as the best one. -> [(dx, dy, ncc), ...], best first; empty if no search.
+
+    Peaks are separated by non-maximum suppression over half the region's
+    size, so one match smeared over two neighbouring pixels counts once.
+    More than one entry means the region is ambiguous: a row of identical
+    checkboxes, radio buttons, table cells. The caller must not pick one.
+    """
+    found = _search(gray_exp, gray_act, bbox, search_px)
+    if found is None:
+        return []
+    surface, (sx0, sy0) = found
+    x, y, w, h = bbox
+    surface = surface.copy()
+    rx, ry = max(1, w // 2), max(1, h // 2)
+
+    peaks: list[tuple[int, int, float]] = []
+    best = None
+    for _ in range(_MAX_PEAKS):
+        _, val, _, loc = cv2.minMaxLoc(surface)
+        val = float(val)
+        if best is None:
+            best = val
+        elif val < best - margin:
+            break
+        peaks.append((int(sx0 + loc[0] - x), int(sy0 + loc[1] - y), val))
+        lx, ly = loc
+        surface[max(0, ly - ry):ly + ry + 1, max(0, lx - rx):lx + rx + 1] = -1.0
+    return peaks
+
+
 def find_local_shift(
     gray_exp: np.ndarray,
     gray_act: np.ndarray,
@@ -123,33 +196,34 @@ def find_local_shift(
     """Find the region's content within the search window in actual.
 
     Answers: "Did this block change or just move?".
-    Returns (dx, dy, ncc). ncc close to 1 → this is MOVED, not CONTENT.
+    Returns (dx, dy, ncc) of the best match. ncc close to 1 → this is MOVED,
+    not CONTENT — unless `find_shift_candidates` finds a second match as good,
+    which is what the classifier checks.
     """
+    peaks = find_shift_candidates(gray_exp, gray_act, bbox,
+                                  search_px=search_px, margin=0.0)
+    return peaks[0] if peaks else (0, 0, 0.0)
+
+
+def match_at(
+    gray_exp: np.ndarray,
+    gray_act: np.ndarray,
+    bbox: tuple[int, int, int, int],
+    dx: int,
+    dy: int,
+) -> float:
+    """NCC of the region against actual at one given offset (0.0 if outside)."""
     if cv2 is None:
-        return 0, 0, 0.0
-
+        return 0.0
     x, y, w, h = bbox
-    H, W = gray_exp.shape[:2]
-    # Searching for a region nearly filling the screen is pointless (and expensive),
-    # but a 50%-of-screen limit would discard legitimate large blocks.
-    if w < 6 or h < 6 or w > W * 0.9 or h > H * 0.9:
-        return 0, 0, 0.0
-
+    H, W = gray_act.shape[:2]
+    if x + dx < 0 or y + dy < 0 or x + dx + w > W or y + dy + h > H:
+        return 0.0
     patch = gray_exp[y:y + h, x:x + w]
-    if patch.size == 0 or float(patch.std()) < 3.0:
-        # A uniform block will match anywhere — the result is meaningless.
-        return 0, 0, 0.0
-
-    sx0, sy0 = max(0, x - search_px), max(0, y - search_px)
-    sx1, sy1 = min(W, x + w + search_px), min(H, y + h + search_px)
-    window = gray_act[sy0:sy1, sx0:sx1]
-    if window.shape[0] < h or window.shape[1] < w:
-        return 0, 0, 0.0
-
-    res = cv2.matchTemplate(window, patch, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, max_loc = cv2.minMaxLoc(res)
-    found_x, found_y = sx0 + max_loc[0], sy0 + max_loc[1]
-    return int(found_x - x), int(found_y - y), float(max_val)
+    target = gray_act[y + dy:y + dy + h, x + dx:x + dx + w]
+    if patch.size == 0 or float(patch.std()) < 3.0 or float(target.std()) < 1e-6:
+        return 0.0
+    return float(cv2.matchTemplate(target, patch, cv2.TM_CCOEFF_NORMED)[0, 0])
 
 
 def reconcile_sizes(

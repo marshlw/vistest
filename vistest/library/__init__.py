@@ -271,25 +271,39 @@ def _fresh_result(key: SnapshotKey, meta: SnapshotMeta,
 
 
 def _ai_hooks(ctx):
-    """The AI layer if it is available, nothing if it is not.
+    """Attribution and installed plugins if available, nothing if not.
 
-    An optional part: `vistest[ai]` may not be installed, the ONNX model may be
-    absent, the gate's coefficients may fail to load. None of that is a reason
-    to stop somebody's test run, so it warns once and the cascade runs without
-    it — the verdict is then the engine's own, which is what it always was.
+    Optional parts: a plugin may be missing, broken or switched off. None of
+    that is a reason to stop somebody's test run, so it warns once and the
+    cascade runs without it — the verdict is then the engine's own, which is
+    what it always was. `fail_on` comes from the context, where the pytest flag
+    has already been folded over `vistest.yaml`.
     """
     try:
         from ..ai.pipeline import AIPipeline
     except ImportError:
         return None
     try:
-        return AIPipeline(ctx.config.ai)
+        from ..plugins.loader import ensure_loaded
+
+        plugins = ctx.plugins_config
+        ensure_loaded(options=dict(plugins.options),
+                      disabled=_disabled(plugins))
+        return AIPipeline(ctx.config.ai, plugins=plugins)
     except Exception as e:  # pragma: no cover - depends on optional models
         import warnings
 
         warnings.warn(f"vistest: the AI layer is not available ({e}); "
                       "comparing without it", VisTestWarning, stacklevel=3)
         return None
+
+
+def _disabled(plugins) -> frozenset:
+    if plugins.enabled:
+        return frozenset(plugins.disabled)
+    from ..plugins.loader import installed_names
+
+    return frozenset(installed_names())
 
 
 def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
@@ -332,18 +346,25 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         entry["metrics"] = {
             "max_severity": round(float(result.max_severity), 2),
             "changed_area_pct": round(float(result.changed_area_pct), 4),
+            "region_area_pct": round(float(result.region_area_pct), 4),
+            "unassigned_pixels": int(result.unassigned_pixels),
+            "regions_total": len(result.regions),
             "ssim_global": round(float(result.ssim_global), 6),
             "de_mean": round(float(result.de_mean), 4),
         }
         entry["size"] = {"expected": list(result.size_expected),
                          "actual": list(result.size_actual),
                          "changed": bool(result.size_changed)}
-        entry["regions"] = [
-            {"kind": getattr(r.kind, "value", str(r.kind)),
-             "severity": round(float(r.severity), 2),
-             "x": r.x, "y": r.y, "w": r.w, "h": r.h,
-             "selector": r.selector or ""}
-            for r in list(result.regions)[:12]]
+        entry["regions"] = [_region_row(r) for r in list(result.regions)[:12]]
+        #  Everything set aside, counted in full and listed up to a limit. The
+        #  pytest summary adds these counts up across the run: a difference
+        #  the engine decided not to count is still reported.
+        from ..plugins.runtime import count_suppressed
+
+        suppressed = list(result.suppressed)
+        entry["suppressed_count"] = len(suppressed)
+        entry["suppressed_by_reason"] = count_suppressed(suppressed)
+        entry["suppressed"] = [_region_row(r) for r in suppressed[:MAX_LISTED]]
     try:
         write_part(ctx.parts_dir, entry)
     except OSError as e:  # pragma: no cover - a report row is not the verdict
@@ -351,6 +372,20 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
 
         warnings.warn(f"vistest: could not write the report entry for "
                       f"{key.name} ({e})", VisTestWarning, stacklevel=3)
+
+
+#  Suppressed regions listed per check in the report. The count is never cut.
+MAX_LISTED = 50
+
+
+def _region_row(r) -> dict:
+    return {"kind": getattr(r.kind, "value", str(r.kind)),
+            "severity": round(float(r.severity), 2),
+            "x": r.x, "y": r.y, "w": r.w, "h": r.h,
+            "selector": r.selector or "",
+            "score": r.score,
+            "annotations": list(r.annotations or []),
+            "suppressed_by": r.suppressed_by}
 
 
 def ctx_nodeid() -> str:

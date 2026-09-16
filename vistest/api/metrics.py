@@ -109,7 +109,8 @@ def summary(db: Database, project: str, days: int = 30) -> dict:
         "SELECT rg.kind, COUNT(*) AS n, AVG(rg.severity) AS avg_severity"
         "  FROM region rg JOIN comparison c ON c.id = rg.comparison_id"
         "  JOIN run r ON r.id = c.run_id JOIN project p ON p.id = r.project_id"
-        f" WHERE {where} AND c.created_at >= datetime('now', ?)"
+        f" WHERE {where} AND rg.suppressed_by IS NULL"
+        "   AND c.created_at >= datetime('now', ?)"
         " GROUP BY rg.kind ORDER BY n DESC", p)
 
     trend = db.query(
@@ -493,7 +494,8 @@ def prometheus(db: Database) -> str:
                   f'verdict="{_label(r["verdict"])}"}} {r["n"]}')
 
     add("vistest_regions", "Detected regions by class", "gauge",
-        db.query("SELECT kind, COUNT(*) AS n FROM region GROUP BY kind"),
+        db.query("SELECT kind, COUNT(*) AS n FROM region"
+                 " WHERE suppressed_by IS NULL GROUP BY kind"),
         lambda r: f'vistest_regions{{kind="{_label(r["kind"])}"}} {r["n"]}')
 
     add("vistest_comparison_duration_ms", "Average comparison time", "gauge",

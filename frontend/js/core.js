@@ -107,6 +107,18 @@ async function api(p,opts){
   return ct.includes('json')?r.json():r.text();
 }
 
+/* What this installation can do beyond the core — `/api/capabilities`.
+   Asked once per page load. Anything missing or unreadable counts as false:
+   the interface hides what an installation does not have and says nothing
+   about it. */
+let _capabilities=null;
+function capabilities(){
+  if(!_capabilities){
+    _capabilities=api('/api/capabilities').catch(()=>({}));
+  }
+  return _capabilities;
+}
+
 /* «Я всё ещё на том экране, ради которого пошёл в сеть?»
 
    Каждый экран — это `await`, а адрес за время ожидания меняется: человек

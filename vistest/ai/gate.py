@@ -70,20 +70,9 @@ FEATURES = (
 ) + tuple(f"kind_{k}" for k in KINDS)
 
 
-# Жёсткие правила поверх модели. Модель обучена на синтетике и увидит не всё;
-# эти две границы не обсуждаются с ней вовсе, потому что цена ошибки за ними
-# несоизмерима с выигрышем. Крупный регион и сменившаяся геометрия страницы —
-# это то, ради чего визуальное тестирование существует.
-MAX_SUPPRESSED_AREA_FRAC = 0.20
-
-
-def guard(region, *, total_pixels: int, size_changed: bool) -> str:
-    """Причина, по которой регион нельзя подавлять никогда. Пусто — можно."""
-    if size_changed:
-        return "page geometry changed"
-    if total_pixels > 0 and (region.w * region.h) / total_pixels > MAX_SUPPRESSED_AREA_FRAC:
-        return f"region covers over {MAX_SUPPRESSED_AREA_FRAC:.0%} of the page"
-    return ""
+# The two safety rules that outrank any scorer live in the core now
+# (`vistest.plugins.runtime.guard`): they constrain every scorer, not only this
+# one. Re-exported for code that imported them from here.
 
 
 @dataclass
@@ -212,3 +201,88 @@ class RegionGate:
 def default_model_path() -> Path:
     """Модель, уезжающая вместе с пакетом."""
     return Path(__file__).with_name("region_gate.json")
+
+
+# --------------------------------------------------------------------------- #
+#  The gate behind the plugin contract
+# --------------------------------------------------------------------------- #
+def calibrate(value: float, boundary: float) -> float:
+    """Map `value` in [0, 1] so that `boundary` lands on 0.5, monotonically.
+
+    The plugin contract puts every scorer's decision boundary at 0.5; the gate
+    has its own threshold, chosen when the model was trained.
+    """
+    value = min(1.0, max(0.0, float(value)))
+    boundary = min(1.0 - 1e-6, max(1e-6, float(boundary)))
+    if value <= boundary:
+        #  At the boundary itself the gate suppressed; keep it on that side.
+        return min(0.5 * value / boundary, 0.4999)
+    return 0.5 + 0.5 * (value - boundary) / (1.0 - boundary)
+
+
+class GateScorer:
+    """`RegionScorer` and `RegionAnnotator` over `RegionGate`.
+
+    As a scorer it answers "how likely is this region real": one minus the
+    model's noise probability, calibrated so that the model's own threshold is
+    0.5. As an annotator it says which features pushed the estimate, for the
+    regions it scored in this thread — an estimate nobody can argue with is
+    the thing this model was built not to be.
+
+    Honours the `ai:` knobs it always had: `gate_enabled`, `gate_model_path`,
+    `gate_threshold`. Disabled, or with no readable model, it abstains.
+    """
+
+    name = "gate"
+
+    def __init__(self, gate: RegionGate | None = None):
+        import threading
+
+        self._fixed = gate
+        self._models: dict[str, RegionGate | None] = {}
+        self._lock = threading.Lock()
+        self._local = threading.local()
+
+    def _gate_for(self, settings) -> RegionGate | None:
+        if self._fixed is not None:
+            return self._fixed
+        if settings is not None and not getattr(settings, "gate_enabled", True):
+            return None
+        path = str(getattr(settings, "gate_model_path", "") or default_model_path())
+        with self._lock:
+            if path not in self._models:
+                self._models[path] = RegionGate.load(path)
+            return self._models[path]
+
+    def score(self, regions, ctx):
+        gate = self._gate_for(ctx.settings)
+        self._local.reasons = {}
+        if gate is None:
+            return None
+        threshold = gate.threshold
+        override = float(getattr(ctx.settings, "gate_threshold", 0.0) or 0.0)
+        if self._fixed is None and override > 0:
+            threshold = override
+
+        out = []
+        for r in regions:
+            row = features(r, total_pixels=ctx.total_pixels,
+                           page_height=ctx.page_height, aligned=ctx.aligned,
+                           size_changed=ctx.size_changed,
+                           siblings=ctx.region_count)
+            decision = gate.decide(row)
+            self._local.reasons[id(r)] = decision
+            out.append(calibrate(1.0 - decision.noise_probability, 1.0 - threshold))
+        return out
+
+    def annotate(self, region, ctx):
+        from ..plugins.api import Annotation
+
+        decision = getattr(self._local, "reasons", {}).get(id(region))
+        if decision is None:
+            return ()
+        why = "; ".join(decision.reasons) or "no single feature stood out"
+        return [Annotation(
+            kind="noise-probability",
+            text=f"noise probability {decision.noise_probability:.2f} ({why})",
+            value=round(decision.noise_probability, 4))]

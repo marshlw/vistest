@@ -26,12 +26,13 @@ keeps working unchanged.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 __all__ = [
     "AIConfig", "AuthConfig", "CaptureConfig", "ConfigError", "DiffConfig",
-    "MatrixConfig", "PathsConfig", "RenderConfig", "ServiceConfig",
+    "MatrixConfig", "PathsConfig", "PluginsConfig", "RenderConfig",
+    "ServiceConfig",
 ]
 
 
@@ -261,6 +262,53 @@ class AIConfig:
 
     attribution_enabled: bool = True     # DOM → selector; works without models
     attribution_min_iou: float = 0.25
+
+
+# --------------------------------------------------------------------------- #
+#  Plugins
+# --------------------------------------------------------------------------- #
+FAIL_ON_CHOICES = ("any", "likely-real", "confirmed")
+
+
+@dataclass
+class PluginsConfig:
+    """The `plugins:` section.
+
+    `fail_on` decides what a scorer's estimate does to a check (see
+    `vistest.plugins.runtime` for the table). Without a scorer installed it
+    changes nothing at all: there are no estimates to act on.
+
+    `noise_below` and `confirmed_at` cut the score scale into three tiers.
+    `disabled` lists entry-point names not to load. `options` holds every other
+    key of the section — plugin sections, keyed by name — and is handed to
+    plugins as it is.
+    """
+
+    enabled: bool = True
+    fail_on: str = "likely-real"
+    noise_below: float = 0.5
+    confirmed_at: float = 0.9
+    disabled: tuple[str, ...] = ()
+    options: dict[str, Any] = field(default_factory=dict)
+
+    def validated(self, where: str = "plugins") -> PluginsConfig:
+        if self.fail_on not in FAIL_ON_CHOICES:
+            raise ConfigError(
+                f"{where}.fail_on: {self.fail_on!r} is not one of "
+                f"{', '.join(FAIL_ON_CHOICES)}")
+        for name in ("noise_below", "confirmed_at"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not 0.0 <= float(value) <= 1.0:
+                raise ConfigError(
+                    f"{where}.{name}: {value!r} is not a number between 0 and 1")
+        if float(self.noise_below) > float(self.confirmed_at):
+            raise ConfigError(
+                f"{where}: noise_below ({self.noise_below}) is above "
+                f"confirmed_at ({self.confirmed_at})")
+        if not isinstance(self.enabled, bool):
+            raise ConfigError(f"{where}.enabled: {self.enabled!r} is not true/false")
+        return self
 
 
 # --------------------------------------------------------------------------- #

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -44,7 +45,7 @@ from . import rights as _rights
 from . import rundiff as _rundiff
 from .baselines import router as baselines_router
 from .check import router as check_router
-from .db import Database
+from .db import Database, regions_of
 from .doctor import router as doctor_router
 from .jobs import runner as _jobs_runner
 from .license import router as license_router
@@ -54,6 +55,8 @@ from .settings import router as settings_router
 
 ROOT = Path(os.getenv("VISTEST_ROOT", ".vistest")).resolve()
 ARTIFACTS = ROOT / "artifacts"
+
+log = logging.getLogger("vistest.api")
 
 
 def _find_frontend() -> Path:
@@ -513,6 +516,66 @@ from .auth import build_router as _build_auth  # noqa: E402
 app.include_router(_build_auth(db))
 
 
+# --------------------------------------------------------------------------- #
+#  Plugins
+#
+#  Loaded here, at import, for the same reason the routers above are included
+#  here: `vistest serve`, `uvicorn vistest.api.main:app` and the tests all
+#  import this module, and each must get the same set of routes. Everything in
+#  this block is advisory — a plugin that fails is a warning, and the server
+#  starts exactly as it would with nothing installed.
+# --------------------------------------------------------------------------- #
+def _wire_plugins() -> None:
+    from ..plugins import migrations as _plugin_migrations
+    from ..plugins.api import RouteProvider
+    from ..plugins.loader import active_registry
+    from .auth import audit as _audit
+    from .prefs import DatabaseSettings
+    from .sync import build_router as _sync_router
+
+    registry = active_registry()
+    host = registry.host
+    host.mode = "server"
+    host.settings = DatabaseSettings(db)
+    host.require = lambda request, role, project=None: _require(request, role, project)
+    host.audit = lambda who, action, target="", **kw: _audit(db, who, action, target, **kw)
+    host.plugin_database = lambda plugin: _plugin_migrations.PluginDatabase(
+        db.path, plugin)
+
+    _plugin_migrations.apply_all(db.path, registry)
+
+    for role in (registry.auth_provider(), registry.sync_backend()):
+        if role is None or not isinstance(role.impl, RouteProvider):
+            continue
+        try:
+            app.include_router(role.impl.api_router())
+        except Exception as e:
+            log.warning("plugin %r: its routes are not mounted: %s: %s",
+                        role.plugin, type(e).__name__, e)
+
+    if registry.sync_backend() is not None:
+        app.include_router(_sync_router())
+
+
+try:
+    _wire_plugins()
+except Exception as _e:                                      # pragma: no cover
+    log.warning("plugins are not wired: %s: %s", type(_e).__name__, _e)
+
+
+@app.get("/api/capabilities")
+def capabilities(request: Request):
+    """What this installation can do beyond the core, as booleans.
+
+    The interface hides what is false and says nothing about it: an
+    installation without an extension simply does not have that column,
+    button or settings card.
+    """
+    from ..plugins.loader import active_registry
+
+    return active_registry().capabilities()
+
+
 def _require(request: Request, role: str, project: str | None = None) -> dict:
     """Role for destructive operations (deleting runs, cleanup, review).
 
@@ -931,8 +994,7 @@ def run_clusters(run_id: int, min_size: int = 2):
             item = {}
         item.setdefault("name", c["snapshot_name"])
         if not item.get("regions"):
-            item["regions"] = db.query(
-                "SELECT * FROM region WHERE comparison_id=?", (c["id"],))
+            item["regions"] = regions_of(db, c["id"])
         items.append(item)
 
     return summarize(items, min_size=max(2, min_size))
@@ -953,9 +1015,7 @@ def _run_comparisons(run_id: int) -> tuple[dict, list[dict]]:
             meta = {}
         if c.get("verdict") == "error":
             c["error"] = meta.get("error") or "unknown error"
-        c["regions"] = db.query(
-            "SELECT * FROM region WHERE comparison_id=? ORDER BY severity DESC",
-            (c["id"],))
+        c["regions"] = regions_of(db, c["id"])
     return run, comps
 
 
@@ -1136,9 +1196,7 @@ def get_run(run_id: int):
         if c.get("verdict") == "error":
             c["error"] = meta.get("error") or "unknown error"
         c["artifacts"] = _servable(json.loads(c["artifacts"] or "{}"))
-        c["regions"] = db.query(
-            "SELECT * FROM region WHERE comparison_id=? ORDER BY severity DESC",
-            (c["id"],))
+        c["regions"] = regions_of(db, c["id"])
         # Подпись варианта считается здесь, а не в интерфейсе. Ключ платформы —
         # это адрес каталога (`linux-chromium-1x-390x844`), а человеку нужен
         # ответ на «какой это браузер и какой размер»; разбирать ключ на
@@ -1171,8 +1229,10 @@ def get_comparison(comp_id: int):
     c["variant"] = _variant_label(c.get("platform") or "", c["meta"])
     c["viewport"] = (c["meta"].get("viewport")
                      or variant_of_platform(c.get("platform") or "")["viewport"])
-    c["regions"] = db.query(
-        "SELECT * FROM region WHERE comparison_id=? ORDER BY severity DESC", (comp_id,))
+    c["regions"] = regions_of(db, comp_id)
+    #  What the engine set aside, and why. Listed so that nothing it decided
+    #  not to count is invisible; empty when nothing was suppressed.
+    c["suppressed"] = regions_of(db, comp_id, suppressed=True)
     c["history"] = db.query(
         "SELECT c2.id, c2.verdict, c2.review, c2.max_severity, c2.created_at,"
         "       r.branch, r.git_sha"

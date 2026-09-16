@@ -91,6 +91,13 @@ vistest = "vistest.cli:main"
 [project.entry-points.pytest11]
 vistest = "vistest.pytest_plugin"
 
+# Temporary. The extension modules still in this repository, registered through
+# the same door any installed plugin uses — see vistest/_extensions. Leaves with
+# them when the repositories are split. After changing this table, reinstall
+# (`pip install -e .`): entry points are read from the installed metadata.
+[project.entry-points."vistest.plugins"]
+bundled-extensions = "vistest._extensions"
+
 [tool.setuptools.packages.find]
 include = ["vistest*"]
 

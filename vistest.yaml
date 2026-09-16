@@ -95,6 +95,15 @@ ai:
   perceptual_model_path: models/perceptual.onnx
   perceptual_tolerance: 0.06
 
+# Extensions (vistest/plugins). With no plugin installed this section changes
+# nothing. Any other key here is the section of the plugin with that name.
+plugins:
+  enabled: true                 # VISTEST_DISABLE_PLUGINS=1 turns loading off entirely
+  fail_on: likely-real          # any | likely-real | confirmed: what a score does to a check
+  noise_below: 0.5              # a score below this is rendering noise
+  confirmed_at: 0.9             # a score at or above this is a confirmed change
+  disabled: []                  # entry-point names not to load
+
 render:
   heatmap: true
   boxes: true

@@ -82,7 +82,14 @@ def pytest_addoption(parser):
     group.addoption("--vistest-api", default=None,
                     help="URL of the VisTest service")
     group.addoption("--vistest-perceptual", action="store_true",
-                    help="Enable the perceptual ONNX model")
+                    help="Enable the perceptual ONNX model, if a plugin "
+                         "providing it is installed")
+    group.addoption("--vistest-fail-on", default=None,
+                    choices=["any", "likely-real", "confirmed"],
+                    help="What a region scorer's estimate does to a check: "
+                         "fail on any difference, on likely-real ones "
+                         "(default) or only on confirmed ones. Has no effect "
+                         "without a scorer installed.")
 
     for name, help_text in _INI.items():
         parser.addini(name, help_text, default="")
@@ -154,6 +161,7 @@ def pytest_configure(config):
         update=bool(config.getoption("--vistest-update")),
         config_path=config.getoption("--vistest-config"),
         preset=config.getoption("--vistest-preset"),
+        fail_on=config.getoption("--vistest-fail-on"),
     )
     _context.install(ctx)
     config._vistest_context = ctx
@@ -249,6 +257,14 @@ def _summary(terminalreporter, exitstatus, config) -> None:
                 + (", and with --vistest-update they overwrite each other's "
                    "baseline file" if ctx is not None and ctx.update else "")
                 + ". Give each check its own name.")
+
+        #  Differences the engine did not count, said out loud whatever the
+        #  outcome: "1 difference suppressed as rendering noise".
+        from .plugins.runtime import say_suppressed
+        from .report.library import total_suppressed
+
+        for line in say_suppressed(total_suppressed(parts.entries)):
+            terminalreporter.write_line(line, yellow=True)
 
         if parts.unreadable:
             terminalreporter.write_line(

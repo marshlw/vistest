@@ -168,11 +168,20 @@ def parse_role_map(raw: str) -> dict[str, str]:
     return out
 
 
+def _store(source):
+    """A `SettingsStore`, whether we were handed one or the database itself."""
+    if hasattr(source, "get_text") and hasattr(source, "set_text"):
+        return source
+    from .prefs import DatabaseSettings
+
+    return DatabaseSettings(source)
+
+
 def settings(db) -> Settings:
-    from .prefs import get_text
+    store = _store(db)
 
     def value(name: str) -> str:
-        return get_text(db, name, DEFAULTS[name])
+        return store.get_text(name, DEFAULTS[name])
 
     try:
         timeout = float(value(TIMEOUT) or 8)
@@ -197,7 +206,7 @@ def settings(db) -> Settings:
 
 def save_settings(db, payload: dict, who: str = "") -> Settings:
     """Store what the form sent. Missing keys are left alone."""
-    from .prefs import set_text
+    store = _store(db)
 
     fields = {
         ENABLED: lambda v: "1" if v else "0",
@@ -210,7 +219,7 @@ def save_settings(db, payload: dict, who: str = "") -> Settings:
     for name, cast in fields.items():
         key = name[len(PREFIX):]
         if key in payload and payload[key] is not None:
-            set_text(db, name, cast(payload[key]), who)
+            store.set_text(name, cast(payload[key]), who)
     return settings(db)
 
 
@@ -416,3 +425,44 @@ def probe(cfg: Settings, login: str = "") -> dict:
     except DirectoryError as e:
         result["error"] = str(e)
         return result
+
+
+# --------------------------------------------------------------------------- #
+#  Behind the plugin contract
+# --------------------------------------------------------------------------- #
+class DirectoryAuthProvider:
+    """`AuthProvider` over the functions above, plus its settings routes.
+
+    Reads its settings from the host (``registry.host.settings``), so it is
+    inert until a server has started: the library mode has no one to sign in.
+    """
+
+    name = "ldap"
+
+    def __init__(self, host):
+        self.host = host
+
+    def authenticate(self, login: str, secret: str):
+        from ..plugins.api import AuthResult
+
+        store = self.host.settings
+        if store is None:
+            return None
+        cfg = settings(store)
+        if not cfg.enabled:
+            return None
+        person = authenticate(cfg, login, secret)     # DirectoryError propagates
+        if not person:
+            return None
+        return AuthResult(
+            login=login, name=person.get("name") or login,
+            role=person.get("role") or cfg.default_role,
+            external_id=person.get("dn", ""), email=person.get("mail", ""),
+            groups=tuple(person.get("groups") or ()), source="ldap")
+
+    # ------------------------------------------------------------------ #
+    def api_router(self):
+        """`/api/ldap` — the settings screen's three calls. Admin only."""
+        from .directory_routes import build_router
+
+        return build_router(self.host)

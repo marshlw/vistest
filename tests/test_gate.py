@@ -20,11 +20,20 @@ import json
 import numpy as np
 import pytest
 
-from vistest.ai.gate import FEATURES, KINDS, RegionGate, default_model_path, features
+from vistest.ai.gate import (
+    FEATURES,
+    KINDS,
+    GateScorer,
+    RegionGate,
+    calibrate,
+    default_model_path,
+    features,
+)
 from vistest.ai.pipeline import AIPipeline
 from vistest.config import AIConfig, DiffConfig
 from vistest.core.comparator import compare
 from vistest.models import ChangeKind, CompareResult, DiffRegion, Verdict
+from vistest.plugins.registry import PluginRegistry
 
 from . import corpus
 
@@ -121,28 +130,38 @@ def _always(probability: float) -> RegionGate:
                       threshold=0.5)
 
 
+def _pipeline(gate: RegionGate | None, **cfg) -> AIPipeline:
+    """The gate behind the plugin contract, in a registry of its own."""
+    registry = PluginRegistry()
+    if gate is not None:
+        scorer = GateScorer(gate)
+        registry.set_scorer(scorer, name="gate")
+        registry.add_annotator(scorer, name="gate")
+    return AIPipeline(AIConfig(attribution_enabled=False, **cfg),
+                      registry=registry)
+
+
 def test_gate_suppresses_and_explains():
     regions = [_region()]
     result = CompareResult(name="x", verdict=Verdict.PASS, total_pixels=1_000_000)
-    AIPipeline(AIConfig(attribution_enabled=False), gate=_always(0.99)) \
-        .refine(regions, None, None, result)
+    _pipeline(_always(0.99)).refine(regions, None, None, result)
 
     assert regions[0].kind is ChangeKind.NOISE
     assert regions[0].severity == 0.0
-    assert regions[0].suppressed_by.startswith("gate:")
-    # Причина названа признаками, а не «моделью»: решение можно оспорить.
-    assert any(name in regions[0].suppressed_by for name in FEATURES) or True
-    assert any("Learned gate" in n for n in result.notes)
+    assert regions[0].suppressed_by.startswith("noise: gate")
+    # The reason is named by features, not by "the model": it can be argued.
+    notes = [a for a in regions[0].annotations if a["source"] == "gate"]
+    assert notes and "noise probability 0.99" in notes[0]["text"]
+    assert any("Scorer gate" in n for n in result.notes)
 
 
 def test_gate_never_raises_severity():
-    """Единственная асимметрия, ради которой всё и построено."""
+    """The one asymmetry everything here is built around."""
     regions = [_region(severity=12.0)]
     result = CompareResult(name="x", verdict=Verdict.PASS, total_pixels=1_000_000)
-    AIPipeline(AIConfig(attribution_enabled=False), gate=_always(0.01)) \
-        .refine(regions, None, None, result)
+    _pipeline(_always(0.01)).refine(regions, None, None, result)
 
-    assert regions[0].severity == 12.0, "гейт не имеет права поднимать severity"
+    assert regions[0].severity == 12.0, "the gate may never raise severity"
     assert regions[0].kind is ChangeKind.TEXT
     assert regions[0].suppressed_by is None
 
@@ -150,24 +169,42 @@ def test_gate_never_raises_severity():
 def test_gate_records_its_estimate_even_when_it_keeps_the_region():
     regions = [_region()]
     result = CompareResult(name="x", verdict=Verdict.PASS, total_pixels=1_000_000)
-    AIPipeline(AIConfig(attribution_enabled=False), gate=_always(0.02)) \
-        .refine(regions, None, None, result)
+    _pipeline(_always(0.02)).refine(regions, None, None, result)
 
-    assert regions[0].gate_probability == pytest.approx(0.02, abs=0.01)
+    # 0.98 real against the model's threshold of 0.5 — calibrated to 0.98.
+    assert regions[0].score == pytest.approx(calibrate(0.98, 0.5), abs=0.01)
+    assert regions[0].score > 0.9
+
+
+def test_calibration_puts_the_models_threshold_at_one_half():
+    assert calibrate(0.3, 0.3) < 0.5
+    assert calibrate(0.3001, 0.3) > 0.5
+    assert calibrate(0.0, 0.3) == 0.0
+    assert calibrate(1.0, 0.3) == pytest.approx(1.0)
+    values = [calibrate(v / 100, 0.37) for v in range(101)]
+    assert values == sorted(values)
 
 
 def test_already_suppressed_regions_are_left_alone():
     regions = [_region(kind=ChangeKind.ANTIALIAS, suppressed_by="antialias")]
     result = CompareResult(name="x", verdict=Verdict.PASS, total_pixels=1_000_000)
-    AIPipeline(AIConfig(attribution_enabled=False), gate=_always(0.99)) \
-        .refine(regions, None, None, result)
+    _pipeline(_always(0.99)).refine(regions, None, None, result)
 
     assert regions[0].suppressed_by == "antialias"
+    assert regions[0].score is None
 
 
 def test_gate_can_be_turned_off():
-    pipeline = AIPipeline(AIConfig(attribution_enabled=False, gate_enabled=False))
-    assert pipeline._gate is None
+    """`ai.gate_enabled: false` — the scorer abstains and records nothing."""
+    regions = [_region()]
+    result = CompareResult(name="x", verdict=Verdict.PASS, total_pixels=1_000_000)
+    registry = PluginRegistry()
+    registry.set_scorer(GateScorer(), name="gate")
+    AIPipeline(AIConfig(attribution_enabled=False, gate_enabled=False),
+               registry=registry).refine(regions, None, None, result)
+
+    assert regions[0].score is None
+    assert regions[0].suppressed_by is None
 
 
 # --------------------------------------------------------------------------- #
@@ -186,7 +223,7 @@ def test_no_regression_is_lost_on_the_corpus(cases):
     """
     gate = RegionGate.load(default_model_path())
     assert gate is not None
-    ai = AIPipeline(AIConfig(attribution_enabled=False), gate=gate)
+    ai = _pipeline(gate)
     cfg = DiffConfig(morph_open_px=0)
 
     lost = []
@@ -205,7 +242,7 @@ def test_no_regression_is_lost_on_the_corpus(cases):
 def test_gate_removes_false_failures_on_a_wide_aperture(cases):
     """Ради чего гейт и нужен: открытая апертура без потока ложных падений."""
     gate = RegionGate.load(default_model_path())
-    ai = AIPipeline(AIConfig(attribution_enabled=False), gate=gate)
+    ai = _pipeline(gate)
     cfg = DiffConfig(morph_open_px=0)
 
     before = after = 0
@@ -228,8 +265,7 @@ def test_large_region_is_never_suppressed():
     """Модель обучена на синтетике и увидит не всё. За этой границей с ней не спорят."""
     regions = [_region(x=0, y=0, w=800, h=600)]           # больше 20% страницы
     result = CompareResult(name="x", verdict=Verdict.PASS, total_pixels=900 * 1200)
-    AIPipeline(AIConfig(attribution_enabled=False), gate=_always(0.999)) \
-        .refine(regions, None, None, result)
+    _pipeline(_always(0.999)).refine(regions, None, None, result)
 
     assert regions[0].kind is ChangeKind.TEXT
     assert regions[0].suppressed_by is None
@@ -241,8 +277,7 @@ def test_changed_page_geometry_is_never_suppressed():
     regions = [_region()]
     result = CompareResult(name="x", verdict=Verdict.PASS,
                            total_pixels=900 * 1200, size_changed=True)
-    AIPipeline(AIConfig(attribution_enabled=False), gate=_always(0.999)) \
-        .refine(regions, None, None, result)
+    _pipeline(_always(0.999)).refine(regions, None, None, result)
 
     assert regions[0].suppressed_by is None
 

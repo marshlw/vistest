@@ -5,6 +5,105 @@
 
 ## [Unreleased]
 
+### Extension points (plugin API v1)
+
+Preparation for the open core. Nothing moves out of the repository yet; the
+modules that will are now reached only through a plugin registry, and
+everything works without them.
+
+- **`vistest.plugins`.** The public contract is `vistest/plugins/api.py`,
+  `API_VERSION = 1`, with four `@runtime_checkable` protocols:
+  `RegionAnnotator.annotate(region, ctx)`, `RegionScorer.score(regions, ctx)`,
+  `AuthProvider.authenticate(login, secret)` and `BaselineSyncBackend`.
+  Plugins are found through the `vistest.plugins` entry-point group and call
+  `register(registry)`. One active implementation per role (highest
+  `priority`, then first registered; the loser is named in a warning);
+  annotators run as a chain.
+- **Nothing a plugin does can take a run down.** A plugin that fails to
+  import, exits, has no `register`, raises inside it (its registrations are
+  rolled back) or registers something that is not an implementation is a
+  warning. A different `API_VERSION` is refused before `register` runs. At
+  runtime, a scorer or annotator that raises, or answers nonsense, is a
+  warning and the deterministic path. `VISTEST_DISABLE_PLUGINS=1` switches
+  loading off entirely — nothing from the group is imported.
+- **`fail_on: any | likely-real | confirmed`** (`plugins.fail_on`,
+  `VISTEST_FAIL_ON`, `--vistest-fail-on`; default `likely-real`) decides what
+  a scorer's estimate does to a check. Without a scorer it changes nothing.
+  Two safety rules outrank any scorer, as they did the gate: a region over 20%
+  of the page and a page-size change are never suppressed by a score.
+- **No difference is swallowed quietly.** Every suppressed region carries
+  `suppressed_by` (`noise: …`, `below-fail-on: …`, `ignored-kind: …` — the
+  class set aside by `diff.ignore_kinds` now says so too). The library report
+  lists them in every row, passing ones included, and pytest prints the total:
+  `1 difference suppressed as rendering noise`. `ScreenshotMismatch` adds an
+  `also:` line. When every region was suppressed, the area note says so
+  instead of "not a single region passed filtering".
+- **Region fields `score`, `annotations`, `suppressed_by`** are always
+  present — `null`, `[]`, `null` without extensions — in the JSON, in the
+  database (three new `region` columns; suppressed regions are now stored as
+  well, marked, and excluded from every query that lists or counts regions)
+  and in the interface (a score and remarks are shown when present; the
+  comparison screen lists what was not counted). `gate_probability` and
+  `perceptual_distance` are gone from `DiffRegion`: they were one extension's
+  fields in the core's model; the score and annotations replace them.
+- **Plugin tables.** `registry.add_migrations([...])`, applied once per step,
+  versioned in the new `plugin_schema_version` table — separate from
+  `PRAGMA user_version`. Tables must be named `ext_<plugin>_*`; an SQLite
+  authorizer refuses anything else, core tables included, before it runs.
+- **`plugins:` in `vistest.yaml`.** `enabled`, `fail_on`, `noise_below`,
+  `confirmed_at`, `disabled`; any other key is kept, handed to plugins as
+  their section, and — unless an installed plugin has that name — logged once
+  as a warning. It is not refused.
+- **`GET /api/capabilities`** — `region_scores`, `region_annotations`,
+  `external_sign_in`, `baseline_sync`. The interface hides what is false: no
+  directory card, no score column. No messages about it.
+- **Moved behind the protocols, still in the repository:** the region gate
+  and its feature extractor and the perceptual filter (scorer + annotator),
+  LDAP/AD sign-in (`AuthProvider`; `/api/ldap` is now served by it) and
+  baseline transfer between installations (`BaselineSyncBackend`;
+  `/api/baselines/export|import` and `vistest baselines export|import` exist
+  only when it is active). They are registered by the temporary
+  `vistest._extensions` package through the entry point in `pyproject.toml`
+  — **reinstall (`pip install -e .`) to register it**. Attribution stays in
+  the core. `tests/test_plugin_boundary.py` fails if a core module imports any
+  of them by name. `set_annotator` keeps its old contract.
+- Benchmark unchanged: 24/27, 0/16 false failures with the extensions; 23/27
+  with `VISTEST_DISABLE_PLUGINS=1`, the same as `--no-ai`.
+- New tests: `test_plugins.py`, `test_degradation.py` (library and server
+  scenarios with plugins disabled and with a set of broken plugins installed),
+  `test_plugin_boundary.py`.
+
+### Engine metrics you can reconcile
+
+Found on a live run: `severity 100.0, changed area 1.44%` next to three
+regions totalling ~400 px, and two neighbouring radio buttons "moved" by +48
+and -58 at once.
+
+- **Where the changed pixels went.** `changed_area_pct` is still measured on
+  the change mask before segmentation — that has not changed. New metrics
+  split it: `region_pixels`, `suppressed_pixels`, `unassigned_pixels` (they sum
+  to `changed_pixels`) and `region_area_pct`. When more than 10% of the change
+  is in no region, the one-line reason says so with numbers:
+  `these regions hold 0.04% of the 1.44% changed, 1.40% is in no region`.
+  On the live pair 97% of the mask was 1–2 px text strokes removed by the
+  morphological opening before segmentation.
+- The reason line starts with the total region count, never drops kinds
+  silently (`other changes in N`), and names the region it points at
+  `most severe` — it was chosen by severity and used to be called `largest`.
+  The failure headline adds the region count.
+- **Severity is a scale again.** Size now multiplies colour/structure
+  intensity instead of being added to it, and the result saturates softly
+  (`100·(1 − e^(−raw/0.6))`) instead of being clipped. A 27 px speck that
+  disappeared scores ~31 (was 100), a moved 360×120 block ~70, a removed
+  button ~98. **Stored severities from earlier versions are on the old scale.**
+  Verdicts on the benchmark corpus are unchanged (24/27, 0/16 false fails).
+- **MOVED no longer invents vectors.** A region whose content fits several
+  places equally well (NCC within 0.03) is not given a shift unless the rest
+  of the page agrees on one of those places; otherwise it is classified as
+  appeared / disappeared / content, and a note says why.
+  `DiffRegion.move_alternatives` records the count. Regions too small to
+  search (side < 6 px) get the same check against the page's shift.
+
 ### Режим библиотеки
 
 VisTest теперь подключается к чужому проекту обычной библиотекой — без сервера,

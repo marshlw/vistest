@@ -123,9 +123,24 @@ CREATE TABLE IF NOT EXISTS region (
   kind TEXT, severity REAL, de_mean REAL, ssim_local REAL,
   moved_dx INTEGER, moved_dy INTEGER,
   selector TEXT, element_text TEXT, caption TEXT,
-  region_index INTEGER          -- номер крупного плана (`region_<N>`), если он есть
+  region_index INTEGER,         -- номер крупного плана (`region_<N>`), если он есть
+  -- What extensions add. Present whatever is installed: NULL / '[]' / NULL
+  -- without a plugin. A row with `suppressed_by` set is a region that does
+  -- not count towards the verdict, stored so that it can still be shown.
+  score REAL,
+  annotations TEXT NOT NULL DEFAULT '[]',
+  suppressed_by TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_region_comparison ON region(comparison_id);
+
+-- Schema versions of plugin tables, one row per plugin. Separate from
+-- `PRAGMA user_version`, which is the core's alone; see
+-- vistest/plugins/migrations.py. Plugins never touch core tables.
+CREATE TABLE IF NOT EXISTS plugin_schema_version (
+  plugin     TEXT PRIMARY KEY,
+  version    INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- DEPRECATED, kept only so an existing database still opens.
 --
@@ -463,6 +478,10 @@ MIGRATIONS: list[tuple[str, str]] = [
     # значить, пока в VisTest остаётся пароль, который человек когда-то знал.
     ("user", "ALTER TABLE user ADD COLUMN source TEXT NOT NULL DEFAULT 'local'"),
     ("user", "ALTER TABLE user ADD COLUMN external_dn TEXT"),
+    # What extensions add to a region, stored with or without any installed.
+    ("region", "ALTER TABLE region ADD COLUMN score REAL"),
+    ("region", "ALTER TABLE region ADD COLUMN annotations TEXT NOT NULL DEFAULT '[]'"),
+    ("region", "ALTER TABLE region ADD COLUMN suppressed_by TEXT"),
 ]
 
 
@@ -478,6 +497,44 @@ MIGRATIONS: list[tuple[str, str]] = [
 #  ровно тем, что заметно это станет через неделю и по совершенно другим
 #  симптомам.
 SCHEMA_VERSION = len(MIGRATIONS)
+
+
+def _score(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if 0.0 <= number <= 1.0 else None
+
+
+def _annotations(value) -> str:
+    items = value if isinstance(value, list) else []
+    return json.dumps([a for a in items if isinstance(a, dict)],
+                      ensure_ascii=False)
+
+
+#  The regions that count towards a verdict. Every query that lists regions for
+#  a person, or counts them, filters on this; the suppressed ones are asked for
+#  explicitly.
+REPORTED = "suppressed_by IS NULL"
+
+
+def regions_of(db, comparison_id: int, *, suppressed: bool = False) -> list[dict]:
+    """A comparison's regions, most severe first, `annotations` decoded.
+
+    `suppressed=False` — the ones that count; `True` — the ones set aside,
+    each with its `suppressed_by`.
+    """
+    where = "suppressed_by IS NOT NULL" if suppressed else REPORTED
+    rows = db.query(
+        f"SELECT * FROM region WHERE comparison_id=? AND {where}"
+        " ORDER BY severity DESC, id", (comparison_id,))
+    for row in rows:
+        try:
+            row["annotations"] = json.loads(row.get("annotations") or "[]")
+        except ValueError:
+            row["annotations"] = []
+    return rows
 
 
 class SchemaTooNew(RuntimeError):
@@ -709,18 +766,26 @@ class Database:
                      json.dumps(comp, ensure_ascii=False)),
                 )
                 comp_id = cur.lastrowid
-                for r in comp.get("regions", []):
+                #  Suppressed regions are stored too, marked. Leaving them in
+                #  the JSON only meant the interface could not list what the
+                #  engine decided not to count — and a suppression nobody can
+                #  see is the kind this project does not do.
+                reported = [(r, None) for r in comp.get("regions") or []]
+                hidden = [(r, r.get("suppressed_by") or "noise: suppressed")
+                          for r in comp.get("suppressed") or []]
+                for r, reason in reported + hidden:
                     c.execute(
                         "INSERT INTO region"
                         "(comparison_id,x,y,w,h,kind,severity,de_mean,ssim_local,"
                         " moved_dx,moved_dy,selector,element_text,caption,"
-                        " region_index)"
-                        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        " region_index,score,annotations,suppressed_by)"
+                        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (comp_id, r.get("x"), r.get("y"), r.get("w"), r.get("h"),
                          r.get("kind"), r.get("severity"), r.get("de_mean"),
                          r.get("ssim_local"), r.get("moved_dx"), r.get("moved_dy"),
                          r.get("selector"), r.get("element_text"), r.get("caption"),
-                         r.get("region_index")),
+                         r.get("region_index"), _score(r.get("score")),
+                         _annotations(r.get("annotations")), reason),
                     )
         return run_id
 

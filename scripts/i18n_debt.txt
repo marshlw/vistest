@@ -6,35 +6,20 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 12770 lines in 220 files.
+# 10416 lines in 201 files.
 
 52	.github/workflows/ci.yml
-57	.gitlab-ci.example.yml
-7	.vistest/secrets.env.example
 321	CHANGELOG.md
 1	README.md
 1	SECURITY.md
-280	VISTEST_AUDIT_3.md
 27	clients/cypress.mjs
 14	clients/java/VisTest.java
 28	clients/playwright-reporter.mjs
 42	clients/vistest.mjs
 17	constraints-service.txt
-12	control/app.py
-30	control/index.html
-14	deploy/Caddyfile.example
-22	deploy/team.compose.yml
-11	deploy/team.full.compose.yml
-17	deploy/team.node.compose.yml
-24	docker-compose.team.yml
 22	docker/Dockerfile.api
-14	docker/Dockerfile.full
-19	docker/Dockerfile.node
-10	docker/Dockerfile.runner
 4	docker/docker-compose.yml
 18	docker/entrypoint.sh
-4	docker/prometheus.yml
-1735	docs/GUIDE.md
 16	examples/demo_page.html
 10	examples/test_demo_visual.py
 21	examples/test_existing_suite.py
@@ -64,9 +49,7 @@
 60	frontend/js/tip.js
 296	frontend/ui.css
 11	pyproject.toml
-8	run.ps1
 34	run.py
-5	run.sh
 17	scripts/bench_pixelmatch.mjs
 5	scripts/export_perceptual_model.py
 13	scripts/vistest_team.py
@@ -128,7 +111,7 @@
 28	tests/test_external_run.py
 60	tests/test_frontend_defaults.py
 106	tests/test_frontend_modules.py
-41	tests/test_gate.py
+38	tests/test_gate.py
 22	tests/test_ingest.py
 62	tests/test_integration_layer.py
 6	tests/test_introspect.py
@@ -164,13 +147,11 @@
 52	vistest.yaml
 7	vistest/adapter.py
 24	vistest/ai/attribution.py
-46	vistest/ai/gate.py
-19	vistest/ai/hooks.py
+41	vistest/ai/gate.py
 17	vistest/ai/perceptual.py
-21	vistest/ai/pipeline.py
 1	vistest/ai/region_gate.json
 62	vistest/ai/train.py
-226	vistest/api/auth.py
+203	vistest/api/auth.py
 546	vistest/api/baselines.py
 78	vistest/api/check.py
 75	vistest/api/citokens.py
@@ -179,7 +160,7 @@
 10	vistest/api/directory.py
 5	vistest/api/doctor.py
 14	vistest/api/jobs.py
-12	vistest/api/license.py
+1	vistest/api/license.py
 48	vistest/api/logs.py
 303	vistest/api/main.py
 27	vistest/api/metrics.py
@@ -207,7 +188,7 @@
 14	vistest/integrations/session.py
 34	vistest/introspect.py
 143	vistest/matrix.py
-26	vistest/models.py
+23	vistest/models.py
 34	vistest/projects.py
 1	vistest/record/__init__.py
 7	vistest/record/codegen.py

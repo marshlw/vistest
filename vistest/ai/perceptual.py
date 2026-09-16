@@ -124,3 +124,92 @@ class PerceptualModel:
             return None
         a, b = emb[0::2], emb[1::2]
         return [float(1.0 - float(np.dot(x, y))) for x, y in zip(a, b, strict=False)]
+
+
+# --------------------------------------------------------------------------- #
+#  Behind the plugin contract
+# --------------------------------------------------------------------------- #
+class PerceptualScorer:
+    """`RegionScorer` and `RegionAnnotator` over `PerceptualModel`.
+
+    Scores by embedding distance: a crop pair closer than
+    `ai.perceptual_tolerance` is below 0.5 — something a person would not see
+    as a different picture. Regions too small to crop get no opinion of their
+    own and are returned as ``None`` in `distances_for`, which the combined
+    scorer treats as "defer to the other opinion".
+
+    Off unless `ai.perceptual_enabled` is set and the model file loads; then
+    it abstains.
+    """
+
+    name = "perceptual"
+    PAD = 8
+
+    def __init__(self):
+        import threading
+
+        self._models: dict[str, PerceptualModel] = {}
+        self._lock = threading.Lock()
+        self._local = threading.local()
+
+    def _model_for(self, settings) -> PerceptualModel | None:
+        if settings is None or not getattr(settings, "perceptual_enabled", False):
+            return None
+        path = str(getattr(settings, "perceptual_model_path", "") or "")
+        with self._lock:
+            model = self._models.get(path)
+            if model is None:
+                model = self._models[path] = PerceptualModel(path)
+        return model if model.available else None
+
+    def distances_for(self, regions, ctx) -> list[float | None] | None:
+        model = self._model_for(ctx.settings)
+        self._local.distances = {}
+        if model is None or ctx.expected is None or ctx.actual is None:
+            return None
+        min_side = int(getattr(ctx.settings, "perceptual_min_region_px", 16))
+        h, w = ctx.expected.shape[:2]
+        index, pairs = [], []
+        for i, r in enumerate(regions):
+            if min(r.w, r.h) < min_side:
+                continue
+            x0, y0 = max(0, r.x - self.PAD), max(0, r.y - self.PAD)
+            x1, y1 = min(w, r.x + r.w + self.PAD), min(h, r.y + r.h + self.PAD)
+            if x1 - x0 < 4 or y1 - y0 < 4:
+                continue
+            index.append(i)
+            pairs.append((np.ascontiguousarray(ctx.expected[y0:y1, x0:x1]),
+                          np.ascontiguousarray(ctx.actual[y0:y1, x0:x1])))
+        found = model.distances(pairs) if pairs else []
+        if found is None:
+            return None
+        out: list[float | None] = [None] * len(regions)
+        for i, d in zip(index, found, strict=True):
+            out[i] = d
+            self._local.distances[id(regions[i])] = d
+        return out
+
+    def score(self, regions, ctx):
+        distances = self.distances_for(regions, ctx)
+        if distances is None or all(d is None for d in distances):
+            return None
+        tol = float(getattr(ctx.settings, "perceptual_tolerance", 0.06))
+        return [1.0 if d is None else score_of_distance(d, tol) for d in distances]
+
+    def annotate(self, region, ctx):
+        from ..plugins.api import Annotation
+
+        d = getattr(self._local, "distances", {}).get(id(region))
+        if d is None:
+            return ()
+        return [Annotation(kind="perceptual-distance",
+                           text=f"perceptual distance {d:.4f}", value=round(d, 6))]
+
+
+def score_of_distance(distance: float, tolerance: float) -> float:
+    """Distance below `tolerance` → below 0.5; twice the tolerance → 1."""
+    tolerance = max(1e-6, float(tolerance))
+    d = max(0.0, float(distance))
+    if d < tolerance:
+        return 0.5 * d / tolerance
+    return min(1.0, 0.5 + 0.5 * (d - tolerance) / tolerance)

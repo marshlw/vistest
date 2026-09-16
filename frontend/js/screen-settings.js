@@ -83,10 +83,16 @@ SCREENS.settings=async function(){
   const rtHolder=el('div');rtHolder.id='retentionCard';s.append(rtHolder);
   renderRetention(rtHolder);
 
-  // directory
-  s.append(el('div','sect-h','<h2>Corporate directory</h2>'));
-  const ldHolder=el('div');ldHolder.id='ldapCard';s.append(ldHolder);
-  renderDirectory(ldHolder);
+  // directory — only where an external sign-in is installed
+  const ldHead=el('div','sect-h','<h2>Corporate directory</h2>');
+  const ldHolder=el('div');ldHolder.id='ldapCard';
+  ldHead.hidden=ldHolder.hidden=true;
+  s.append(ldHead,ldHolder);
+  capabilities().then(caps=>{
+    if(!caps||!caps.external_sign_in)return;
+    ldHead.hidden=ldHolder.hidden=false;
+    renderDirectory(ldHolder);
+  });
 
   // licence
   s.append(el('div','sect-h','<h2>Licence</h2>'));

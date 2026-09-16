@@ -290,7 +290,7 @@ def test_every_metric_of_a_real_comparison_is_a_plain_number(base, mutate):
         for field in _REGION_NUMBERS:
             value = getattr(region, field)
             assert _plain(value), (field, type(value), region)
-        for field in ("perceptual_distance", "gate_probability", "region_index"):
+        for field in ("score", "region_index"):
             value = getattr(region, field)
             assert value is None or _plain(value), (field, type(value))
 

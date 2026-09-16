@@ -90,13 +90,25 @@ class DiffRegion:
     moved_dx: int = 0
     moved_dy: int = 0
     match_score: float = 0.0       # NCC при поиске сдвига
+    #  How many places in actual matched the region equally well (0 = the
+    #  question was not ambiguous). Above 1 and kind != MOVED means the engine
+    #  declined to name a shift it could not tell apart.
+    move_alternatives: int = 0
     edge_density: float = 0.0
     selector: str | None = None    # из DOM-attribution
     element_text: str | None = None
-    perceptual_distance: float | None = None
-    gate_probability: float | None = None   # оценка обучаемого гейта, 0..1
-    caption: str | None = None     # внешний аннотатор, vistest/ai/hooks.py
-    suppressed_by: str | None = None  # причина, если регион отброшен
+    #  What extensions add. All three are always present — empty without any
+    #  plugin — so the JSON, the database and the interface have one shape
+    #  whatever is installed (see vistest/plugins/api.py).
+    #
+    #  score: how likely the change is real, 0..1, from the active scorer.
+    #  annotations: remarks from the annotator chain, as plain dicts
+    #  ({"text", "kind", "value", "source"}).
+    #  suppressed_by: why the region does not count, "<reason>: <details>".
+    score: float | None = None
+    annotations: list[dict[str, Any]] = field(default_factory=list)
+    suppressed_by: str | None = None
+    caption: str | None = None     # programmatic annotator, vistest/ai/hooks.py
     # Номер крупного плана этого региона (`region_<N>` в артефактах), если он
     # рисовался. Проставляется при рендере: сопоставлять картинку с регионом по
     # позиции в списке нельзя — список приходит отсортированным по severity из
@@ -132,6 +144,13 @@ class CompareResult:
     changed_pixels: int = 0
     total_pixels: int = 0
     changed_area_pct: float = 0.0
+    #  Where the changed pixels went — see `comparator._account`. The three
+    #  counts sum to `changed_pixels`; `region_area_pct` is the part of
+    #  `changed_area_pct` that the reported regions actually explain.
+    region_pixels: int = 0
+    suppressed_pixels: int = 0
+    unassigned_pixels: int = 0
+    region_area_pct: float = 0.0
     max_severity: float = 0.0
 
     # выравнивание / размеры
@@ -181,6 +200,10 @@ class CompareResult:
                 "changed_pixels": self.changed_pixels,
                 "total_pixels": self.total_pixels,
                 "changed_area_pct": round(self.changed_area_pct, 6),
+                "region_pixels": self.region_pixels,
+                "suppressed_pixels": self.suppressed_pixels,
+                "unassigned_pixels": self.unassigned_pixels,
+                "region_area_pct": round(self.region_area_pct, 6),
                 "max_severity": round(self.max_severity, 2),
             },
             "alignment": {
@@ -209,7 +232,10 @@ class CompareResult:
             f"  SSIM={self.ssim_global:.5f}  ΔE00 mean={self.de_mean:.2f}"
             f" p95={self.de_p95:.2f}",
             f"  changed area={self.changed_area_pct:.3f}%  "
-            f"({self.changed_pixels}/{self.total_pixels} px)",
+            f"({self.changed_pixels}/{self.total_pixels} px: "
+            f"{self.region_pixels} in regions, "
+            f"{self.suppressed_pixels} suppressed, "
+            f"{self.unassigned_pixels} in no region)",
             f"  max severity={self.max_severity:.1f}  regions={len(self.regions)}"
             f" (suppressed={len(self.suppressed)})",
         ]
@@ -222,6 +248,8 @@ class CompareResult:
             extra = []
             if r.kind is ChangeKind.MOVED:
                 extra.append(f"shift=({r.moved_dx:+d},{r.moved_dy:+d})")
+            elif r.move_alternatives > 1:
+                extra.append(f"matches {r.move_alternatives} places, no shift named")
             if r.selector:
                 extra.append(r.selector)
             if r.element_text:

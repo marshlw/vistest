@@ -610,6 +610,7 @@ function buildRegions(cp){
     hd.innerHTML=`<span class="tag ${changeSev(r.severity||0)}">${esc(String(r.kind||'change').toUpperCase())}</span>
       <span class="mono" style="font-size:12px;font-weight:600">sev ${Math.round(r.severity||0)}</span>
       <span class="mono" style="font-size:11.5px;color:var(--accent);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.selector||'')}</span>
+      ${r.score==null?'':`<span class="mono" style="font-size:11px;color:var(--ink2)" title="How likely this change is real, 0–1">score ${Number(r.score).toFixed(2)}</span>`}
       <span class="mono" style="font-size:11px;color:var(--faint)">${r.w}×${r.h} @ ${r.x},${r.y}</span>`;
 
     /* Быстрый путь для случая, когда движок нашёл именно то: заглушить ЭТУ
@@ -655,8 +656,31 @@ function buildRegions(cp){
       txt.style.cssText='padding:9px 13px;color:var(--ink2);font-size:12.5px';
       card.append(txt);
     }
+    const notes=regionNotes(r);
+    if(notes)card.append(notes);
     box.append(card);
   });
+
+  /* What the engine set aside, and why. Never hidden: a suppression nobody
+     can see is not one this tool makes. Absent when nothing was set aside. */
+  const sup=cp.suppressed||[];
+  if(sup.length){
+    const d=el('details','panel');d.style.cssText='margin-bottom:10px;padding:9px 13px';
+    const sm=el('summary',null,
+      `${sup.length} difference${sup.length===1?'':'s'} not counted`);
+    sm.style.cssText='cursor:pointer;font-size:12.5px;color:var(--ink2)';
+    d.append(sm);
+    sup.forEach(r=>{
+      const row=el('div');row.style.cssText='font-size:12px;margin-top:6px';
+      row.innerHTML=`<span class="mono">${esc(String(r.kind||'').toUpperCase())}</span>
+        <span class="mono" style="color:var(--faint)">${r.w}×${r.h} @ ${r.x},${r.y}</span>
+        <span style="color:var(--ink2)">— ${esc(r.suppressed_by||'suppressed')}</span>`;
+      d.append(row);
+      const notes=regionNotes(r);
+      if(notes)d.append(notes);
+    });
+    box.append(d);
+  }
 
   /* Крупные планы, которым не нашлось региона (старые сравнения без
      region_index), — отдельным блоком и без выдуманных подписей. */
@@ -675,6 +699,21 @@ function buildRegions(cp){
     });
     box.append(grid);
   }
+  return box;
+}
+
+/* Remarks extensions attached to a region; null when there are none. */
+function regionNotes(r){
+  const list=(r.annotations||[]).filter(a=>a&&a.text);
+  if(!list.length)return null;
+  const box=el('div');
+  box.style.cssText='padding:6px 13px 9px;font-size:12px;color:var(--ink2)';
+  list.forEach(a=>{
+    const line=el('div');
+    line.textContent=a.text;
+    if(a.source)line.title=a.source;
+    box.append(line);
+  });
   return box;
 }
 

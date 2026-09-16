@@ -715,63 +715,61 @@ def require(db, token: str | None, role: str) -> dict:
 # --------------------------------------------------------------------------- #
 #  Endpoints
 # --------------------------------------------------------------------------- #
-def _try_directory(db, login_name: str, password: str, row):
-    """Спросить каталог и, если он узнал человека, подготовить запись.
+def _try_external(db, login_name: str, password: str, row):
+    """Ask the external identity provider, if one is installed.
 
-    Возвращает `(row, True)` при успехе и None, если каталог выключен, не
-    настроен, недоступен или человека не признал. Ошибки наружу не пускаются
-    намеренно: «каталог не ответил» для формы входа выглядит как «неверный
-    пароль», и это правильно — рассказывать анониму про устройство внутренней
-    сети незачем. Причина уходит в журнал и в лог.
+    Returns `(row, True)` on success and None when there is no provider, it
+    did not recognise the pair, or it could not be asked. Errors are not let
+    out on purpose: to the sign-in form "the directory did not answer" looks
+    like "wrong password", and that is right — an anonymous caller has no
+    business learning how the internal network is laid out. The cause goes to
+    the audit log and to the log.
     """
-    from . import directory
+    from ..plugins import runtime as _runtime
+    from ..plugins.loader import active_registry
 
+    provider = active_registry().auth_provider()
+    if provider is None:
+        return None
     try:
-        cfg = directory.settings(db)
-        if not cfg.enabled:
-            return None
-        person = directory.authenticate(cfg, login_name, password)
-    except directory.DirectoryError as e:
-        audit(db, login_name or "—", "ldap.unavailable", str(e)[:200])
+        person = _runtime.authenticate(provider, login_name, password)
+    except _runtime.ProviderUnavailable as e:
+        audit(db, login_name or "—", "auth.provider_unavailable",
+              f"{provider.name}: {e}"[:200])
         return None
-    except Exception as e:                                   # pragma: no cover
-        audit(db, login_name or "—", "ldap.error", f"{type(e).__name__}: {e}")
+    if person is None:
         return None
-
-    if not person:
-        return None
-
-    role = person.get("role") or cfg.default_role
+    role = person.role
     if row is None:
-        # Человек появляется при первом входе: ни импорта, ни задания
-        # синхронизации. Место по лицензии проверяется здесь же — учётная
-        # запись из каталога занимает его так же, как заведённая руками.
+        # A person appears on first sign-in: no import, no sync job. The
+        # licence seat is checked here too — an external account takes one
+        # exactly like an account created by hand.
         _check_user_limit(db)
-        # Пароль не хранится вовсе: строка заведомо не является нашим
-        # форматом хеша, поэтому `verify_password` на ней всегда ложна.
+        # No password is stored: the value is deliberately not our hash
+        # format, so `verify_password` is always false on it.
         db.execute(
             "INSERT INTO user(login, name, password, role, active, status,"
-            " source, external_dn) VALUES(?,?,?,?,1,'active','ldap',?)",
-            (login_name, person.get("name") or login_name, "ldap",
-             role, person.get("dn", "")))
+            " source, external_dn) VALUES(?,?,?,?,1,'active',?,?)",
+            (login_name, person.name or login_name, person.source,
+             role, person.source, person.external_id))
         audit(db, login_name, "user.created", login_name,
-              role=role, source="ldap")
+              role=role, source=person.source)
     else:
-        # Роль пересчитывается на каждом входе: человек, вышедший из группы
-        # ревьюеров, должен перестать быть ревьюером при следующем входе, а не
-        # тогда, когда кто-нибудь про это вспомнит.
+        # The role is recomputed on every sign-in: a person who left the
+        # reviewers group must stop being a reviewer at the next sign-in, not
+        # when somebody remembers.
         #
-        # Исключение — роль, поднятая вручную в VisTest: её сохраняем, иначе
-        # «сделай Анну администратором здесь» молча отменялось бы само.
+        # The exception is a role raised by hand in VisTest: it is kept,
+        # otherwise "make Anna an admin here" would quietly undo itself.
         current = row["role"] or "viewer"
         if _RANK.get(role, 0) > _RANK.get(current, 0):
             db.execute("UPDATE user SET role=?, active=1, status='active',"
-                       " source='ldap', external_dn=? WHERE id=?",
-                       (role, person.get("dn", ""), row["id"]))
+                       " source=?, external_dn=? WHERE id=?",
+                       (role, person.source, person.external_id, row["id"]))
         else:
             db.execute("UPDATE user SET active=1, status='active',"
-                       " source='ldap', external_dn=? WHERE id=?",
-                       (person.get("dn", ""), row["id"]))
+                       " source=?, external_dn=? WHERE id=?",
+                       (person.source, person.external_id, row["id"]))
 
     fresh = db.one(
         "SELECT id, login, name, role, password, active, status, source"
@@ -994,7 +992,7 @@ def build_router(db):
         # можно попасть только через лежащий сервис, — это инсталляция,
         # которую некому чинить.
         if not ok and not (row and row["status"] == "pending"):
-            row, ok = _try_directory(db, login_name, password, row) or (row, ok)
+            row, ok = _try_external(db, login_name, password, row) or (row, ok)
 
         # Заявка, ждущая одобрения, — это не «неверный пароль». Человек только
         # что зарегистрировался и получил бы ответ, из которого следует, что он
@@ -1029,55 +1027,6 @@ def build_router(db):
         audit(db, row["login"], "login.ok", source)
         purge_expired(db)
         return {"login": row["login"], "name": row["name"], "role": row["role"]}
-
-    # ---------------- каталог предприятия ----------------
-    @router.get("/api/ldap")
-    def ldap_settings(request: Request,
-                      vistest_session: str | None = Cookie(default=None)):
-        """Настройки каталога. Пароль сервисного аккаунта наружу не отдаётся."""
-        from . import directory
-
-        require(db, vistest_session, "admin")
-        cfg = directory.settings(db)
-        return cfg.to_dict(bind_password_set=bool(directory.bind_password()))
-
-    @router.put("/api/ldap")
-    def ldap_save(request: Request, payload: dict = Body(...),
-                  vistest_session: str | None = Cookie(default=None)):
-        from . import directory
-
-        me_ = require(db, vistest_session, "admin")
-        # Включить интеграцию, не проверив её, — это способ выяснить, что она
-        # не работает, на людях в понедельник утром.
-        if payload.get("enabled"):
-            cfg = directory.save_settings(db, {**payload, "enabled": False},
-                                          me_["login"])
-            check = directory.probe(cfg)
-            if not check["ok"]:
-                raise HTTPException(
-                    400, f"The settings are saved but the directory is not "
-                         f"turned on: {check['error']}")
-        cfg = directory.save_settings(db, payload, me_["login"])
-        audit(db, me_["login"], "ldap.configured", cfg.server,
-              enabled=cfg.enabled, base_dn=cfg.base_dn)
-        return cfg.to_dict(bind_password_set=bool(directory.bind_password()))
-
-    @router.post("/api/ldap/test")
-    def ldap_test(request: Request, payload: dict = Body(default={}),
-                  vistest_session: str | None = Cookie(default=None)):
-        """Проверка соединения — по шагам, потому что «не работает» нечинибельно."""
-        from . import directory
-
-        require(db, vistest_session, "admin")
-        # Проверяем то, что в форме прямо сейчас, а не то, что сохранено:
-        # иначе настройку пришлось бы сохранять, чтобы узнать, верна ли она.
-        cfg = directory.settings(db)
-        for key, value in (payload.get("settings") or {}).items():
-            if hasattr(cfg, key) and value is not None:
-                if key == "role_map" and isinstance(value, str):
-                    value = directory.parse_role_map(value)
-                setattr(cfg, key, value)
-        return directory.probe(cfg, str(payload.get("login") or "").strip())
 
     @router.post("/api/auth/logout")
     def logout(response: Response,

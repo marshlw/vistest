@@ -288,9 +288,14 @@ class CheckService:
         self.store.save(BaselineRecord(name=name, image=rgb, **kw))
 
     def _make_ai(self, dom_expected, dom_actual):
-        ai = self.cfg.ai
-        if not (ai.attribution_enabled or ai.gate_enabled or ai.perceptual_enabled):
+        """Attribution and whatever plugins are installed; None if neither."""
+        from .plugins.loader import active_registry
+
+        registry = active_registry()
+        if not self.cfg.ai.attribution_enabled and registry.is_empty():
             return None
         from .ai import AIPipeline
 
-        return AIPipeline(ai, dom_expected=dom_expected, dom_actual=dom_actual)
+        return AIPipeline(self.cfg.ai, dom_expected=dom_expected,
+                          dom_actual=dom_actual, registry=registry,
+                          plugins=self.cfg.plugins)

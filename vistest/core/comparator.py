@@ -151,22 +151,50 @@ def compare(
     boxes = _seg.merge_close_boxes(boxes, gap=max(cfg.morph_close_px * 2, 10))
 
     # ---------- 7. Classification ----------
-    regions: list[DiffRegion] = []
-    for (x, y, bw, bh, px, fill, _lbl) in boxes:
-        regions.append(
-            _cls.classify_region(
-                (x, y, bw, bh), px, fill,
-                gray_exp=gray_exp, gray_act=gray_act,
-                de_map=de_map, mask=cleaned,
-                total_pixels=res.total_pixels,
-                detect_moved=cfg.detect_moved,
-                move_search_px=cfg.move_search_px,
-                move_match_threshold=cfg.move_match_threshold,
-                above_fold_px=cfg.above_fold_px,
-                above_fold_weight=cfg.above_fold_weight,
-                moved_scale=cfg.moved_severity_scale,
-            )
+    def _classify(box, prefer_shift=None):
+        x, y, bw, bh, px, fill, _lbl = box
+        return _cls.classify_region(
+            (x, y, bw, bh), px, fill,
+            gray_exp=gray_exp, gray_act=gray_act,
+            de_map=de_map, mask=cleaned,
+            total_pixels=res.total_pixels,
+            detect_moved=cfg.detect_moved,
+            move_search_px=cfg.move_search_px,
+            move_match_threshold=cfg.move_match_threshold,
+            above_fold_px=cfg.above_fold_px,
+            above_fold_weight=cfg.above_fold_weight,
+            moved_scale=cfg.moved_severity_scale,
+            prefer_shift=prefer_shift,
         )
+
+    regions: list[DiffRegion] = [_classify(b) for b in boxes]
+
+    # 7b. Regions whose content matched equally well in several places get a
+    # second look with the shift the unambiguous ones agree on. If there is no
+    # such shift, they stay what the first pass made of them — appeared,
+    # disappeared, content — and nobody is told a vector that was a guess.
+    # Regions too small to search a window with get the same second look:
+    # their content either sits exactly at that shift, or they stay as they are.
+    ambiguous = [i for i, r in enumerate(regions)
+                 if r.move_alternatives > 1 and r.kind is not ChangeKind.MOVED]
+    unsearched = [i for i, r in enumerate(regions)
+                  if r.kind is not ChangeKind.MOVED
+                  and min(r.w, r.h) < _align.MIN_SEARCH_SIDE]
+    dominant = (_dominant_shift(regions)
+                if cfg.detect_moved and (ambiguous or unsearched) else None)
+    if dominant is not None:
+        for i in ambiguous + unsearched:
+            again = _classify(boxes[i], prefer_shift=dominant)
+            if again.kind is ChangeKind.MOVED:
+                regions[i] = again
+    if ambiguous:
+        left = sum(1 for i in ambiguous if regions[i].kind is not ChangeKind.MOVED)
+        if left:
+            res.notes.append(
+                f"{left} region(s) matched equally well in several places "
+                "(repeated elements such as checkboxes or list icons); no "
+                "shift is named for them — they are reported by what "
+                "appeared or disappeared at that spot.")
 
     # ---------- 8. AI layer (optional) ----------
     if ai_hooks is not None and regions:
@@ -176,14 +204,20 @@ def compare(
             res.notes.append(f"AI layer skipped: {type(e).__name__}: {e}")
 
     # ---------- 9. Separation and verdict ----------
+    #  Every suppressed region says why. A region set aside for its class used
+    #  to carry no reason at all, and whoever counted suppressions had to know
+    #  the config to tell it from a region nobody looked at.
     ignore_kinds = {ChangeKind(k) for k in cfg.ignore_kinds}
     for r in regions:
-        if r.kind in ignore_kinds or r.suppressed_by:
+        if r.kind in ignore_kinds and not r.suppressed_by:
+            r.suppressed_by = f"ignored-kind: {r.kind.value} (diff.ignore_kinds)"
+        if r.suppressed_by:
             res.suppressed.append(r)
         else:
             res.regions.append(r)
 
     res.max_severity = max((r.severity for r in res.regions), default=0.0)
+    _account(res, mask)
     res.verdict = _verdict(res, cfg)
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -216,7 +250,17 @@ def _verdict(res: CompareResult, cfg: DiffConfig) -> Verdict:
         diffuse = not res.regions
         huge = res.changed_area_pct >= cfg.area_hard_fail_pct
 
-        if diffuse and cfg.area_requires_region and not huge:
+        if diffuse and cfg.area_requires_region and not huge and res.suppressed:
+            #  "Nothing passed filtering" would be untrue here: regions were
+            #  found and set aside, and the reader has to be sent to them.
+            res.notes.append(
+                f"Changed {res.changed_area_pct:.3f}% ≥ "
+                f"{cfg.max_changed_area_pct}%, but every region found "
+                f"({len(res.suppressed)}) was suppressed — see the suppressed "
+                "regions for why. No failure. "
+                "Turn off with: area_requires_region=false"
+            )
+        elif diffuse and cfg.area_requires_region and not huge:
             res.notes.append(
                 f"Changed {res.changed_area_pct:.3f}% ≥ "
                 f"{cfg.max_changed_area_pct}%, but not a single region passed "
@@ -237,6 +281,59 @@ def _verdict(res: CompareResult, cfg: DiffConfig) -> Verdict:
         res.notes.append("Reason for the failure: " + "; ".join(reasons))
         return Verdict.FAIL
     return Verdict.PASS
+
+
+def _dominant_shift(regions: list[DiffRegion]) -> tuple[int, int] | None:
+    """The shift most unambiguous MOVED regions agree on, if any."""
+    votes: dict[tuple[int, int], int] = {}
+    for r in regions:
+        if r.kind is ChangeKind.MOVED and r.move_alternatives <= 1:
+            key = (r.moved_dx, r.moved_dy)
+            votes[key] = votes.get(key, 0) + 1
+    if not votes:
+        return None
+    best, count = max(votes.items(), key=lambda kv: kv[1])
+    # A tie between two different shifts is no tie-breaker at all.
+    if sum(1 for c in votes.values() if c == count) > 1:
+        return None
+    return best
+
+
+def _account(res: CompareResult, mask: np.ndarray) -> None:
+    """Split `changed_pixels` into where those pixels ended up.
+
+    `changed_pixels` / `changed_area_pct` count the change mask **before**
+    segmentation. The morphological opening that follows removes strokes
+    thinner than about five pixels — which is to say, most text — and the
+    size and density filters remove more. So the headline area and the list
+    of regions can describe very different amounts of the frame, and a reader
+    who adds up the boxes cannot reach the percentage. These three numbers
+    are the bridge:
+
+      region_pixels      changed pixels inside a reported region;
+      suppressed_pixels  changed pixels inside a suppressed region only;
+      unassigned_pixels  changed pixels in no region at all.
+
+    They always sum to `changed_pixels`. Boxes, not the cleaned mask, decide
+    membership: a region is reported as a box, and a pixel inside the box is
+    what a person looking at the picture counts as "in that region".
+    """
+    h, w = mask.shape[:2]
+
+    def cover(regions) -> np.ndarray:
+        out = np.zeros((h, w), dtype=bool)
+        for r in regions:
+            out[max(0, r.y):r.y + r.h, max(0, r.x):r.x + r.w] = True
+        return out
+
+    shown = cover(res.regions)
+    hidden = cover(res.suppressed) & ~shown
+    res.region_pixels = int((mask & shown).sum())
+    res.suppressed_pixels = int((mask & hidden).sum())
+    res.unassigned_pixels = int(res.changed_pixels - res.region_pixels
+                                - res.suppressed_pixels)
+    total = max(res.total_pixels, 1)
+    res.region_area_pct = 100.0 * res.region_pixels / total
 
 
 def _fit_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:

@@ -236,10 +236,14 @@ def evaluate(gate: RegionGate, cases, cfg: DiffConfig, log=print) -> dict:
     покраснело зря и сколько регрессов утекло — до и после.
     """
     from ..config import AIConfig
+    from ..plugins.registry import PluginRegistry
+    from .gate import GateScorer
     from .pipeline import AIPipeline
 
+    registry = PluginRegistry()
+    registry.set_scorer(GateScorer(gate), name="gate")
     ai = AIPipeline(AIConfig(attribution_enabled=False, gate_enabled=True),
-                    gate=gate)
+                    registry=registry)
 
     stats = {"false_fail_before": 0, "false_fail_after": 0,
              "missed_before": 0, "missed_after": 0, "flipped": []}

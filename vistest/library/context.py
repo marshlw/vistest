@@ -63,6 +63,8 @@ class LibraryContext:
     update: bool = False
     config_path: str | None = None
     preset: str | None = None
+    #  `--vistest-fail-on`, folded over `plugins.fail_on` from the config.
+    fail_on: str | None = None
     #  Filled on first use; both are process-wide and neither is cheap.
     _config: Any = None
     _store: Any = None
@@ -88,6 +90,17 @@ class LibraryContext:
             self._config = (VisTestConfig.preset_of(self.preset) if self.preset
                             else VisTestConfig.load(self.config_path))
         return self._config
+
+    @property
+    def plugins_config(self):
+        """The `plugins:` section, with the command line's `fail_on` on top."""
+        from dataclasses import replace
+
+        plugins = self.config.plugins
+        if self.fail_on:
+            plugins = replace(plugins, fail_on=self.fail_on).validated(
+                "--vistest-fail-on")
+        return plugins
 
     @property
     def store(self) -> SnapshotStore:

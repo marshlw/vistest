@@ -98,9 +98,9 @@ def _latest_by_snapshot(db, project: str, verdict: str) -> list[dict]:
 
 
 def _regions(db, comparison_id: int) -> list[dict]:
-    return db.query(
-        "SELECT * FROM region WHERE comparison_id=? ORDER BY severity DESC",
-        (comparison_id,))
+    from .db import regions_of
+
+    return regions_of(db, comparison_id)
 
 
 def _error_text(row: dict) -> str:

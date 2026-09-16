@@ -65,6 +65,24 @@ def set_text(db, name: str, value: str, who: str = "") -> None:
     _write(db, name, str(value), who)
 
 
+class DatabaseSettings:
+    """The `setting` table as a `vistest.plugins.api.SettingsStore`.
+
+    What plugins get as ``registry.host.settings``: text in, text out, global
+    scope only. The table is shared with the core, so a plugin prefixes its
+    own keys.
+    """
+
+    def __init__(self, db):
+        self.db = db
+
+    def get_text(self, name: str, default: str = "") -> str:
+        return get_text(self.db, name, default)
+
+    def set_text(self, name: str, value: str, who: str = "") -> None:
+        set_text(self.db, name, value, who)
+
+
 # --------------------------------------------------------------------------- #
 #  Эталон на ветку
 # --------------------------------------------------------------------------- #

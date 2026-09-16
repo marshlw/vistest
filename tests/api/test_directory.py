@@ -279,7 +279,7 @@ def test_a_directory_outage_looks_like_a_refusal_not_a_stack_trace(
 
     # Но в журнале причина есть — иначе разбираться будет не с чем.
     rows = mainmod.db.query(
-        "SELECT action, target FROM audit WHERE action='ldap.unavailable'")
+        "SELECT action, target FROM audit WHERE action='auth.provider_unavailable'")
     assert rows and "not answering" in rows[0]["target"]
 
 
