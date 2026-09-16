@@ -224,7 +224,9 @@ def test_no_regression_is_lost_on_the_corpus(cases):
     gate = RegionGate.load(default_model_path())
     assert gate is not None
     ai = _pipeline(gate)
-    cfg = DiffConfig(morph_open_px=0)
+    # The gate alone: the deterministic noise explanations (core/explain.py)
+    # run before it and would otherwise leave it nothing to decide.
+    cfg = DiffConfig(morph_open_px=0, explain_noise=False)
 
     lost = []
     for case in cases:
@@ -243,7 +245,9 @@ def test_gate_removes_false_failures_on_a_wide_aperture(cases):
     """Ради чего гейт и нужен: открытая апертура без потока ложных падений."""
     gate = RegionGate.load(default_model_path())
     ai = _pipeline(gate)
-    cfg = DiffConfig(morph_open_px=0)
+    # The gate alone: the deterministic noise explanations (core/explain.py)
+    # run before it and would otherwise leave it nothing to decide.
+    cfg = DiffConfig(morph_open_px=0, explain_noise=False)
 
     before = after = 0
     for case in cases:

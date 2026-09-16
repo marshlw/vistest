@@ -288,13 +288,20 @@ def _block(shift: int = 0) -> np.ndarray:
     return img
 
 
+#  What "tolerate this shift" takes in a passport. A three-pixel move of a
+#  solid block is a region with a severity of its own; it used to be visible
+#  only as area because the opening, which then ran before the closing,
+#  erased the three-pixel slivers the move leaves.
+TOLERANT = {"max_changed_area_pct": 100, "fail_severity": 100}
+
+
 def test_a_snapshot_threshold_changes_its_verdict(svc):
     """Ради этого всё и написано: один снимок терпимее остальных."""
     svc.store.save(BaselineRecord(name="block.png", image=_block()))
     moved = _block(shift=3)
     assert svc.check("block.png", moved, render=False).failed
 
-    _with_thresholds(svc, "block.png", max_changed_area_pct=100)
+    _with_thresholds(svc, "block.png", **TOLERANT)
     assert not svc.check("block.png", moved, render=False).failed
 
 
@@ -302,7 +309,7 @@ def test_it_applies_only_to_the_snapshot_that_carries_it(svc):
     """Иначе это не третий уровень, а тот же глобальный, только окольным путём."""
     svc.store.save(BaselineRecord(name="block.png", image=_block()))
     svc.store.save(BaselineRecord(name="other.png", image=_block()))
-    _with_thresholds(svc, "block.png", max_changed_area_pct=100)
+    _with_thresholds(svc, "block.png", **TOLERANT)
 
     assert not svc.check("block.png", _block(shift=3), render=False).failed
     assert svc.check("other.png", _block(shift=3), render=False).failed
@@ -315,12 +322,13 @@ def test_the_call_wins_over_the_passport(svc):
     и потому он самый сильный из уровней.
     """
     svc.store.save(BaselineRecord(name="block.png", image=_block()))
-    _with_thresholds(svc, "block.png", max_changed_area_pct=100)
+    _with_thresholds(svc, "block.png", **TOLERANT)
     moved = _block(shift=3)
     assert not svc.check("block.png", moved, render=False).failed
 
     res = svc.check("block.png", moved, render=False,
-                    diff_overrides={"max_changed_area_pct": 0.01})
+                    diff_overrides={"max_changed_area_pct": 0.01,
+                                    "fail_severity": 25})
     assert res.failed
 
 
@@ -332,7 +340,7 @@ def test_a_none_in_the_call_does_not_erase_the_passport(svc):
     никогда — ровно там, где он и нужен.
     """
     svc.store.save(BaselineRecord(name="block.png", image=_block()))
-    _with_thresholds(svc, "block.png", max_changed_area_pct=100)
+    _with_thresholds(svc, "block.png", **TOLERANT)
     res = svc.check("block.png", _block(shift=3), render=False,
                     diff_overrides={"fail_severity": None,
                                     "max_changed_area_pct": None})

@@ -73,6 +73,51 @@ everything works without them.
   scenarios with plugins disabled and with a set of broken plugins installed),
   `test_plugin_boundary.py`.
 
+### Segmentation keeps text; noise is explained, not erased
+
+- **Close before open.** `segment.clean_mask` now closes the change mask
+  before opening it. The opening (5×5 ellipse) used to run first and erased
+  every stroke thinner than five pixels — text: 13 262 changed pixels of a
+  text edit became 374. The benchmark corpus goes from 3 misses to 1
+  (`price changed` and `promo text` are found; `header color` is a separate
+  cause). False failures stay at 0/16 — with and without the AI layer.
+- **Deterministic noise explanations** (`core/explain.py`, open engine, no
+  model). The new order also keeps what the old one erased by accident; each
+  such region is now suppressed by a named test and says so in
+  `suppressed_by` (`scrollbar: …`, `jpeg: …`, `rerender: …`, with the kind it
+  had): a scroll-bar band at the right/bottom edge; a frame the baseline
+  re-encoded as JPEG reproduces; pixels a ≤1 px quarter-step shift of the
+  baseline reproduces (zero-mean noise off the edges); and a box with no
+  changed pixel inside (`morphology: …`), which closing can leave behind. The
+  AI layer only sees
+  regions this stage left. `diff.explain_noise: false` turns it off for
+  diagnostics. Without the AI layer the corpus goes from 1/16 false failures
+  (the scroll bar, previously hidden by the learned gate) to 0/16.
+- **A move is scored by how far it went.** `moved` regions weigh from
+  `moved_severity_scale` (0.35) up to 1.0 with the shift measured in the
+  element's own size. Before, a 12 px checkbox moved by 16 px scored 17 and
+  passed while the same checkbox moved by 32 px scored 35 and failed.
+- Tests whose premise was the old order were updated, each with the reason in
+  place: the thin-text accounting test now asserts the text is inside a region;
+  the per-snapshot-threshold tests tolerate a 3 px block move by severity as
+  well as area; the stability-mask clock test changes every digit between
+  frames; the gate tests measure the gate with `explain_noise=False`.
+
+### The learned gate is off by default
+
+- **`ai.gate_enabled` now defaults to `false`.** The gate was trained against
+  the cascade as it was before `core/explain.py` — wide aperture, opening
+  first, no deterministic noise explanations. Behind the cascade it now sits
+  in, it subtracts: on the corpus, 0 of 55 regressions over noise are missed
+  without it and 5 of 55 are missed with it. A layer that only takes away must
+  not be on by default. Nothing is removed — `ai.gate_enabled: true` brings it
+  back, and every safety rule around it is unchanged.
+- The deterministic explanations do the work the gate was added for, and name
+  the reason in `suppressed_by` instead of a probability. Whether a gate
+  re-trained against the current cascade beats them is an open question, and
+  the honest answer to "it does not" is to drop the layer, not to keep
+  shipping it switched off.
+
 ### Engine metrics you can reconcile
 
 Found on a live run: `severity 100.0, changed area 1.44%` next to three

@@ -19,6 +19,7 @@ from . import align as _align
 from . import antialias as _aa
 from . import classify as _cls
 from . import color as _color
+from . import explain as _explain
 from . import segment as _seg
 from . import structure as _struct
 from .settings import DiffConfig
@@ -196,10 +197,24 @@ def compare(
                 "shift is named for them — they are reported by what "
                 "appeared or disappeared at that spot.")
 
+    # ---------- 7c. Deterministic noise explanations ----------
+    # Scroll bars, JPEG re-encoding, subpixel re-rendering. Part of the open
+    # engine: it runs with or without the AI layer, and every region it
+    # suppresses names the test that explained it. See core/explain.py.
+    if cfg.explain_noise and regions:
+        regions = _explain.explain_regions(
+            regions, expected=exp, actual=act_aligned, raw_mask=mask,
+            aligned=bool(res.aligned), size_changed=res.size_changed,
+            notes=res.notes)
+
     # ---------- 8. AI layer (optional) ----------
-    if ai_hooks is not None and regions:
+    # The layer sees what the open engine could not explain; what it could
+    # is already decided and is not handed over to be decided again.
+    live = [r for r in regions if not r.suppressed_by]
+    if ai_hooks is not None and live:
         try:
-            regions = ai_hooks.refine(regions, exp, act_aligned, res)
+            explained = [r for r in regions if r.suppressed_by]
+            regions = ai_hooks.refine(live, exp, act_aligned, res) + explained
         except Exception as e:  # AI should never fail the test
             res.notes.append(f"AI layer skipped: {type(e).__name__}: {e}")
 
@@ -303,9 +318,9 @@ def _account(res: CompareResult, mask: np.ndarray) -> None:
     """Split `changed_pixels` into where those pixels ended up.
 
     `changed_pixels` / `changed_area_pct` count the change mask **before**
-    segmentation. The morphological opening that follows removes strokes
-    thinner than about five pixels — which is to say, most text — and the
-    size and density filters remove more. So the headline area and the list
+    segmentation. The morphology that follows removes isolated specks, the
+    size and density filters remove more, and closing grows boxes past the
+    pixels that made them. So the headline area and the list
     of regions can describe very different amounts of the frame, and a reader
     who adds up the boxes cannot reach the percentage. These three numbers
     are the bridge:

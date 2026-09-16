@@ -75,7 +75,11 @@ def test_dynamic_clock_suppressed_by_stability_mask(base):
     """Живые часы гасятся stability-маской, а не ручным селектором."""
     from vistest.core.noise import stability_mask
 
-    frames = [syn.add_clock(base, t) for t in ("12:41:07", "12:41:08", "12:41:09")]
+    # Every digit position has to change between the frames for the mask to
+    # cover it. With frames one second apart only the seconds moved, and the
+    # test passed only because thin strokes of the changed hours were erased
+    # by the opening — the same defect that hid real text changes.
+    frames = [syn.add_clock(base, t) for t in ("12:41:07", "20:53:18", "07:06:39")]
     mask = stability_mask(frames)
     assert mask.any(), "маска нестабильности должна поймать часы"
 

@@ -28,7 +28,7 @@ from .structure import edge_density, local_ssim
 KIND_WEIGHT: dict[ChangeKind, float] = {
     ChangeKind.NOISE: 0.0,
     ChangeKind.ANTIALIAS: 0.0,
-    ChangeKind.MOVED: 0.35,      # overridden by diff.moved_severity_scale
+    ChangeKind.MOVED: 0.35,      # the floor; see moved_weight()
     ChangeKind.RESIZED: 0.80,
     ChangeKind.COLOR: 0.90,
     ChangeKind.TEXT: 1.00,
@@ -96,7 +96,8 @@ def classify_region(
     if detect_moved and _moved(region, gray_exp, gray_act, move_search_px,
                                move_match_threshold, prefer_shift):
         region.kind = ChangeKind.MOVED
-        region.severity = _severity(region, total_pixels, moved_scale,
+        region.severity = _severity(region, total_pixels,
+                                    moved_weight(region, moved_scale),
                                     above_fold_px, above_fold_weight)
         return region
 
@@ -134,6 +135,37 @@ _SIZE_REF_MIN_PX = 400.0
 #  numbers all the way up. With tau 0.6 a raw score of 1.0 reads ~81.
 _SATURATION_TAU = 0.6
 _SIZE_LOG_GAIN = 0.15
+
+
+#: The weight a move reaches once the element has left its own footprint.
+#: Equal to a content change: the element is somewhere else entirely, and a
+#: move that does not overlap is what the classifier otherwise reports as a
+#: removal plus an addition.
+MOVED_FULL_WEIGHT = 1.0
+
+
+def moved_weight(r: DiffRegion, floor: float) -> float:
+    """Class weight of a MOVED region: grows with how far the element went.
+
+    `floor` (`diff.moved_severity_scale`) was the whole weight before. That
+    made the score of a move blind to the move: a 12-px checkbox shifted by
+    24 px (old and new positions overlap, one MOVED region) scored 17 and
+    passed, while the same checkbox shifted by 32 px (no overlap, reported as
+    removed + added) scored 35 and failed. Longer moves passed, shorter ones
+    failed, depending only on whether the two footprints touched.
+
+    The weight now rises from `floor` to `MOVED_FULL_WEIGHT` with the shift
+    measured in the element's own size along the direction of the move. A
+    MOVED box spans the old and the new position, so the element's extent is
+    the box minus the shift. A panel that slid by a tenth of its height stays
+    close to the floor; an element that moved by its own size weighs what a
+    content change weighs.
+    """
+    fx = abs(r.moved_dx) / max(1, r.w - abs(r.moved_dx)) if r.moved_dx else 0.0
+    fy = abs(r.moved_dy) / max(1, r.h - abs(r.moved_dy)) if r.moved_dy else 0.0
+    frac = min(1.0, max(fx, fy))
+    top = max(floor, MOVED_FULL_WEIGHT)
+    return floor + (top - floor) * frac
 
 
 def _moved(region: DiffRegion, gray_exp, gray_act, search_px: int,
@@ -228,7 +260,8 @@ def _severity(
 
 
 def recompute_severity(r: DiffRegion, total_pixels: int, cfg) -> float:
-    weight = (cfg.moved_severity_scale if r.kind is ChangeKind.MOVED
+    weight = (moved_weight(r, cfg.moved_severity_scale)
+              if r.kind is ChangeKind.MOVED
               else KIND_WEIGHT.get(r.kind, 1.0))
     r.severity = _severity(r, total_pixels, weight,
                            cfg.above_fold_px, cfg.above_fold_weight)

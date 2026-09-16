@@ -308,11 +308,12 @@ Claude outputs/
 .claude/
 
 # -----------------------------------------------------------------------------
-#  Сборка дистрибутива
+#  Distribution build
 # -----------------------------------------------------------------------------
-# Пока пакет не опубликован, колесо собирают локально (python -m pip wheel) и
-# кладут рядом, чтобы поставить в docker-образ подключённого проекта. Внутри
-# дистрибутива лежит весь пакет, включая обученную модель, — в git ему нельзя.
+# Until the package is published, the wheel is built locally
+# (python -m pip wheel) and dropped next to a connected project so it can be
+# installed into that project's docker image. The wheel contains the whole
+# package, trained model included — it must never enter git.
 vendor/
 dist/
 *.whl
