@@ -142,8 +142,8 @@ def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
 
     Asserted through the limit the failure reports rather than through a
     changed verdict, and deliberately: a solid block on a flat background
-    scores severity 100, the top of the scale, so no threshold can make that
-    particular picture pass and a verdict flip would prove nothing here. The
+    scores near the top of the scale and covers far more than the area limit,
+    so a verdict flip would prove nothing here. The
     number in the message is read straight off the config the engine was
     given, so it is the plumbing itself that is being checked.
 

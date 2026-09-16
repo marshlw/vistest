@@ -39,7 +39,8 @@ from uuid import uuid4
 
 from ..storage import atomic
 
-__all__ = ["Parts", "build", "describe", "read_parts", "render", "write_part"]
+__all__ = ["Parts", "build", "describe", "read_parts", "render", "total_suppressed",
+           "write_part"]
 
 #  A full-page screenshot is megabytes. The report has to open and be
 #  forwarded, so there is a ceiling per picture and one on the whole file:
@@ -79,14 +80,50 @@ def describe(result) -> str:
     for region in regions:
         kind = getattr(region.kind, "value", str(region.kind))
         counts[kind] = counts.get(kind, 0) + 1
-    parts = [f"{KIND_WORDS.get(kind, kind)} in {n} region{'s' if n > 1 else ''}"
-             for kind, n in sorted(counts.items(), key=lambda kv: -kv[1])]
+    ranked = sorted(counts.items(), key=lambda kv: -kv[1])
+    parts = [f"{KIND_WORDS.get(kind, kind)} in {n}" for kind, n in ranked[:3]]
+    rest = sum(n for _, n in ranked[3:])
+    if rest:
+        #  Never drop kinds silently: the counts have to add up to the total.
+        parts.append(f"other changes in {rest}")
+    total = len(regions)
+    head = (f"{total} region{'s' if total > 1 else ''}: " + ", ".join(parts))
 
-    biggest = max(regions, key=lambda r: getattr(r, "severity", 0.0))
-    where = (f"largest {biggest.w}x{biggest.h} at ({biggest.x}, {biggest.y})"
-             + (f", {biggest.selector}" if getattr(biggest, "selector", None)
-                else ""))
-    return ", ".join(parts[:3]) + f"; {where}"
+    #  Picked by severity, and named for it. It used to say "largest", which a
+    #  reader checks against the sizes and finds false.
+    top = max(regions, key=lambda r: getattr(r, "severity", 0.0))
+    where = (f"most severe {top.w}x{top.h} at ({top.x}, {top.y})"
+             + (f", {top.selector}" if getattr(top, "selector", None) else ""))
+    return f"{head}; {where}" + _coverage(result)
+
+
+#  Below this share of the changed pixels left outside every region, the
+#  headline area and the regions tell the same story and nothing is added.
+UNASSIGNED_SHARE_TO_MENTION = 0.10
+
+
+def _coverage(result) -> str:
+    """The bridge between `changed area` and the regions, when they disagree.
+
+    `changed_area_pct` is measured on the change mask before segmentation;
+    regions are what survives it. When most of the change is in no region, the
+    reader must be told so in the same line — otherwise the area and the list
+    cannot be reconciled and neither number is believed.
+    """
+    changed = int(getattr(result, "changed_pixels", 0) or 0)
+    unassigned = int(getattr(result, "unassigned_pixels", 0) or 0)
+    if changed <= 0 or unassigned <= UNASSIGNED_SHARE_TO_MENTION * changed:
+        return ""
+    total = max(int(getattr(result, "total_pixels", 0) or 0), 1)
+    in_regions = 100.0 * int(getattr(result, "region_pixels", 0) or 0) / total
+    suppressed = int(getattr(result, "suppressed_pixels", 0) or 0)
+    outside = 100.0 * unassigned / total
+    text = (f"; these regions hold {in_regions:.2f}% of the "
+            f"{result.changed_area_pct:.2f}% changed, {outside:.2f}% is in no "
+            "region (strokes or specks too thin to form one)")
+    if suppressed:
+        text += f", {100.0 * suppressed / total:.2f}% was suppressed as noise"
+    return text
 
 
 # --------------------------------------------------------------------------- #
@@ -258,14 +295,21 @@ def _row(entry: dict, budget: list[int]) -> str:
     if "changed_area_pct" in metrics:
         facts.append(f"area {metrics['changed_area_pct']:.2f}%"
                      + (f" / {limits['max_changed_area_pct']:.2f}%"
-                        if "max_changed_area_pct" in limits else ""))
+                        if "max_changed_area_pct" in limits else "")
+                     + (f" ({metrics['region_area_pct']:.2f}% in regions)"
+                        if "region_area_pct" in metrics else ""))
     if "ssim_global" in metrics:
         facts.append(f"SSIM {metrics['ssim_global']:.4f}")
     if entry.get("duration_ms"):
         facts.append(f"{int(entry['duration_ms'])} ms")
 
+    suppressed = int(entry.get("suppressed_count") or 0)
+    if suppressed:
+        facts.append(f"{suppressed} suppressed")
+
     open_attr = " open" if verdict in ("fail", "error") else ""
     body = _viewer(entry, images) if verdict != "pass" else ""
+    body = _regions_table(entry) + _suppressed_list(entry) + body
 
     return (
         f'<details class="row {_e(verdict)}"{open_attr} data-verdict="{_e(verdict)}">'
@@ -278,6 +322,86 @@ def _row(entry: dict, budget: list[int]) -> str:
         + (f'<p class="nodeid">{_e(entry["nodeid"])}</p>'
            if entry.get("nodeid") else "")
         + body + '</div></details>')
+
+
+def _annotations_text(region: dict) -> str:
+    return " · ".join(str(a.get("text", "")) for a in region.get("annotations") or []
+                      if isinstance(a, dict))
+
+
+def _regions_table(entry: dict) -> str:
+    """The regions that count — shown only when an extension said something.
+
+    Without a scorer or an annotator the reason line already names them, and a
+    table of coordinates adds nothing. With one, the score and the remarks are
+    the point, and they need a place.
+    """
+    regions = [r for r in entry.get("regions") or [] if isinstance(r, dict)]
+    scored = any(r.get("score") is not None for r in regions)
+    noted = any(r.get("annotations") for r in regions)
+    if not (scored or noted):
+        return ""
+    head = "<tr><th>kind</th><th>severity</th><th>where</th>"
+    head += "<th>score</th>" if scored else ""
+    head += "<th>notes</th>" if noted else ""
+    rows = []
+    for r in regions:
+        cells = (f"<td>{_e(r.get('kind', ''))}</td>"
+                 f"<td>{float(r.get('severity') or 0):.1f}</td>"
+                 f"<td>{_e(_where(r))}</td>")
+        if scored:
+            score = r.get("score")
+            cells += f"<td>{'' if score is None else f'{float(score):.2f}'}</td>"
+        if noted:
+            cells += f"<td>{_e(_annotations_text(r))}</td>"
+        rows.append(f"<tr>{cells}</tr>")
+    return (f'<table class="regions"><thead>{head}</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>')
+
+
+def _where(region: dict) -> str:
+    text = (f"{region.get('w')}x{region.get('h')} at "
+            f"({region.get('x')}, {region.get('y')})")
+    if region.get("selector"):
+        text += f", {region['selector']}"
+    return text
+
+
+def _suppressed_list(entry: dict) -> str:
+    """What was set aside and why. Present in passing rows too."""
+    count = int(entry.get("suppressed_count") or 0)
+    if not count:
+        return ""
+    from ..plugins.runtime import say_suppressed
+
+    listed = [r for r in entry.get("suppressed") or [] if isinstance(r, dict)]
+    items = []
+    for r in listed:
+        extra = _annotations_text(r)
+        items.append(
+            f"<li>{_e(r.get('kind', ''))} {_e(_where(r))} — "
+            f"{_e(r.get('suppressed_by') or 'suppressed')}"
+            + (f" <span class=\"muted\">({_e(extra)})</span>" if extra else "")
+            + "</li>")
+    more = count - len(listed)
+    if more > 0:
+        items.append(f"<li>… and {more} more</li>")
+    summary = "; ".join(say_suppressed(entry.get("suppressed_by_reason") or
+                                       {"suppressed": count}))
+    return (f'<details class="suppressed"><summary>{_e(summary)}</summary>'
+            f'<ul>{"".join(items)}</ul></details>')
+
+
+def total_suppressed(entries: list[dict]) -> dict[str, int]:
+    """Suppression counts summed over a run, by reason phrase."""
+    total: dict[str, int] = {}
+    for entry in entries:
+        for phrase, n in (entry.get("suppressed_by_reason") or {}).items():
+            try:
+                total[str(phrase)] = total.get(str(phrase), 0) + int(n)
+            except (TypeError, ValueError):
+                continue
+    return total
 
 
 _CSS = """
@@ -357,6 +481,14 @@ h1{font-size:20px;margin:0 0 4px}
 .banner code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:12px}
 footer{color:var(--muted);font-size:12px;margin-top:28px}
+.regions{border-collapse:collapse;margin:8px 0;font-size:12px;width:100%}
+.regions th,.regions td{border-bottom:1px solid var(--line);padding:4px 8px;
+  text-align:left;vertical-align:top}
+.regions th{color:var(--muted);font-weight:500}
+.suppressed{margin:8px 0;color:var(--muted);font-size:12px}
+.suppressed summary{cursor:pointer}
+.suppressed ul{margin:4px 0 0;padding-left:20px}
+.muted{color:var(--muted)}
 """
 
 _JS = """
@@ -416,6 +548,15 @@ def _banners(parts: Parts) -> str:
     return "".join(out)
 
 
+def _suppressed_total(entries: list[dict]) -> str:
+    total = total_suppressed(entries)
+    if not total:
+        return ""
+    from ..plugins.runtime import say_suppressed
+
+    return " · " + _e("; ".join(say_suppressed(total)))
+
+
 def render(parts: Parts | list[dict], *, title: str = "VisTest") -> str:
     """The whole report as one string. No network, no fonts, no libraries."""
     if not isinstance(parts, Parts):
@@ -446,7 +587,8 @@ def render(parts: Parts | list[dict], *, title: str = "VisTest") -> str:
         f"<title>{_e(title)}</title><style>{_CSS}</style></head><body>"
         f'<div class="wrap"><h1>{_e(title)}</h1>'
         f'<p class="sub">{len(entries)} visual '
-        f'check{"s" if len(entries) != 1 else ""} · {stamp}</p>'
+        f'check{"s" if len(entries) != 1 else ""} · {stamp}'
+        f'{_suppressed_total(entries)}</p>'
         f'{_banners(parts)}'
         f'<div class="counts">{"".join(chips)}</div>{rows}'
         "<footer>Generated by VisTest. Everything in this file is inside it — "

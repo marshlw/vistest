@@ -446,10 +446,20 @@ def _baselines_root() -> Path:
 
 
 def _baselines_transfer(args) -> int:
-    from .transfer import Selection, export, import_, inspect, plan
+    from .plugins.api import BaselineSelection
+    from .plugins.loader import active_registry
 
-    selection = Selection(project=args.project, platform=args.platform,
-                          names=tuple(args.names))
+    backend = active_registry().sync_backend()
+    if backend is None:
+        print("Moving baselines between installations is not available in "
+              "this installation.", file=sys.stderr)
+        return 2
+    sync = backend.impl
+    export, inspect = sync.export, sync.inspect
+    plan, import_ = sync.plan, sync.apply
+
+    selection = BaselineSelection(project=args.project, platform=args.platform,
+                                  names=tuple(args.names))
     root = Path(args.baselines) if getattr(args, "baselines", "") \
         else _baselines_root()
 

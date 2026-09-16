@@ -32,14 +32,15 @@ from .core.settings import (
     DiffConfig,
     MatrixConfig,
     PathsConfig,
+    PluginsConfig,
     RenderConfig,
     ServiceConfig,
 )
 
 __all__ = [
     "AIConfig", "AuthConfig", "CaptureConfig", "ConfigError", "DiffConfig",
-    "MatrixConfig", "PathsConfig", "RenderConfig", "ServiceConfig",
-    "VisTestConfig", "env_flag", "env_float", "env_int", "env_text",
+    "MatrixConfig", "PathsConfig", "PluginsConfig", "RenderConfig",
+    "ServiceConfig", "VisTestConfig", "env_flag", "env_float", "env_int", "env_text",
     "platform_key",
 ]
 
@@ -113,6 +114,7 @@ class VisTestConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     service: ServiceConfig = field(default_factory=ServiceConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    plugins: PluginsConfig = field(default_factory=PluginsConfig)
     # Named sequences of steps: login, accept_cookies, open_cart…
     # Attached via the step {action: flow, name: login}.
     flows: dict[str, list] = field(default_factory=dict)
@@ -193,6 +195,9 @@ class VisTestConfig:
                 patch[k] = tuple(v) if isinstance(getattr(current, k), tuple) else v
             setattr(cfg, key, replace(current, **patch))
 
+        if raw.get("plugins") is not None:
+            cfg.plugins = _plugins_section(raw["plugins"], path)
+
         if "update_baselines" in raw:
             cfg.update_baselines = bool(raw["update_baselines"])
 
@@ -233,6 +238,8 @@ class VisTestConfig:
             cfg.paths = replace(cfg.paths, root=v)
         if env_flag("VISTEST_UPDATE_BASELINES"):
             cfg.update_baselines = True
+        if v := env_text("VISTEST_FAIL_ON"):
+            cfg.plugins = replace(cfg.plugins, fail_on=v).validated("VISTEST_FAIL_ON")
         if env_flag("VISTEST_PERCEPTUAL"):
             cfg.ai = replace(cfg.ai, perceptual_enabled=True)
 
@@ -297,6 +304,56 @@ class VisTestConfig:
 
     def runs_path(self) -> Path:
         return self.root_path / self.paths.runs
+
+
+#  Keys of `plugins:` already warned about in this process. A config is loaded
+#  many times per run — once per check in the library mode — and the same
+#  warning a hundred times is a warning nobody reads.
+_warned_plugin_keys: set[str] = set()
+
+
+def _plugins_section(raw, path) -> PluginsConfig:
+    """`plugins:` — the core keys are checked, everything else is kept.
+
+    Everything that is not a core key is a plugin's own section and is handed
+    to plugins unread. It is not refused: a config shared between a machine
+    with a plugin and one without must load on both. A key that names no
+    installed plugin is logged once, because the other reading of such a key —
+    a typo — is otherwise invisible.
+    """
+    import logging
+
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{path}: plugins: expected a mapping, got "
+                          f"{type(raw).__name__}")
+    known = {f.name for f in fields(PluginsConfig)} - {"options"}
+    patch: dict = {}
+    options: dict = {}
+    for key, value in raw.items():
+        key = str(key)
+        if key in known:
+            if key == "disabled":
+                if isinstance(value, str) or not isinstance(value, (list, tuple)):
+                    raise ConfigError(f"{path}: plugins.disabled: expected a "
+                                      "list of plugin names")
+                value = tuple(str(v) for v in value)
+            patch[key] = value
+        else:
+            options[key] = value
+
+    if options:
+        try:
+            from .plugins.loader import installed_names
+
+            installed = installed_names()
+        except Exception:                                 # pragma: no cover
+            installed = set()
+        for key in sorted(set(options) - installed - _warned_plugin_keys):
+            _warned_plugin_keys.add(key)
+            logging.getLogger("vistest.plugins").warning(
+                "%s: plugins.%s is not a setting VisTest knows and no installed "
+                "plugin is called %r; it is kept and ignored", path, key, key)
+    return PluginsConfig(**patch, options=options).validated(f"{path}: plugins")
 
 
 def _find_config() -> Path | None:

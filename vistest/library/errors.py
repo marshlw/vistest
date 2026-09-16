@@ -101,11 +101,21 @@ class ScreenshotMismatch(VisualCheckError):
             f"  severity {result.max_severity:.1f}"
             f" (limit {limits.get('fail_severity', 0):.1f}),"
             f" changed area {result.changed_area_pct:.2f}%"
-            f" (limit {limits.get('max_changed_area_pct', 0):.2f}%)",
+            f" (limit {limits.get('max_changed_area_pct', 0):.2f}%),"
+            f" {len(result.regions)} region"
+            f"{'' if len(result.regions) == 1 else 's'}",
             f"  reason: {reason}",
             f"  baseline: {baseline}",
             f"  actual:   {actual}",
         ]
+        suppressed = list(getattr(result, "suppressed", None) or ())
+        if suppressed:
+            from ..plugins.runtime import count_suppressed, say_suppressed
+
+            #  Said here too: a failure that also hides something is read
+            #  differently from one that does not.
+            lines.append("  also:     "
+                         + "; ".join(say_suppressed(count_suppressed(suppressed))))
         if diff is not None:
             lines.append(f"  diff:     {diff}")
         if report is not None:

@@ -6,64 +6,99 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Сборка AI-слоя в один объект-хук для comparator.compare(ai_hooks=...).
+"""The layer after the cascade, as one hook for `compare(ai_hooks=...)`.
 
-Порядок важен:
-  1. attribution   — дёшево, без сети, даёт имена элементам
-  2. perceptual    — локальная модель, отсеивает «математически заметное,
-                     но человеком незаметное»
-  3. annotator     — необязательный внешний слой (см. vistest/ai/hooks.py):
-                     только описывает, вердикт не меняет
+Order matters:
 
-Любая ступень может отсутствовать. Ни одна не имеет права уронить прогон.
+  1. attribution — cheap, offline, part of the engine: names the elements;
+  2. scorer      — the active `RegionScorer` plugin, if any: estimates how
+                   likely each region is real; the core applies the estimate
+                   under `plugins.fail_on` (see `vistest.plugins.runtime`);
+  3. annotators  — the annotator chain, if any, plus the one registered from
+                   code with `set_annotator`: words only, never the verdict.
+
+Every step may be missing, and none of them is allowed to take a run down.
+With no plugin installed this is attribution and nothing else — the
+deterministic path.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
 
 from ..config import AIConfig
-from ..models import ChangeKind, CompareResult, DiffRegion
+from ..models import CompareResult, DiffRegion
+from ..plugins import runtime as _runtime
+from ..plugins.api import RegionContext
+from ..plugins.registry import PluginRegistry, Registration
 from .attribution import attribute, diagnose, dom_changes
-from .gate import RegionGate, default_model_path, features, guard
-from .hooks import RegionAnnotator, get_annotator
-from .perceptual import PerceptualModel
+from .hooks import RegionAnnotator, as_registration
 
 log = logging.getLogger("vistest.ai")
 
 
+def _read_only(image: Any) -> Any:
+    if not isinstance(image, np.ndarray):
+        return image
+    view = image.view()
+    view.flags.writeable = False
+    return view
+
+
 class AIPipeline:
+    """Attribution, then plugins.
+
+    `registry` defaults to the process registry with installed plugins loaded.
+    `plugins` is the `plugins:` section (a `PluginsConfig`); its `fail_on`
+    decides what a score does to the outcome. `annotator` is an extra
+    annotator for this pipeline only, in the `set_annotator` contract.
+    """
+
     def __init__(
         self,
         cfg: AIConfig | None = None,
         *,
         dom_expected: dict | None = None,
         dom_actual: dict | None = None,
-        gate: RegionGate | None = None,
         annotator: RegionAnnotator | None = None,
+        registry: PluginRegistry | None = None,
+        plugins: Any = None,
     ):
         self.cfg = cfg or AIConfig()
         self.dom_expected = dom_expected
         self.dom_actual = dom_actual
-        self._gate = gate if gate is not None else self._load_gate()
-        self._perceptual = (
-            PerceptualModel(self.cfg.perceptual_model_path)
-            if self.cfg.perceptual_enabled else None
-        )
-        self._annotator = annotator if annotator is not None else get_annotator()
+        if registry is None:
+            from ..plugins.loader import active_registry
 
-    def _load_gate(self) -> RegionGate | None:
-        if not self.cfg.gate_enabled:
-            return None
-        path = self.cfg.gate_model_path or default_model_path()
-        gate = RegionGate.load(path)
-        if gate is not None and self.cfg.gate_threshold > 0:
-            gate.threshold = self.cfg.gate_threshold
-        return gate
+            registry = active_registry()
+        self.registry = registry
+        self.policy = _runtime.ScoringPolicy.of(plugins)
+        self._options = dict(getattr(plugins, "options", None) or {})
+        self._extra: Registration | None = (
+            as_registration(annotator) if annotator is not None else None)
 
     # ------------------------------------------------------------------ #
+    def context(self, regions: list[DiffRegion], expected: Any, actual: Any,
+                result: CompareResult) -> RegionContext:
+        page_h = max(1, max((r.y + r.h) for r in regions)) if regions else 1
+        return RegionContext(
+            name=result.name,
+            expected=_read_only(expected),
+            actual=_read_only(actual),
+            total_pixels=int(result.total_pixels or page_h),
+            page_height=page_h,
+            aligned=bool(result.aligned),
+            size_changed=bool(result.size_changed),
+            region_count=len(regions),
+            dom_expected=self.dom_expected,
+            dom_actual=self.dom_actual,
+            options=self._options,
+            settings=self.cfg,
+        )
+
     def refine(
         self,
         regions: list[DiffRegion],
@@ -77,148 +112,45 @@ class AIPipeline:
                     regions, self.dom_expected, self.dom_actual,
                     min_coverage=self.cfg.attribution_min_iou,
                 )
-                changes = dom_changes(self.dom_expected, self.dom_actual)
-                if changes.get("counts"):
-                    c = changes["counts"]
-                    #  Into `maps`, like every other non-string the cascade
-                    #  produces. Nothing reads this yet — the counts reach a
-                    #  person through the note below — but a dict parked in a
-                    #  field typed `dict[str, str]` is the same trap that took
-                    #  a run down once already.
-                    result.maps["dom_changes"] = changes
-                    if any(c.values()):
-                        result.notes.append(
-                            f"DOM: +{c['added']} elements, -{c['removed']}, "
-                            f"moved {c['moved']}"
-                        )
-                # Диагноз важнее констатации: «регион изменился» человек видит
-                # и сам, а вот «это дата, вот что с ней делать» — нет.
-                result.notes.extend(diagnose(regions))
+                self._describe_dom(regions, result)
             except Exception as e:
                 log.warning("attribution: %s", e)
 
-        if self._gate is not None:
-            try:
-                self._apply_gate(regions, result)
-            except Exception as e:
-                log.warning("gate: %s", e)
+        if not regions:
+            return regions
+        ctx = self.context(regions, expected, actual, result)
 
-        if self._perceptual is not None:
-            try:
-                self._apply_perceptual(regions, expected, actual)
-            except Exception as e:
-                log.warning("perceptual: %s", e)
+        outcome = _runtime.score(self.registry.scorer(), regions, ctx, self.policy)
+        if outcome.error:
+            result.notes.append(
+                f"Region scorer skipped ({outcome.error}); the verdict is the "
+                "engine's own.")
+        result.notes.extend(outcome.notes)
 
-        if self._annotator is not None:
-            try:
-                self._apply_annotator(regions, expected, actual, result)
-            except Exception as e:
-                log.warning("annotator: %s", e)
-
+        chain = self.registry.annotators()
+        if self._extra is not None:
+            chain = [*chain, self._extra]
+        if chain:
+            _runtime.annotate(chain, regions, ctx, result=result)
         return regions
 
     # ------------------------------------------------------------------ #
-    def _apply_gate(self, regions, result) -> None:
-        """Понизить до NOISE регионы, которые модель считает шумом.
-
-        Только понизить. Гейт не имеет права поднять severity или сделать
-        сравнение красным: ложное подавление ограничено и видно в отчёте,
-        выдуманное падение — нет.
-        """
-        gate = self._gate
-        if gate is None or not regions:
-            return
-
-        page_h = max(1, max((r.y + r.h) for r in regions))
-        total = result.total_pixels or page_h
-        hits = 0
-        held = 0
-        for r in regions:
-            if r.kind in (ChangeKind.NOISE, ChangeKind.ANTIALIAS):
-                continue
-            row = features(r, total_pixels=total, page_height=page_h,
-                           aligned=result.aligned,
-                           size_changed=result.size_changed,
-                           siblings=len(regions))
-            decision = gate.decide(row)
-            r.gate_probability = decision.noise_probability
-            if not decision.suppress:
-                continue
-            # Модель обучена на синтетике и увидит не всё. За двумя границами
-            # с ней не спорят: крупный регион и сменившаяся геометрия страницы —
-            # это то, ради чего визуальное тестирование существует.
-            blocked = guard(r, total_pixels=total,
-                            size_changed=result.size_changed)
-            if blocked:
-                held += 1
-                continue
-            r.kind = ChangeKind.NOISE
-            r.severity = 0.0
-            r.suppressed_by = decision.explain()
-            hits += 1
-
-        if held:
-            result.notes.append(
-                f"Learned gate: {held} region(s) looked like noise to the model "
-                "but were kept — a safety rule outranks it.")
-        if hits:
-            result.notes.append(
-                f"Learned gate: {hits} region(s) recognized as noise and "
-                "suppressed. It only suppresses — it never fails a snapshot.")
-
-    # ------------------------------------------------------------------ #
-    def _apply_perceptual(self, regions, expected, actual) -> None:
-        model = self._perceptual
-        if model is None or not model.available:
-            return
-
-        candidates, pairs = [], []
-        for r in regions:
-            if r.kind in (ChangeKind.NOISE, ChangeKind.ANTIALIAS):
-                continue
-            if min(r.w, r.h) < self.cfg.perceptual_min_region_px:
-                continue
-            pad = 8
-            h, w = expected.shape[:2]
-            x0, y0 = max(0, r.x - pad), max(0, r.y - pad)
-            x1, y1 = min(w, r.x + r.w + pad), min(h, r.y + r.h + pad)
-            if x1 - x0 < 4 or y1 - y0 < 4:
-                continue
-            candidates.append(r)
-            pairs.append((expected[y0:y1, x0:x1], actual[y0:y1, x0:x1]))
-
-        dists = model.distances(pairs)
-        if dists is None:
-            return
-        for r, d in zip(candidates, dists, strict=False):
-            r.perceptual_distance = d
-            if d < self.cfg.perceptual_tolerance:
-                # Человек этого не увидит: пережатие, дизеринг, другой AA.
-                r.kind = ChangeKind.NOISE
-                r.suppressed_by = f"perceptual:{d:.4f}<{self.cfg.perceptual_tolerance}"
-                r.severity = 0.0
-
-    # ------------------------------------------------------------------ #
-    def _apply_annotator(self, regions, expected, actual, result) -> None:
-        """Внешний аннотатор: только слова, вердикт откатывается.
-
-        Слепок трёх полей до вызова и сверка после. Правило, записанное
-        комментарием, нарушается молча; правило, записанное кодом, — нет.
-        """
-        annotator = self._annotator
-        if annotator is None or not regions:
-            return
-
-        before = [(r.kind, r.severity, r.suppressed_by) for r in regions]
-        try:
-            annotator.annotate(regions, expected, actual, result)
-        finally:
-            reverted = 0
-            for r, keep in zip(regions, before, strict=False):
-                if (r.kind, r.severity, r.suppressed_by) != keep:
-                    r.kind, r.severity, r.suppressed_by = keep
-                    reverted += 1
-            if reverted:
-                log.warning(
-                    "the annotator tried to change the verdict on %d region(s)"
-                    " — reverted", reverted)
+    def _describe_dom(self, regions, result) -> None:
+        changes = dom_changes(self.dom_expected, self.dom_actual)
+        if changes.get("counts"):
+            c = changes["counts"]
+            #  Into `maps`, like every other non-string the cascade produces.
+            #  Nothing reads this yet — the counts reach a person through the
+            #  note below — but a dict parked in a field typed
+            #  `dict[str, str]` is the same trap that took a run down once
+            #  already.
+            result.maps["dom_changes"] = changes
+            if any(c.values()):
+                result.notes.append(
+                    f"DOM: +{c['added']} elements, -{c['removed']}, "
+                    f"moved {c['moved']}"
+                )
+        # A diagnosis beats a statement: "the region changed" a person sees
+        # for themselves; "this is a date, here is what to do with it" they
+        # do not.
+        result.notes.extend(diagnose(regions))

@@ -587,3 +587,39 @@ def _write_flat(platform_root: Path, folder: str, name: str,
     atomic.write_text(
         target.with_suffix(".json"),
         passport.with_(sha256=hashlib.sha256(png).hexdigest()).to_json())
+
+
+# --------------------------------------------------------------------------- #
+#  Behind the plugin contract
+# --------------------------------------------------------------------------- #
+class ArchiveSyncBackend:
+    """`BaselineSyncBackend` over the archive functions above."""
+
+    name = "archive"
+    modes = MODES
+
+    def export(self, archive, *, baselines_root, selection=None,
+               with_history: bool = False) -> dict:
+        return export(archive, baselines_root=baselines_root,
+                      selection=_selection(selection), with_history=with_history)
+
+    def inspect(self, archive) -> dict:
+        return inspect(archive)
+
+    def plan(self, archive, *, baselines_root, mode: str = "new",
+             selection=None, layout: str = "auto") -> list[dict]:
+        return plan(archive, baselines_root=baselines_root, mode=mode,
+                    selection=_selection(selection), layout=layout)
+
+    def apply(self, archive, *, baselines_root, mode: str = "new",
+              selection=None, who: str = "", layout: str = "auto") -> dict:
+        return import_(archive, baselines_root=baselines_root, mode=mode,
+                       selection=_selection(selection), who=who, layout=layout)
+
+
+def _selection(value) -> Selection:
+    if value is None or isinstance(value, Selection):
+        return value or Selection()
+    return Selection(project=str(getattr(value, "project", "") or ""),
+                     platform=str(getattr(value, "platform", "") or ""),
+                     names=tuple(getattr(value, "names", ()) or ()))
