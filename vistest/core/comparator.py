@@ -127,9 +127,18 @@ def compare(
         candidate = color_hit | struct_hit
 
     # ---------- 5. Known noise suppression ----------
+    #  The per-pixel anti-aliasing test thins groups of changed pixels; it
+    #  erases a group whole only when a re-drawing of the baseline explains
+    #  it, and that group is reported as suppressed with the re-drawing and
+    #  its residual. See explain.explain_antialias and core/refit.py.
     suppress = np.zeros((h, w), dtype=bool)
+    aa_explained: list[DiffRegion] = []
     if cfg.antialias_filter:
-        suppress |= _aa.antialias_mask(gray_exp, gray_act, tolerance=cfg.aa_tolerance)
+        aa = _aa.antialias_mask(gray_exp, gray_act, tolerance=cfg.aa_tolerance)
+        if cfg.explain_noise:
+            aa, aa_explained = _explain.explain_antialias(
+                candidate, aa, gray_exp, gray_act, notes=res.notes)
+        suppress |= aa
     if ignore_mask is not None:
         suppress |= ignore_mask
 
@@ -206,6 +215,8 @@ def compare(
             regions, expected=exp, actual=act_aligned, raw_mask=mask,
             aligned=bool(res.aligned), size_changed=res.size_changed,
             notes=res.notes)
+
+    regions += aa_explained
 
     # ---------- 8. AI layer (optional) ----------
     # The layer sees what the open engine could not explain; what it could

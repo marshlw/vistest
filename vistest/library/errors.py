@@ -29,6 +29,29 @@ __all__ = ["BaselineMissing", "ScreenshotMismatch", "VisTestWarning",
            "VisualCheckError"]
 
 
+
+#: Suppressed regions spelled out in a failure message; the rest are counted.
+SUPPRESSED_SHOWN = 3
+
+
+def suppressed_line(r) -> str:
+    """'48x12 at (216, 519): antialias: the baseline moved +0.25,+0.00 px ...'.
+
+    The kind is named only when the reason does not start with it:
+    'noise 97x12 at (219, 522): rerender: ... (was text)'.
+    """
+    def get(key):
+        return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
+
+    kind = get("kind")
+    kind = getattr(kind, "value", kind) or ""
+    why = get("suppressed_by") or "suppressed"
+    where = f"{get('w')}x{get('h')} at ({get('x')}, {get('y')})"
+    #  "antialias 40x12 ...: antialias: ..." says the same word twice.
+    if kind and not why.startswith(f"{kind}:"):
+        where = f"{kind} {where}"
+    return f"{where}: {why}"
+
 class VisTestWarning(UserWarning):
     """An optional part is missing, and the run goes on without it.
 
@@ -116,6 +139,14 @@ class ScreenshotMismatch(VisualCheckError):
             #  differently from one that does not.
             lines.append("  also:     "
                          + "; ".join(say_suppressed(count_suppressed(suppressed))))
+            #  And why, in the engine's own words: a suppression is a claim
+            #  ("the baseline moved 0.25 px reproduces 96% of it") that the
+            #  reader is entitled to check against the diff.
+            for r in suppressed[:SUPPRESSED_SHOWN]:
+                lines.append(f"            {suppressed_line(r)}")
+            if len(suppressed) > SUPPRESSED_SHOWN:
+                lines.append(f"            ... and {len(suppressed) - SUPPRESSED_SHOWN}"
+                             " more in the report")
         if diff is not None:
             lines.append(f"  diff:     {diff}")
         if report is not None:

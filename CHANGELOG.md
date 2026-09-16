@@ -5,6 +5,36 @@
 
 ## [Unreleased]
 
+### The anti-aliasing filter answers for itself
+
+- **The per-pixel anti-aliasing veto no longer erases a region on its own.**
+  Most pixels of a glyph that became another glyph pass the per-pixel test,
+  and on the benchmark generator that is how four `price changed` regressions
+  vanished before segmentation. The mask may still thin a group of changed
+  pixels; a group it covers by half or more is taken out only if the
+  baseline, re-drawn by what a rasteriser is allowed to do — sub-pixel
+  position, fractional stroke weight, softness — reproduces at least 70% of
+  it. Otherwise the mask is withdrawn from the whole group
+  (`core/explain.py: explain_antialias`, `core/refit.py`).
+- **Every erased group is a suppressed region** of kind `antialias`, with
+  `suppressed_by` naming the re-drawing and what it left over:
+  `antialias: the baseline moved +0.18,-0.07 px reproduces 100% of the
+  changed pixels (0 of 412 left)`. `rerender` and `jpeg` now say it the same
+  way. `ScreenshotMismatch` spells out up to three of them under `also:`, and
+  the pytest summary lists five (all with `-v`).
+- **Stroke weight is a continuous search** (±1 px per side, to 1/16 px), not
+  one 3×3 morphology step, and neither weight nor softness may change the
+  colour of a stroke: on one-pixel text "lighter" and "thinner" look the
+  same, and the engine sides with calling it a change.
+- **The shift is estimated, not searched** (Lucas–Kanade on the group's
+  window). The prototype tried 980 warps per region and cost +30% per
+  comparison; this costs ~6 ms per pair, within the noise of the total.
+- Measured on `corpus.generate(6)`, 124 pairs, OpenCV 5.0: false failures
+  7/70 → 7/70, misses 10/54 → 6/54, 107 → 111 correct, 303–316 → 298–320
+  ms/pair. OpenCV 4.14: 7/70 → 7/70, 7/54 → 6/54. Showcase corpus (27): 25 →
+  26 on 5.0, 26 → 26 on 4.14, 0/16 false on both.
+- `diff.explain_noise: false` restores the unconditional veto.
+
 ### Extension points (plugin API v1)
 
 Preparation for the open core. Nothing moves out of the repository yet; the
