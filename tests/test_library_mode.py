@@ -443,3 +443,44 @@ def test_a_report_that_cannot_be_built_does_not_kill_the_session(project: Path):
     assert code == 0, output
     assert "3 passed" in output, output
     assert "the report could not be assembled" in output, output
+
+
+RERENDER_FILE = '''
+import os
+
+import cv2
+import numpy as np
+
+from vistest import expect_screenshot
+from vistest.core import pngio
+
+
+def _screenshot():
+    frame = np.full((140, 420, 3), 250, np.uint8)
+    for i, word in enumerate(["Checkout", "Delivery until Friday", "Total 159 990"]):
+        cv2.putText(frame, word, (12, 34 + i * 40), 0, 0.9, (30, 30, 30), 2, cv2.LINE_AA)
+    if os.environ.get("DEMO_STATE") == "after":
+        m = np.float32([[1, 0, 0.4], [0, 1, 0.2]])
+        frame = cv2.warpAffine(frame, m, (420, 140), flags=cv2.INTER_LINEAR,
+                               borderMode=cv2.BORDER_REPLICATE)
+    return pngio.encode(frame)
+
+
+def test_text():
+    expect_screenshot(_screenshot(), "text.png")
+'''
+
+
+def test_a_suppressed_difference_is_said_with_its_reason(project: Path):
+    """A green run that hid something says what, and why, in the terminal."""
+    (project / "tests" / "test_visual.py").write_text(RERENDER_FILE, "utf-8")
+    assert run(project, "--vistest-update")[0] == 0
+
+    code, output = run(project, state="after")
+    assert code == 0, output
+    assert "suppressed as rendering noise" in output, output
+    #  Not only a count: the rule, the re-drawing and its residual.
+    line = next((ln for ln in output.splitlines() if "reproduces" in ln), "")
+    assert "test_text" in line or "text" in line, output
+    assert "% of the changed pixels" in line, output
+    assert " left" in line, output

@@ -222,6 +222,10 @@ def _finish(session, exitstatus) -> None:
         session.exitstatus = 1
 
 
+#: Suppressed differences spelled out in the run summary without -v.
+SUMMARY_SUPPRESSED = 5
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Print where things went. Advisory to the last line.
 
@@ -265,6 +269,20 @@ def _summary(terminalreporter, exitstatus, config) -> None:
 
         for line in say_suppressed(total_suppressed(parts.entries)):
             terminalreporter.write_line(line, yellow=True)
+        #  The first few, with the reason the engine gave: each one is a
+        #  claim about the pixels that somebody can disagree with.
+        from .library.errors import suppressed_line
+
+        listed = [(e.get("name") or e.get("nodeid") or "?", r)
+                  for e in parts.entries
+                  for r in (e.get("suppressed") or []) if isinstance(r, dict)]
+        shown = listed if config.getoption("verbose") > 0 else listed[:SUMMARY_SUPPRESSED]
+        for name, r in shown:
+            terminalreporter.write_line(f"  {name}: {suppressed_line(r)}")
+        if len(shown) < len(listed):
+            terminalreporter.write_line(
+                f"  ... {len(listed) - len(shown)} more: -v lists them all, "
+                "the report shows each on its snapshot")
 
         if parts.unreadable:
             terminalreporter.write_line(
