@@ -30,16 +30,28 @@ def clean_mask(
     open_px: int = 2,
     close_px: int = 6,
 ) -> np.ndarray:
-    """open (remove salt) → close (merge letters into word/block)."""
+    """close (merge strokes into a word/block) → open (remove salt).
+
+    The order matters more than the sizes. An opening with the default
+    5×5 ellipse deletes every structure thinner than five pixels, and a text
+    change *is* such a structure: one-pixel strokes, one glyph wide. Opening
+    first turned 13 262 changed pixels of a text edit into 374 and let two
+    real regressions of the benchmark corpus through (a price, a promo code).
+
+    Closing first glues the strokes of a changed word into one blob that the
+    opening then leaves alone. It glues scattered rendering residue into
+    blobs as well; `explain.explain_regions` is the stage that takes those
+    back out, each with the reason it was not a change.
+    """
     if cv2 is None:
         return mask
     m = (mask.astype(np.uint8)) * 255
-    if open_px > 0:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_px * 2 + 1,) * 2)
-        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k)
     if close_px > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_px * 2 + 1,) * 2)
         m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k)
+    if open_px > 0:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_px * 2 + 1,) * 2)
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k)
     return m > 0
 
 

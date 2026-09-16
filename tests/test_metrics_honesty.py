@@ -18,8 +18,9 @@ Three defects, each covered here:
 
 1. The area (13 000 px) could not be reached by adding up the regions
    (~400 px). The area is measured before segmentation, and the opening
-   step erases thin strokes — most of a text change. The result now says
-   where every changed pixel went, and the one-line reason says it too.
+   step, which then ran first, erased thin strokes — most of a text change.
+   The result now says where every changed pixel went, and the one-line
+   reason says it too; the order is now close → open, so text is kept.
 2. A 27-pixel speck scored 100. Size is now a factor, not a summand, and
    the scale saturates softly, so small stays small and the top keeps order.
 3. Two neighbouring radio buttons "moved" by +48 and -58 at once. A region
@@ -76,11 +77,32 @@ def test_the_pixel_accounting_always_sums_to_the_changed_pixels(mutate):
     assert r.region_area_pct <= r.changed_area_pct + 1e-9
 
 
-def test_a_thin_text_change_is_reported_as_outside_every_region():
-    """The live case in miniature: most of the change is 1-px strokes."""
+def test_a_thin_text_change_now_lands_inside_a_region():
+    """The live case in miniature: most of the change is 1-px strokes.
+
+    This test used to assert the opposite — that most of such a change ends
+    up in no region at all — because the opening ran before the closing and
+    erased every stroke thinner than five pixels. The order is now close →
+    open (see `segment.clean_mask`), so the changed words are regions.
+    """
     exp = _thin_text_page("Alpha")
     act = _thin_text_page("Omega")
-    cv2.rectangle(act, (900, 400), (960, 440), (200, 40, 40), -1)
+    r = _c(exp, act)
+
+    assert r.regions, r.summary()
+    assert r.region_pixels > 0.9 * r.changed_pixels, r.summary()
+    assert r.verdict is Verdict.FAIL, r.summary()
+
+
+def test_changes_no_region_keeps_are_still_counted_and_named():
+    """Scattered specks stay outside every region, and the reason says so."""
+    exp = _blank_hd()
+    act = exp.copy()
+    for i in range(30):
+        for j in range(12):
+            y, x = 40 + i * 22, 500 + j * 22
+            act[y, x] = (20, 20, 20)
+    cv2.rectangle(act, (100, 100), (116, 110), (200, 40, 40), -1)
     r = _c(exp, act)
 
     assert r.regions, r.summary()
@@ -269,3 +291,71 @@ def test_an_unresolved_ambiguity_is_explained_in_the_notes():
     r = _c(exp, act)
     assert not any(x.kind is ChangeKind.MOVED for x in r.regions), r.summary()
     assert any("matched equally well" in n for n in r.notes), r.notes
+
+
+# --------------------------------------------------------------------------- #
+#  4. A moved block is scored by how far it went
+# --------------------------------------------------------------------------- #
+def _panel_page(dy: int, *, top: int = 200, height: int = 720,
+                ink=(110, 110, 110)) -> np.ndarray:
+    """A static header, and a light filter panel of one-pixel text below it."""
+    img = syn.blank(1280, height)
+    cv2.rectangle(img, (0, 0), (1280, 56), (245, 246, 248), -1)
+    cv2.putText(img, "Flights", (24, 38), 0, 0.8, (30, 30, 30), 2, cv2.LINE_AA)
+    y0 = top + dy
+    cv2.rectangle(img, (40, y0), (280, y0 + 132), (228, 230, 235), 1)
+    for i in range(4):
+        cv2.rectangle(img, (54, y0 + 12 + i * 28), (66, y0 + 24 + i * 28), ink, 1)
+        cv2.putText(img, f"Option {i}", (76, y0 + 23 + i * 28), 0, 0.5, ink, 1,
+                    cv2.LINE_AA)
+    return img
+
+
+@pytest.mark.parametrize("dy", [12, 16, 24, 32, 48])
+def test_a_shifted_panel_fails_on_severity_not_only_on_area(dy):
+    """The live case: a panel 48 px lower scored 24.7 and failed on area alone.
+
+    A smaller panel, or a smaller page, would not reach the area limit, and
+    the move would pass without a word.
+    """
+    r = _c(_panel_page(0), _panel_page(dy))
+    assert r.max_severity >= DiffConfig().fail_severity, r.summary()
+    assert any(x.kind is ChangeKind.MOVED for x in r.regions), r.summary()
+
+
+def _checkbox_page(d: int, y0: int = 1000) -> np.ndarray:
+    img = syn.blank(1280, 1400)
+    cv2.rectangle(img, (0, 0), (1280, 56), (245, 246, 248), -1)
+    cv2.putText(img, "Flights", (24, 38), 0, 0.8, (30, 30, 30), 2, cv2.LINE_AA)
+    cv2.rectangle(img, (300, y0 + d), (312, y0 + d + 12), (90, 90, 90), 1)
+    return img
+
+
+def test_a_small_element_moved_less_than_its_size_is_not_waved_through():
+    """Below the fold, a 12-px checkbox moved by 16 px scored 17 and passed,
+    while the same checkbox moved by 32 px (no overlap: removed + added)
+    scored 35 and failed."""
+    for d in (16, 24):
+        r = _c(_checkbox_page(0), _checkbox_page(d))
+        assert r.verdict is Verdict.FAIL, (d, r.summary())
+        assert r.max_severity >= DiffConfig().fail_severity, (d, r.summary())
+
+
+def test_moved_weight_grows_with_the_shift_in_element_sizes():
+    from vistest.core.classify import MOVED_FULL_WEIGHT, moved_weight
+
+    def region(h, dy):
+        return DiffRegion(x=0, y=0, w=40, h=h, kind=ChangeKind.MOVED, moved_dy=dy)
+
+    floor = 0.35
+    #  A 100-px panel: the box spans 100 + shift.
+    weights = [moved_weight(region(100 + d, d), floor) for d in (0, 4, 12, 48, 100, 300)]
+    assert weights[0] == floor
+    assert weights == sorted(weights)
+    assert weights[-2] == weights[-1] == MOVED_FULL_WEIGHT
+    #  Sideways works the same way, and the larger of the two ratios counts.
+    side = DiffRegion(x=0, y=0, w=52, h=40, kind=ChangeKind.MOVED,
+                      moved_dx=40, moved_dy=1)
+    assert moved_weight(side, floor) == MOVED_FULL_WEIGHT
+    #  A preset that asks for more than the full weight keeps it.
+    assert moved_weight(region(100, 0), 1.5) == 1.5

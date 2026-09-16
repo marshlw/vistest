@@ -6,9 +6,11 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 10416 lines in 201 files.
+# 12409 lines in 217 files.
 
 52	.github/workflows/ci.yml
+57	.gitlab-ci.example.yml
+7	.vistest/secrets.env.example
 321	CHANGELOG.md
 1	README.md
 1	SECURITY.md
@@ -17,9 +19,21 @@
 28	clients/playwright-reporter.mjs
 42	clients/vistest.mjs
 17	constraints-service.txt
+12	control/app.py
+30	control/index.html
+14	deploy/Caddyfile.example
+22	deploy/team.compose.yml
+11	deploy/team.full.compose.yml
+17	deploy/team.node.compose.yml
+24	docker-compose.team.yml
 22	docker/Dockerfile.api
+14	docker/Dockerfile.full
+19	docker/Dockerfile.node
+10	docker/Dockerfile.runner
 4	docker/docker-compose.yml
 18	docker/entrypoint.sh
+4	docker/prometheus.yml
+1735	docs/GUIDE.md
 16	examples/demo_page.html
 10	examples/test_demo_visual.py
 21	examples/test_existing_suite.py
@@ -49,7 +63,9 @@
 60	frontend/js/tip.js
 296	frontend/ui.css
 11	pyproject.toml
+8	run.ps1
 34	run.py
+5	run.sh
 17	scripts/bench_pixelmatch.mjs
 5	scripts/export_perceptual_model.py
 13	scripts/vistest_team.py
@@ -83,7 +99,7 @@
 37	tests/api/test_ui_delivery.py
 30	tests/api/test_zones_api.py
 44	tests/baselines.py
-113	tests/benchmark.py
+117	tests/benchmark.py
 17	tests/clients/cypress_plugin.mjs
 25	tests/clients/playwright_reporter.mjs
 63	tests/corpus.py

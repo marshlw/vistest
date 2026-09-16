@@ -87,6 +87,11 @@ class DiffConfig:
     min_region_px: int = 24             # MINIMUM MASK PIXELS, not bbox area
     min_region_fill: float = 0.06       # bbox with density below this — a thin noise strip
     max_regions: int = 200
+    # Deterministic noise explanations after classification: scroll-bar
+    # bands, JPEG re-encoding, subpixel re-rendering (core/explain.py).
+    # Closing before opening keeps text changes and also keeps rendering
+    # residue; this is what removes the residue. Off only for diagnostics.
+    explain_noise: bool = True
 
     # --- MOVED detection ---
     detect_moved: bool = True
@@ -249,9 +254,22 @@ class MatrixConfig:
 class AIConfig:
     # The trained region gate: it suppresses what looks like noise and never
     # raises severity. The model ships with the package (kilobytes of
-    # coefficients), which is why it is on by default — unlike the ONNX filter,
-    # which needs an external model file.
-    gate_enabled: bool = True
+    # coefficients), so turning it on costs nothing but the decision.
+    #
+    # Off by default, and the reason is measured, not cautious. The model was
+    # trained against the cascade as it was before `core/explain.py`: a wide
+    # aperture, a morphological opening that ate small changes, and no
+    # deterministic noise explanations. The cascade it now sits behind already
+    # suppresses scrollbars, JPEG re-encoding, re-render jitter and morphology
+    # by construction, and it does so with a reason a person can argue with.
+    # On the corpus the gate no longer adds: without it 0 of 55 regressions
+    # over noise are missed, with it 5 of 55 are. A layer that only subtracts
+    # must not be on by default.
+    #
+    # Re-train it against the current cascade and re-measure before flipping
+    # this back. If a re-trained gate still does not beat `explain.py`, the
+    # honest move is to drop it, not to ship it off by default forever.
+    gate_enabled: bool = False
     gate_model_path: str = ""        # empty — the model from the package
     gate_threshold: float = 0.0      # 0 — the threshold from the model
 

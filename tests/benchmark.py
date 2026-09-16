@@ -351,7 +351,9 @@ def main() -> int:
     ap.add_argument("--compare", action="store_true",
                     help="сравнить с конкурентами")
     ap.add_argument("--no-ai", action="store_true",
-                    help="без AI-слоя: голый компаратор, только для диагностики")
+                    help="без AI-слоя: голый компаратор. С гейтом, выключенным "
+                         "по умолчанию, обязан дать те же цифры — расхождение "
+                         "значит, что слой включается в обход конфига")
     ap.add_argument("--native", help="JSON нативного прогона pixelmatch")
     ap.add_argument("--export", metavar="DIR",
                     help="выгрузить корпус в PNG для чужих инструментов")
@@ -361,9 +363,11 @@ def main() -> int:
 
     cfg = VisTestConfig.preset_of(args.preset)
     cases = cp.build()
-    # По умолчанию меряем то, что реально уезжает покупателю: гейт включён в
-    # конфигурации по умолчанию, и CheckService собирает пайплайн на каждой
-    # проверке. Бенчмарк без него мерил подмножество продукта и занижал его.
+    # По умолчанию меряем то, что реально уезжает покупателю: CheckService
+    # собирает пайплайн на каждой проверке, и бенчмарк обязан мерить ту же
+    # сборку. Гейт при этом выключен (`ai.gate_enabled: false`) — значит
+    # `--no-ai` обязан дать те же цифры. Если не даёт, AI-слой включается
+    # где-то в обход конфига, и это баг, а не настройка бенчмарка.
     ai = None if args.no_ai else AIPipeline(cfg.ai)
     out = Path(args.out)
     artifacts_dir = out if args.artifacts else None
