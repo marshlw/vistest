@@ -1,0 +1,787 @@
+{
+  "source": "native",
+  "generator": "scripts/bench_pixelmatch.mjs",
+  "corpus": {
+    "sha256": "5a0ee31202108e1caa667e3abb34c1c4b45afdd9ecaaaca21d47c79b26b9777f",
+    "cases": 54
+  },
+  "environment": {
+    "node": "v22.22.2",
+    "platform": "linux x64",
+    "packages": {
+      "pixelmatch": "7.2.0",
+      "pngjs (used by pixelmatch)": "7.0.0",
+      "@playwright/test": "1.63.0",
+      "playwright": "1.63.0",
+      "playwright-core": "1.63.0"
+    }
+  },
+  "tools": {
+    "pixelmatch": {
+      "title": "pixelmatch 7.2.0",
+      "native": true,
+      "invoked": "npm package CLI: pixelmatch <expected.png> <actual.png>",
+      "settings": {
+        "threshold": "0.1 (package default, not passed)",
+        "includeAA": "false (package default: anti-aliasing detector on)",
+        "fail when": "CLI exit code != 0: any differing pixel (66) or size mismatch (65)"
+      }
+    },
+    "playwright": {
+      "title": "Playwright 1.63.0 toHaveScreenshot()",
+      "native": true,
+      "invoked": "playwright-core 1.63.0 playwright-core/lib/coreBundle: getComparator('image/png')(actual, expected, options) — the call Page.expectScreenshot makes for toHaveScreenshot()",
+      "settings": {
+        "comparator": "\"pixelmatch\" (default; option not set)",
+        "threshold": "0.2 (default; option not set)",
+        "includeAA": "false (built into Playwright's pixelmatch copy)",
+        "maxDiffPixels": "0 (default; option not set)",
+        "maxDiffPixelRatio": "not set",
+        "fail when": "more than 0 differing pixels, or size mismatch",
+        "not reproduced": "page capture (animations/caret/stability retries): the corpus is already captured"
+      }
+    }
+  },
+  "results": {
+    "pixelmatch": {
+      "identical": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=1.6": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=3.0": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "antialias 0.4px": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 3625,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=88": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 389,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=75": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 1630,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "global shift 1px": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 20860,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "global shift 3px": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 36580,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "combined": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 13503,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "font fallback": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 627,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "shadow radius": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "gradient dither": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "scrollbar": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2728,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "caret": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 44,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "lazy placeholder": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "subpixel text": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button color": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 12872,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button removed": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 12559,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo removed": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 3461,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "layout +40px": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 151169,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "page taller +160": {
+        "failed": true,
+        "exit_code": 65,
+        "diff_pixels": null,
+        "size_changed": true,
+        "total_pixels": 1080000
+      },
+      "tiny icon 22px": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 377,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "price changed": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 48,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button shrunk": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 6274,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "text overflow": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 952,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "header color": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo text": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 366,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "identical, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=1.6, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=3.0, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "antialias 0.4px, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2567,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=88, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 404,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=75, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 1535,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "global shift 1px, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 19607,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "global shift 3px, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 34424,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "combined, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 10334,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "font fallback, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "shadow radius, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "gradient dither, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "scrollbar, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2728,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "caret, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 83,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "lazy placeholder, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "subpixel text, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button color, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 13197,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button removed, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 12887,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo removed, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2897,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "layout +40px, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 148746,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "page taller +160, thin glyphs": {
+        "failed": true,
+        "exit_code": 65,
+        "diff_pixels": null,
+        "size_changed": true,
+        "total_pixels": 1080000
+      },
+      "tiny icon 22px, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 377,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "price changed, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 28,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button shrunk, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 6072,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "text overflow, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 631,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "header color, thin glyphs": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo text, thin glyphs": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 264,
+        "size_changed": false,
+        "total_pixels": 1080000
+      }
+    },
+    "playwright": {
+      "identical": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=1.6": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=3.0": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "antialias 0.4px": {
+        "failed": true,
+        "diff_pixels": 1127,
+        "size_changed": false,
+        "message": "1127 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "jpeg q=88": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=75": {
+        "failed": true,
+        "diff_pixels": 3,
+        "size_changed": false,
+        "message": "3 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "global shift 1px": {
+        "failed": true,
+        "diff_pixels": 4091,
+        "size_changed": false,
+        "message": "4091 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "global shift 3px": {
+        "failed": true,
+        "diff_pixels": 9383,
+        "size_changed": false,
+        "message": "9383 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "combined": {
+        "failed": true,
+        "diff_pixels": 8581,
+        "size_changed": false,
+        "message": "8581 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "font fallback": {
+        "failed": true,
+        "diff_pixels": 580,
+        "size_changed": false,
+        "message": "580 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "shadow radius": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "gradient dither": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "scrollbar": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "caret": {
+        "failed": true,
+        "diff_pixels": 44,
+        "size_changed": false,
+        "message": "44 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "lazy placeholder": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "subpixel text": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button color": {
+        "failed": true,
+        "diff_pixels": 12866,
+        "size_changed": false,
+        "message": "12866 pixels (ratio 0.02 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "button removed": {
+        "failed": true,
+        "diff_pixels": 12559,
+        "size_changed": false,
+        "message": "12559 pixels (ratio 0.02 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "promo removed": {
+        "failed": true,
+        "diff_pixels": 1497,
+        "size_changed": false,
+        "message": "1497 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "layout +40px": {
+        "failed": true,
+        "diff_pixels": 27954,
+        "size_changed": false,
+        "message": "27954 pixels (ratio 0.03 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "page taller +160": {
+        "failed": true,
+        "diff_pixels": 346,
+        "size_changed": true,
+        "message": "Expected an image 900px by 1200px, received 900px by 1360px. 346 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "tiny icon 22px": {
+        "failed": true,
+        "diff_pixels": 377,
+        "size_changed": false,
+        "message": "377 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "price changed": {
+        "failed": true,
+        "diff_pixels": 42,
+        "size_changed": false,
+        "message": "42 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "button shrunk": {
+        "failed": true,
+        "diff_pixels": 6262,
+        "size_changed": false,
+        "message": "6262 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "text overflow": {
+        "failed": true,
+        "diff_pixels": 931,
+        "size_changed": false,
+        "message": "931 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "header color": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo text": {
+        "failed": true,
+        "diff_pixels": 269,
+        "size_changed": false,
+        "message": "269 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "identical, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=1.6, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=3.0, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "antialias 0.4px, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 666,
+        "size_changed": false,
+        "message": "666 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "jpeg q=88, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=75, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 2,
+        "size_changed": false,
+        "message": "2 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "global shift 1px, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 2912,
+        "size_changed": false,
+        "message": "2912 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "global shift 3px, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 7392,
+        "size_changed": false,
+        "message": "7392 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "combined, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 6413,
+        "size_changed": false,
+        "message": "6413 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "font fallback, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 2,
+        "size_changed": false,
+        "message": "2 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "shadow radius, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "gradient dither, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "scrollbar, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "caret, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 83,
+        "size_changed": false,
+        "message": "83 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "lazy placeholder, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "subpixel text, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button color, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 13193,
+        "size_changed": false,
+        "message": "13193 pixels (ratio 0.02 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "button removed, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 12884,
+        "size_changed": false,
+        "message": "12884 pixels (ratio 0.02 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "promo removed, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 980,
+        "size_changed": false,
+        "message": "980 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "layout +40px, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 25789,
+        "size_changed": false,
+        "message": "25789 pixels (ratio 0.03 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "page taller +160, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 305,
+        "size_changed": true,
+        "message": "Expected an image 900px by 1200px, received 900px by 1360px. 305 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "tiny icon 22px, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 377,
+        "size_changed": false,
+        "message": "377 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "price changed, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 27,
+        "size_changed": false,
+        "message": "27 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "button shrunk, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 6072,
+        "size_changed": false,
+        "message": "6072 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "text overflow, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 626,
+        "size_changed": false,
+        "message": "626 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "header color, thin glyphs": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo text, thin glyphs": {
+        "failed": true,
+        "diff_pixels": 197,
+        "size_changed": false,
+        "message": "197 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      }
+    }
+  }
+}

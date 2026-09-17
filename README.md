@@ -522,9 +522,18 @@ python run.py docker test    # run the tests inside the container
 pytest tests/                           # invariants: noise must not fail, regressions must be caught
 pytest tests/api                        # API tests: auth, roles, invites, team
 python tests/benchmark.py --artifacts   # noise / signal table plus images
-python tests/benchmark.py --compare     # VisTest vs absdiff, pixelmatch, Playwright
 python tests/benchmark.py --regenerate  # redraw the frozen corpus (deliberately)
+
+# VisTest vs absdiff and the real pixelmatch and Playwright (Node.js >= 18)
+npm ci --prefix scripts/bench
+node scripts/bench_pixelmatch.mjs > docs/benchmark_native.json
+python tests/benchmark.py --compare --native docs/benchmark_native.json \
+    --no-timing --markdown docs/benchmark.md
 ```
+
+Without `--native`, `--compare` scores pixelmatch and Playwright with a numpy
+port of their core (`tests/baselines.py`). That is a quick check without Node,
+marked as a port, and never the published figure.
 
 The synthetic benchmark is the main tool for tuning thresholds: after any
 configuration change you immediately see whether the engine started catching
@@ -536,17 +545,34 @@ meaningfully change but produced a red test.
 
 ### Current figures
 
-Frozen corpus, `python tests/benchmark.py` and `--compare`, preset
-`balanced`, AI layer on. Taken on 2026-09-17 with **opencv-python-headless
-4.14.0.94 and 5.0.0.93** (identical verdicts and an identical comparison
-table under both), numpy 2.5.3, Python 3.13, Linux x86_64:
+Frozen corpus, the commands above. pixelmatch and Playwright are **their own
+code** on the same PNG files, not a re-implementation. Taken on 2026-09-17
+with **opencv-python-headless 4.14.0.94 and 5.0.0.93** (identical verdicts and
+an identical comparison table under both), numpy 2.5.3, Python 3.13, Linux
+x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
 
 | Tool | Correct | False failures | Missed regressions |
 |---|---|---|---|
 | VisTest (balanced) | **52/54** (26/27 per raster) | 0/32 | 2/22 |
 | absdiff | 24/54 | 30/32 | 0/22 |
-| pixelmatch t=0.1 (numpy port) | 34/54 | 18/32 | 2/22 |
-| Playwright `toHaveScreenshot()` (numpy port) | 38/54 | 14/32 | 2/22 |
+| pixelmatch 7.2.0 | 34/54 | 18/32 | 2/22 |
+| Playwright 1.63.0 `toHaveScreenshot()` | 38/54 | 14/32 | 2/22 |
+
+Every tool runs with its defaults, nothing set:
+
+- **VisTest** — preset `balanced` (the default), `DiffConfig()` as shipped,
+  AI layer as `CheckService` builds it (trained gate off by default).
+- **pixelmatch** — its CLI, `pixelmatch expected.png actual.png`:
+  `threshold` 0.1, `includeAA` false; red on any differing pixel (exit 66) or
+  a size change (exit 65).
+- **Playwright** — `getComparator('image/png')` from playwright-core, the
+  function `toHaveScreenshot()` calls, with the options it passes when nothing
+  is configured: `threshold` 0.2, `maxDiffPixels` 0, `includeAA` false; the page
+  capture itself is not part of this table, the corpus is already captured.
+- **absdiff** — the whole algorithm of a hand-written script: any differing
+  pixel fails.
+
+Every value, the versions and the per-case table: `docs/benchmark.md`.
 
 54 pairs = the same 27 cases on two text rasters, OpenCV 4.x and OpenCV 5
 (`, thin glyphs`); VisTest misses `header color` on both. The corpus lives in

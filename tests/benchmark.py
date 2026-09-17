@@ -31,14 +31,23 @@ The corpus is read from disk (`tests/benchmark_corpus/`), not drawn at run
 time: otherwise the figure would depend on the OpenCV version of whoever runs
 it. Details in `tests/corpus.py`.
 
-Числа в README получаются прогоном этой команды. Порты
-конкурентов помечены как порты; подлинные цифры pixelmatch и Playwright дают
-`scripts/bench_pixelmatch.mjs` и флаг `--native`.
+Числа в README получаются прогоном с нативными результатами конкурентов:
+
+    npm ci --prefix scripts/bench
+    node scripts/bench_pixelmatch.mjs > docs/benchmark_native.json
+    python tests/benchmark.py --compare --native docs/benchmark_native.json \
+        --no-timing --markdown docs/benchmark.md
+
+Без `--native` строки pixelmatch и Playwright считает наш порт на numpy
+(`tests/baselines.py`); он помечен как порт и в публикацию не идёт.
+`--with-ports` рядом с `--native` печатает в консоль обе версии — чтобы
+сверить порт с оригиналом, а не чтобы публиковать.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -64,6 +73,7 @@ class Score:
     title: str
     native: bool = True
     note: str = ""
+    key: str = ""             # bl.Engine.key; empty for VisTest
     false_fails: int = 0      # упал там, где не должен
     misses: int = 0           # не упал там, где должен
     noise_total: int = 0
@@ -103,7 +113,14 @@ def _title(cfg: VisTestConfig, ai: AIPipeline | None) -> str:
 
 def _note(ai: AIPipeline | None) -> str:
     base = "ΔE00 ∧ SSIM, консенсус"
-    return base + (" + обучаемый гейт" if ai else ", AI-слой выключен")
+    if ai is None:
+        return base + ", AI-слой не подключён (--no-ai)"
+    gate = "вкл" if ai_gate_enabled(ai) else "выкл"
+    return base + f", AI-слой по умолчанию (обучаемый гейт {gate})"
+
+
+def ai_gate_enabled(ai: AIPipeline | None) -> bool:
+    return bool(ai is not None and ai.cfg.gate_enabled)
 
 
 def _ms(ms: float, width: int, timing: bool) -> str:
@@ -141,6 +158,63 @@ def environment_line() -> str:
             f"{platform.system()} {platform.machine()}")
 
 
+def python_versions() -> dict[str, str]:
+    """Versions of what the VisTest row depends on, for the published table."""
+    import platform
+    from importlib import metadata
+
+    out = {"Python": platform.python_version()}
+    for dist in ("numpy", "opencv-python-headless", "pillow", "PyYAML"):
+        try:
+            out[dist] = metadata.version(dist)
+        except metadata.PackageNotFoundError:
+            out[dist] = "не установлен"
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Нативные результаты конкурентов
+# --------------------------------------------------------------------------- #
+class NativeError(RuntimeError):
+    """The native JSON cannot be used for this corpus."""
+
+
+def corpus_digest(root: str | Path | None = None) -> str:
+    """Отпечаток корпуса — та же формула, что в scripts/bench_pixelmatch.mjs.
+
+    sha256 от строк `"<путь> <sha256 файла>\n"`: manifest.json, затем
+    expected/actual каждой пары в порядке манифеста.
+    """
+    root = Path(root) if root is not None else cp.FROZEN_DIR
+    sha = lambda b: hashlib.sha256(b).hexdigest()  # noqa: E731
+    manifest_bytes = (root / "manifest.json").read_bytes()
+    lines = [f"manifest.json {sha(manifest_bytes)}\n"]
+    for entry in json.loads(manifest_bytes.decode("utf-8"))["cases"]:
+        for key in ("expected", "actual"):
+            rel = entry[key]
+            lines.append(f"{rel} {sha((root / rel).read_bytes())}\n")
+    return sha("".join(lines).encode("utf-8"))
+
+
+def load_native(path: str | Path, corpus_root: str | Path | None = None) -> dict:
+    """Read the native JSON and refuse it if it was computed on other files.
+
+    Different data is not a comparison: a table that mixes our figures on one
+    set of PNGs with theirs on another says nothing.
+    """
+    doc = json.loads(Path(path).read_text("utf-8"))
+    if doc.get("source") != "native":
+        raise NativeError(f"{path}: not a native run (source={doc.get('source')!r})")
+    want = corpus_digest(corpus_root)
+    got = (doc.get("corpus") or {}).get("sha256")
+    if got != want:
+        raise NativeError(
+            f"{path} was computed on a different corpus "
+            f"(sha256 {got or 'missing'}, the corpus on disk is {want}). "
+            "Re-run: node scripts/bench_pixelmatch.mjs > " + str(path))
+    return doc
+
+
 def score_vistest(cases: list[cp.Case], cfg: VisTestConfig,
                   *, artifacts_dir: Path | None = None,
                   ai: AIPipeline | None = None) -> Score:
@@ -158,7 +232,8 @@ def score_vistest(cases: list[cp.Case], cfg: VisTestConfig,
 
 
 def score_engine(cases: list[cp.Case], engine: bl.Engine) -> Score:
-    s = Score(title=engine.title, native=engine.native, note=engine.note)
+    s = Score(title=engine.title, native=engine.native, note=engine.note,
+              key=engine.key)
     for c in cases:
         t0 = time.perf_counter()
         res = engine.run(c.expected, c.actual)
@@ -169,11 +244,17 @@ def score_engine(cases: list[cp.Case], engine: bl.Engine) -> Score:
 
 def score_native(cases: list[cp.Case], native: dict, key: str,
                  title: str, note: str) -> Score | None:
-    """Счёт по результатам нативного прогона из bench_pixelmatch.mjs."""
+    """Счёт по результатам нативного прогона из bench_pixelmatch.mjs.
+
+    Название и описание берутся из самого JSON, если он их несёт: там
+    записаны версия инструмента и то, как именно он был вызван.
+    """
     data = (native.get("results") or {}).get(key)
     if not data:
         return None
-    s = Score(title=title, native=True, note=note)
+    tool = (native.get("tools") or {}).get(key) or {}
+    s = Score(title=tool.get("title", title), native=True,
+              note=tool.get("invoked", note), key=key)
     for c in cases:
         entry = data.get(c.name)
         if entry is None:
@@ -232,7 +313,7 @@ def print_comparison(scores: list[Score], cases: list[cp.Case] | None = None,
                      *, timing: bool = True) -> None:
     print("\n=== Сравнение движков ===")
     print(f"Run on: {environment_line()}", file=sys.stderr)
-    w = max(len(s.title) for s in scores) + 2
+    w = max(len(s.title) + (0 if s.native else 8) for s in scores) + 2
     print(f"{'инструмент':{w}s} {'ложных падений':>16s} {'пропусков':>12s} "
           f"{'верно':>8s} {'мс':>7s}")
     print("-" * (w + 47))
@@ -243,27 +324,87 @@ def print_comparison(scores: list[Score], cases: list[cp.Case] | None = None,
               f"{s.false_fail_rate * 100:6.0f}%  "
               f"{s.misses:2d}/{s.signal_total:<2d} "
               f"{s.miss_rate * 100:4.0f}%  "
-              f"{s.correct:3d}/{s.total:<3d} {_ms(s.ms, 7, timing)}")
+              f"{s.correct:3d}/{s.total:<3d} {_ms(s.ms, 7, timing and s.ms > 0)}")
     if cases:
         for r in cp.RENDERS:
             print(f"\n  raster {r.key}:")
             for s in scores:
                 part = dict(by_render(cases, s)).get(r)
                 if part:
-                    print(f"  {s.title:{w}s} {part.false_fails:2d}/{part.noise_total:<2d}"
+                    mark = "" if s.native else "  (порт)"
+                    print(f"  {s.title + mark:{w}s} "
+                          f"{part.false_fails:2d}/{part.noise_total:<2d}"
                           f"{'':9s}{part.misses:2d}/{part.signal_total:<2d}"
                           f"{'':7s}{part.correct:3d}/{part.total}")
 
 
+REPRO_COMMANDS = [
+    "git clone <repo> && cd visual-testing",
+    "python run.py setup",
+    "",
+    "# сторонние инструменты: версии прибиты в scripts/bench/package-lock.json",
+    "npm ci --prefix scripts/bench",
+    "node scripts/bench_pixelmatch.mjs > docs/benchmark_native.json",
+    "",
+    "# таблица: VisTest + нативные pixelmatch и Playwright на тех же PNG",
+    "python tests/benchmark.py --compare --native docs/benchmark_native.json \\",
+    "    --no-timing --markdown docs/benchmark.md",
+]
+
+
+def vistest_settings(cfg: VisTestConfig, ai: AIPipeline | None) -> list[str]:
+    """Every knob the VisTest row ran with — all of DiffConfig, not a selection."""
+    from dataclasses import fields
+
+    d = cfg.diff
+    diff = ", ".join(f"`{f.name}={getattr(d, f.name)!r}`" for f in fields(d))
+    if ai is None:
+        ai_line = "AI-слой не подключён (`--no-ai`)"
+    else:
+        a = ai.cfg
+        ai_line = (f"`AIPipeline(AIConfig())` — как у `CheckService`: "
+                   f"`gate_enabled={a.gate_enabled!r}`, "
+                   f"`perceptual_enabled={a.perceptual_enabled!r}`, "
+                   f"`attribution_enabled={a.attribution_enabled!r}` "
+                   "(атрибуция ищет селектор по DOM и на вердикт не влияет)")
+    return [
+        f"пресет `{cfg.preset}` — значение по умолчанию, `vistest.yaml` не читается",
+        f"`DiffConfig`: {diff}",
+        ai_line,
+        "политика: падение, если есть регион с `severity ≥ fail_severity`, "
+        "или изменённая площадь выше порога, или изменился размер",
+    ]
+
+
+def print_port_check(scores: list[Score], ports: list[Score],
+                     cases: list[cp.Case]) -> None:
+    """Порт против оригинала, по кейсам. Только консоль: публикуется оригинал."""
+    print("\n=== Порт против оригинала ===")
+    for port in ports:
+        nat = next(s for s in scores if s.native and s.key == port.key)
+        differ = [c.name for c in cases
+                  if port.per_case.get(c.name) != nat.per_case.get(c.name)]
+        print(f"{port.title} (порт) → {nat.title}: "
+              f"верно {port.correct} → {nat.correct}, "
+              f"ложных {port.false_fails} → {nat.false_fails}, "
+              f"пропусков {port.misses} → {nat.misses}; "
+              f"вердикты расходятся на {len(differ)} из {len(cases)}"
+              + (": " + ", ".join(differ) if differ else ""))
+
+
 def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
-             native_used: bool) -> str:
+             native_used: bool, *, native: dict | None = None,
+             ai: AIPipeline | None = None, timing: bool = True) -> str:
     from datetime import date
 
+    native = native or {}
     L: list[str] = []
     L.append("# Бенчмарк движка сравнения")
     L.append("")
-    L.append(f"Сгенерировано `python tests/benchmark.py --compare --markdown` "
-             f"{date.today().isoformat()}, {environment_line()}, "
+    L.append(f"Сгенерировано `python tests/benchmark.py --compare"
+             f"{' --native docs/benchmark_native.json' if native_used else ''}"
+             f"{'' if timing else ' --no-timing'}"
+             f" --markdown` {date.today().isoformat()}, {environment_line()}, "
              f"preset `{cfg.preset}`.")
     L.append("")
     L.append("The corpus is synthetic and frozen in the repository as PNG files "
@@ -274,10 +415,9 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "CHANGELOG. The environment line above still matters; the "
              "caveats at the end say why.")
     L.append("")
-    L.append("VisTest считается в конфигурации по умолчанию, вместе с "
-             "AI-слоем: обучаемый гейт включён в поставке, и прогон у "
-             "покупателя идёт именно так. Голый компаратор без него — "
-             "`python tests/benchmark.py --compare --no-ai`.")
+    L.append("Every tool runs with the settings a user gets after installing it "
+             "and changing nothing — VisTest included. The exact values are "
+             "listed under «Настройки». Nothing was tuned for this table.")
     L.append("")
 
     L.append("## Результат")
@@ -286,11 +426,13 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("|---|---|---|---|---|")
     for s in scores:
         mark = "" if s.native else " ⁽ᵖ⁾"
+        # A native row is timed in another process, a port row is not the tool.
+        ms = f"{s.ms:.0f}" if timing and s.ms and s.native else "—"
         L.append(
             f"| {s.title}{mark} | "
             f"{s.false_fails}/{s.noise_total} ({s.false_fail_rate * 100:.0f}%) | "
             f"{s.misses}/{s.signal_total} ({s.miss_rate * 100:.0f}%) | "
-            f"{s.correct}/{s.total} | {s.ms:.0f} |")
+            f"{s.correct}/{s.total} | {ms} |")
     L.append("")
     L.append("By corpus raster (correct · false failures · misses):")
     L.append("")
@@ -307,14 +449,18 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
         L.append(f"| {s.title} | " + " | ".join(cells) + " |")
     L.append("")
     if any(not s.native for s in scores):
-        L.append("⁽ᵖ⁾ — не оригинальный код, а порт ядра на numpy "
-                 "(`tests/baselines.py`), без детектора анти-алиасинга. "
-                 "Подлинные цифры: `node scripts/bench_pixelmatch.mjs` "
-                 "и флаг `--native`, см. «Как воспроизвести».")
+        L.append("⁽ᵖ⁾ — **не оригинальный код**, а наш порт ядра на numpy "
+                 "(`tests/baselines.py`), без детектора анти-алиасинга. Такую "
+                 "строку публиковать нельзя: это наше представление о "
+                 "конкуренте. Нативный прогон — «Как воспроизвести».")
         L.append("")
     if native_used:
-        L.append("Строки pixelmatch и Playwright посчитаны **нативным** "
-                 "npm-пакетом pixelmatch на тех же PNG.")
+        L.append("Строки pixelmatch и Playwright посчитаны **их собственным "
+                 "кодом** на тех же PNG (`scripts/bench_pixelmatch.mjs`, "
+                 "результат — `docs/benchmark_native.json`, отпечаток корпуса "
+                 f"`{(native.get('corpus') or {}).get('sha256', '?')[:16]}…` "
+                 "сверяется при чтении). Время в них не мерилось: другой "
+                 "процесс, другой язык — цифра была бы не про алгоритм.")
         L.append("")
 
     L.append("## Что означают колонки")
@@ -331,6 +477,49 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "инструмент, который не падает никогда, идеален по ложным "
              "падениям и бесполезен.")
     L.append("")
+
+    L.append("## Настройки")
+    L.append("")
+    L.append("Без этого таблица ничего не значит. Всё — значения по умолчанию; "
+             "ни одна опция не передавалась ни одному инструменту.")
+    L.append("")
+    tools = native.get("tools") or {}
+    for s in scores:
+        L.append(f"**{s.title}**{'' if s.native else ' ⁽ᵖ⁾'}")
+        L.append("")
+        if not s.key:
+            items = vistest_settings(cfg, ai)
+        else:
+            if s.native and s.key in tools:
+                t = tools[s.key]
+                items = [f"вызов: {t['invoked']}"]
+                items += [f"{k}: {v}" for k, v in t.get("settings", {}).items()]
+            elif s.key == "absdiff":
+                items = ["весь алгоритм самописного скрипта, воспроизводить "
+                         "нечего: `tests/baselines.py::absdiff`",
+                         "`tolerance=0`: любой отличающийся канал любого "
+                         "пикселя валит тест; разный размер — падение"]
+            else:
+                items = [f"порт: {s.note}"]
+        L += [f"- {x}" for x in items]
+        L.append("")
+
+    L.append("## Версии")
+    L.append("")
+    L.append("| Что | Версия |")
+    L.append("|---|---|")
+    for k, v in python_versions().items():
+        L.append(f"| {k} | {v} |")
+    env = native.get("environment") or {}
+    if env:
+        L.append(f"| Node.js | {env.get('node', '?')} |")
+        for k, v in (env.get("packages") or {}).items():
+            L.append(f"| npm `{k}` | {v} |")
+    L.append("")
+    if env:
+        L.append("npm-версии прибиты в `scripts/bench/package.json` и "
+                 "`scripts/bench/package-lock.json`; `npm ci` ставит ровно их.")
+        L.append("")
 
     L.append("## Корпус")
     L.append("")
@@ -375,8 +564,13 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("| Инструмент | Что это | Оговорка |")
     L.append("|---|---|---|")
     for s in scores:
-        L.append(f"| {s.title} | {s.note or '—'} | "
-                 f"{'оригинальный код' if s.native else 'порт на numpy'} |")
+        if not s.key:
+            kind = "наш код"
+        elif s.key == "absdiff":
+            kind = "наш код: это и есть весь алгоритм"
+        else:
+            kind = "оригинальный код" if s.native else "**порт на numpy**"
+        L.append(f"| {s.title} | {s.note or '—'} | {kind} |")
     L.append("")
     L.append("BackstopJS в таблице нет намеренно: воспроизводить поведение "
              "resemble.js по памяти мы не стали, а нативного раннера пока не "
@@ -386,18 +580,16 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("## Как воспроизвести")
     L.append("")
     L.append("```bash")
-    L.append("git clone <repo> && cd visual-testing")
-    L.append("python run.py setup")
-    L.append("")
-    L.append("# быстрый вариант: порты конкурентов на numpy")
-    L.append("python tests/benchmark.py --compare")
-    L.append("")
-    L.append("# честный вариант: настоящий pixelmatch")
-    L.append("npm install pixelmatch pngjs")
-    L.append("node scripts/bench_pixelmatch.mjs tests/benchmark_corpus "
-             "> bench_out/native.json")
-    L.append("python tests/benchmark.py --compare --native bench_out/native.json")
+    L += REPRO_COMMANDS
     L.append("```")
+    L.append("")
+    L.append("Нужны Python ≥ 3.10 и Node.js ≥ 18; браузер для этой таблицы не "
+             "нужен. `--no-timing` убирает единственное, что меняется от "
+             "прогона к прогону: консольный вывод воспроизводится побайтно, "
+             "а в этом файле от машины к машине меняются только дата и "
+             "строки окружения. Без `--native` строки конкурентов считает порт на "
+             "numpy — он помечен в таблице как порт и годится только для "
+             "быстрой проверки без Node.")
     L.append("")
 
     L.append("## Что эта таблица не доказывает")
@@ -410,6 +602,11 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "metrics differ in the last digits (`cv2.warpAffine` with "
              "`INTER_LINEAR` rounds differently). The environment line at "
              "the top says which one produced this table.")
+    if native_used:
+        L.append("- У Playwright сравниваются готовые снимки. Съёмка "
+                 "`toHaveScreenshot()` (отключение анимаций, скрытие каретки, "
+                 "повторные кадры до стабильности) здесь не участвует — как "
+                 "и стабилизация съёмки у VisTest: корпус уже снят.")
     L.append("- Applitools и Percy здесь не участвуют: закрытые SaaS, "
              "прогнать их на своём корпусе и опубликовать результат нельзя.")
     L.append("- Пороги VisTest настраивались в том числе по этому корпусу. "
@@ -449,7 +646,12 @@ def main() -> int:
                     help="без AI-слоя: голый компаратор. С гейтом, выключенным "
                          "по умолчанию, обязан дать те же цифры — расхождение "
                          "значит, что слой включается в обход конфига")
-    ap.add_argument("--native", help="JSON нативного прогона pixelmatch")
+    ap.add_argument("--native", metavar="JSON",
+                    help="результаты настоящих pixelmatch и Playwright из "
+                         "scripts/bench_pixelmatch.mjs; заменяют порты")
+    ap.add_argument("--with-ports", action="store_true",
+                    help="вместе с --native: напечатать и строки портов, чтобы "
+                         "сверить их с оригиналом. В markdown не попадают")
     ap.add_argument("--export", metavar="DIR",
                     help="выгрузить корпус в PNG для чужих инструментов")
     ap.add_argument("--no-timing", action="store_true",
@@ -481,6 +683,18 @@ def main() -> int:
               "and the new figures in README.")
         return 0
 
+    # Before the corpus is decoded: a JSON from other files is refused fast.
+    native: dict = {}
+    if args.native:
+        try:
+            native = load_native(args.native)
+        except NativeError as e:
+            print(f"--native: {e}", file=sys.stderr)
+            return 2
+    elif args.with_ports:
+        print("--with-ports имеет смысл только вместе с --native", file=sys.stderr)
+        return 2
+
     cases = cp.build()
     # По умолчанию меряем то, что реально уезжает покупателю: CheckService
     # собирает пайплайн на каждой проверке, и бенчмарк обязан мерить ту же
@@ -494,8 +708,10 @@ def main() -> int:
     if args.export:
         path = cp.export_corpus(cases, args.export)
         print(f"Корпус выгружен: {path.resolve()}  ({len(cases)} пар)")
-        print("Дальше:  node scripts/bench_pixelmatch.mjs "
-              f"{args.export} > bench_out/native.json")
+        print("Нативный прогон читает сам tests/benchmark_corpus; копия "
+              "нужна только чужим инструментам. Своим прогоном: "
+              f"node scripts/bench_pixelmatch.mjs {args.export} > "
+              "bench_out/native.json")
         return 0
 
     if not args.compare:
@@ -505,27 +721,33 @@ def main() -> int:
         return 1 if s.correct != s.total else 0
 
     scores = [score_vistest(cases, cfg, artifacts_dir=artifacts_dir, ai=ai)]
-
-    native: dict = {}
-    if args.native:
-        native = json.loads(Path(args.native).read_text("utf-8"))
+    ports: list[Score] = []
 
     for engine in bl.ENGINES:
-        nat = score_native(
-            cases, native, engine.key,
-            title=engine.title,
-            note=engine.note.replace("порт ядра, без AA-детектора → сверять с node",
-                                     "оригинальный npm-пакет"),
-        ) if native else None
-        scores.append(nat or score_engine(cases, engine))
+        if not engine.native and native:
+            nat = score_native(cases, native, engine.key,
+                               title=engine.title, note=engine.note)
+            if nat is None:
+                # Honest fallback: the row stays a port and says so.
+                print(f"--native: no complete results for {engine.key!r}; "
+                      "this row is the numpy port", file=sys.stderr)
+            else:
+                scores.append(nat)
+                if args.with_ports:
+                    ports.append(score_engine(cases, engine))
+                continue
+        scores.append(score_engine(cases, engine))
 
-    print_comparison(scores, cases, timing=timing)
+    print_comparison(scores + ports, cases, timing=timing)
+    if ports:
+        print_port_check(scores, ports, cases)
 
     if args.markdown:
         path = Path(args.markdown)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(markdown(scores, cases, cfg, bool(native)),
-                        encoding="utf-8")
+        path.write_text(markdown(scores, cases, cfg, bool(native),
+                                 native=native, ai=ai, timing=timing),
+                        encoding="utf-8", newline="\n")
         print(f"\nMarkdown: {path.resolve()}")
 
     vt = scores[0]

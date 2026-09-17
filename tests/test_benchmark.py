@@ -24,6 +24,8 @@ files still match the generator is `tests/test_corpus_frozen.py`.
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -257,3 +259,77 @@ def test_markdown_marks_ports(cases):
     scores = [bench.score_engine(cases, e) for e in bl.ENGINES]
     md = bench.markdown(scores, cases, CFG, native_used=False)
     assert "⁽ᵖ⁾" in md, "порт обязан быть помечен в публикуемой таблице"
+
+
+def test_markdown_with_native_lists_settings_and_no_ports(cases):
+    """Published table: native rows only, every tool's settings written out."""
+    native = {
+        "source": "native",
+        "corpus": {"sha256": "0" * 64},
+        "environment": {"node": "v0", "packages": {"pixelmatch": "9.9.9"}},
+        "tools": {k: {"title": f"{k} native", "invoked": f"{k} itself",
+                      "settings": {"threshold": f"{k}-default"}}
+                  for k in ("pixelmatch", "playwright")},
+        "results": {k: {c.name: {"failed": True} for c in cases}
+                    for k in ("pixelmatch", "playwright")},
+    }
+    scores = [bench.Score(title="VisTest (balanced)")]
+    for e in bl.ENGINES:
+        scores.append(bench.score_native(cases, native, e.key, e.title, e.note)
+                      if not e.native else bench.score_engine(cases, e))
+    md = bench.markdown(scores, cases, CFG, True, native=native)
+
+    assert "⁽ᵖ⁾" not in md, "в опубликованной таблице не должно быть портов"
+    assert "pixelmatch native" in md and "playwright native" in md
+    assert "pixelmatch-default" in md and "playwright-default" in md
+    assert "delta_e_threshold=2.3" in md, "настройки VisTest тоже выписываются"
+    assert "| Node.js | v0 |" in md and "9.9.9" in md
+    assert "npm ci --prefix scripts/bench" in md
+
+
+# --------------------------------------------------------------------------- #
+#  Нативный JSON: тот же корпус или никакой
+# --------------------------------------------------------------------------- #
+def test_corpus_digest_notices_a_changed_file(tmp_path):
+    copy = tmp_path / "corpus"
+    shutil.copytree(cp.FROZEN_DIR, copy)
+    assert bench.corpus_digest(copy) == bench.corpus_digest()
+
+    manifest = json.loads((copy / "manifest.json").read_text("utf-8"))
+    png = copy / manifest["cases"][0]["actual"]
+    data = bytearray(png.read_bytes())
+    data[-1] ^= 1
+    png.write_bytes(bytes(data))
+    assert bench.corpus_digest(copy) != bench.corpus_digest()
+
+
+def test_load_native_refuses_another_corpus(tmp_path):
+    doc = {"source": "native", "corpus": {"sha256": "f" * 64}, "results": {}}
+    path = tmp_path / "native.json"
+    path.write_text(json.dumps(doc), "utf-8")
+    with pytest.raises(bench.NativeError, match="different corpus"):
+        bench.load_native(path)
+
+    doc["source"] = "port"
+    doc["corpus"]["sha256"] = bench.corpus_digest()
+    path.write_text(json.dumps(doc), "utf-8")
+    with pytest.raises(bench.NativeError, match="not a native run"):
+        bench.load_native(path)
+
+
+PUBLISHED_NATIVE = Path(__file__).resolve().parents[1] / "docs" / "benchmark_native.json"
+
+
+@pytest.mark.skipif(not PUBLISHED_NATIVE.exists(), reason="no published native run")
+def test_published_native_run_matches_the_corpus(cases):
+    """README quotes this file. If the corpus moves, the figures must be redone."""
+    native = bench.load_native(PUBLISHED_NATIVE)
+    for e in bl.ENGINES:
+        if e.native:
+            continue
+        s = bench.score_native(cases, native, e.key, e.title, e.note)
+        assert s is not None, f"нет полного нативного прогона для {e.key}"
+        tool = native["tools"][e.key]
+        assert tool["native"] is True and tool["settings"], e.key
+    assert native["environment"]["node"]
+    assert native["environment"]["packages"]
