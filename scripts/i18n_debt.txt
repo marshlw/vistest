@@ -6,7 +6,7 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 12373 lines in 217 files.
+# 12618 lines in 218 files.
 
 52	.github/workflows/ci.yml
 57	.gitlab-ci.example.yml
@@ -34,6 +34,7 @@
 18	docker/entrypoint.sh
 4	docker/prometheus.yml
 1735	docs/GUIDE.md
+154	docs/benchmark.md
 16	examples/demo_page.html
 10	examples/test_demo_visual.py
 21	examples/test_existing_suite.py
@@ -66,7 +67,7 @@
 8	run.ps1
 34	run.py
 5	run.sh
-17	scripts/bench_pixelmatch.mjs
+49	scripts/bench_pixelmatch.mjs
 5	scripts/export_perceptual_model.py
 13	scripts/vistest_team.py
 10	tests/api/conftest.py
@@ -99,7 +100,7 @@
 37	tests/api/test_ui_delivery.py
 30	tests/api/test_zones_api.py
 44	tests/baselines.py
-110	tests/benchmark.py
+165	tests/benchmark.py
 17	tests/clients/cypress_plugin.mjs
 25	tests/clients/playwright_reporter.mjs
 34	tests/corpus.py
@@ -113,7 +114,7 @@
 15	tests/test_backup.py
 38	tests/test_baseline_scope.py
 20	tests/test_baseline_versions.py
-35	tests/test_benchmark.py
+39	tests/test_benchmark.py
 36	tests/test_branch_baselines.py
 55	tests/test_cli_ci.py
 31	tests/test_clients_java.py
