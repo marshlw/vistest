@@ -212,7 +212,12 @@ def test_gate_can_be_turned_off():
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def cases():
-    return corpus.build()
+    #  The frozen corpus, every raster: the gate is checked on the pixels the
+    #  benchmark figure is computed on, not on whatever the installed OpenCV
+    #  draws. The training `corpus.generate()` further down is drawn on the fly.
+    loaded = corpus.load()
+    assert {c.render for c in loaded} == {r.key for r in corpus.RENDERS}
+    return loaded
 
 
 def test_no_regression_is_lost_on_the_corpus(cases):

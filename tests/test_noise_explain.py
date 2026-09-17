@@ -80,13 +80,16 @@ def test_an_isolated_speck_is_still_removed():
     assert not clean_mask(mask, open_px=2, close_px=6).any()
 
 
-#  The corpus is drawn with OpenCV, and what it draws depends on the version.
-#  `price changed` is one digit, "1" → "2": with OpenCV 4.x the digit leaves
-#  41 changed pixels and is found; with 5.x it leaves 14, the anti-aliasing
-#  filter takes most of them before segmentation, and it is missed either
-#  way. That miss is upstream of the order tested here, so the case that is
-#  asserted is the one both versions draw alike.
-@pytest.mark.parametrize("name", ["promo text"])
+#  The corpus is frozen on disk with both OpenCV rasters (tests/corpus.py), so
+#  what is asserted here no longer depends on the installed version. `price
+#  changed` is one digit, "1" → "2"; on the thin-glyph raster it leaves fewer
+#  changed pixels, and it used to be lost to the anti-aliasing filter before
+#  segmentation. Since that filter answers for itself (core/refit.py) it is
+#  found on both rasters.
+@pytest.mark.parametrize("name", [
+    "promo text", "promo text, thin glyphs",
+    "price changed", "price changed, thin glyphs",
+])
 def test_the_text_regressions_the_old_order_missed_are_found(cases, name):
     c = cases[name]
     r = compare(c.expected, c.actual, cfg=CFG, name=name)
@@ -104,18 +107,24 @@ def test_no_false_failure_on_the_corpus_without_a_model(cases):
     assert not wrong, wrong
 
 
-def test_fewer_than_three_misses_on_the_corpus_without_a_model(cases):
-    missed = [c.name for c in cases.values() if c.group == "SIGNAL"
+@pytest.mark.parametrize("render", [r.key for r in cp.RENDERS])
+def test_fewer_than_three_misses_on_the_corpus_without_a_model(cases, render):
+    missed = [c.name for c in cases.values()
+              if c.group == "SIGNAL" and c.render == render
               and compare(c.expected, c.actual, cfg=CFG).verdict is not Verdict.FAIL]
     assert len(missed) < 3, missed
 
 
 @pytest.mark.parametrize("name, rule", [
-    ("jpeg q=75", "jpeg"),
-    ("scrollbar", "scrollbar"),
-    ("antialias 0.4px", "rerender"),
-    ("sensor noise σ=3.0", "rerender"),
-    ("combined", "rerender"),
+    (name + suffix, rule)
+    for name, rule in [
+        ("jpeg q=75", "jpeg"),
+        ("scrollbar", "scrollbar"),
+        ("antialias 0.4px", "rerender"),
+        ("sensor noise σ=3.0", "rerender"),
+        ("combined", "rerender"),
+    ]
+    for suffix in (r.suffix for r in cp.RENDERS)
 ])
 def test_each_noise_the_new_order_exposes_is_explained_by_its_own_test(cases, name, rule):
     c = cases[name]
@@ -125,14 +134,18 @@ def test_each_noise_the_new_order_exposes_is_explained_by_its_own_test(cases, na
     assert any("Noise explained" in n for n in on.notes), on.notes
 
 
-@pytest.mark.parametrize("name", ["scrollbar", "antialias 0.4px",
-                                  "sensor noise σ=3.0", "combined"])
+@pytest.mark.parametrize("name", [
+    name + suffix
+    for name in ("scrollbar", "antialias 0.4px", "sensor noise σ=3.0", "combined")
+    for suffix in (r.suffix for r in cp.RENDERS)
+])
 def test_without_the_stage_the_new_order_would_fail_them(cases, name):
     """The stage is what holds the line — not luck in the segmentation.
 
     `jpeg q=75` is not listed: whether its ringing survives segmentation
-    depends on the JPEG encoder bundled with OpenCV (it does with 4.x, not
-    with 5.x). The jpeg rule is still asserted above.
+    depended on the JPEG encoder bundled with the OpenCV that drew it (it did
+    with 4.x, not with 5.x). The pairs are frozen now, but the two rasters
+    still differ in exactly that. The jpeg rule is still asserted above.
     """
     c = cases[name]
     off = compare(c.expected, c.actual, cfg=replace(CFG, explain_noise=False))

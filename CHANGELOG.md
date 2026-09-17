@@ -5,6 +5,40 @@
 
 ## [Unreleased]
 
+### The benchmark corpus is frozen on disk
+
+- **Benchmark figures published before this change were tied to the installed
+  OpenCV version and are not comparable with each other or with the figures
+  below.** The curated corpus used to be drawn on every run by
+  `tests/synthetic.py` (`cv2.putText`), and OpenCV 5 rasterises text
+  differently from 4.x: all 54 images of the corpus differed between the two.
+- **`tests/benchmark_corpus/`** now holds the curated corpus as PNG pairs plus
+  `manifest.json` (the `export_corpus` format, with `family` and `render`
+  added). `corpus.build()` reads it (`corpus.load()`) and draws nothing.
+  `tests/test_benchmark.py` and `tests/test_gate.py` run on it;
+  `corpus.generate()` for training still draws on the fly, on purpose (its
+  docstring says why).
+- **Both rasters are frozen, as separate cases**: 27 cases drawn by
+  `opencv-python-headless==4.14.0.94` and the same 27 drawn by `==5.0.0.93`,
+  named with the suffix `, thin glyphs` (OpenCV 5 draws thinner, lighter
+  strokes). 54 pairs; about 16 MB on disk, 12.7 MB of distinct files.
+- **Redrawing is deliberate**: `python tests/benchmark.py --regenerate` redraws
+  the raster of the installed OpenCV and leaves the other one alone.
+  `tests/test_corpus_frozen.py` fails when the files and the generator
+  disagree and names the drifted pairs; it also fails under an OpenCV version
+  that has no raster in `corpus.RENDERS`.
+- `python tests/benchmark.py --no-timing` leaves the timing column blank, so
+  the output can be diffed byte for byte; the environment line goes to stderr.
+  The output is split by raster.
+- Figures on the frozen corpus, preset `balanced`, AI layer on, OpenCV
+  4.14.0.94 and 5.0.0.93, numpy 2.5.3, Python 3.13, Linux x86_64: VisTest
+  52/54 (26/27 on each raster), 0/32 false failures, 2/22 misses
+  (`header color` on both rasters). The comparison table is byte-identical
+  under both versions. The detailed table is not: on the same files, six rows
+  differ in region metrics (not verdicts), because `cv2.warpAffine` with
+  `INTER_LINEAR` rounds differently in 4.14 and 5.0 (`core/align.py`,
+  `core/refit.py`, `core/explain.py`).
+
 ### The anti-aliasing filter answers for itself
 
 - **The per-pixel anti-aliasing veto no longer erases a region on its own.**
