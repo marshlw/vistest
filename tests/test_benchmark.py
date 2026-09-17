@@ -12,6 +12,11 @@
 он громко. Тесты фиксируют три вещи: корпус собирается и размечен осмысленно,
 каждый движок-конкурент отвечает на каждой паре, и счёт считается правильно.
 
+Every check runs on the frozen corpus (`tests/benchmark_corpus/`), not on
+pictures drawn at run time: otherwise it would check the raster the installed
+OpenCV happens to draw, not the one the figure is computed on. Whether the
+files still match the generator is `tests/test_corpus_frozen.py`.
+
 Сами пороги качества здесь не проверяются — это дело `test_engine.py`.
 Здесь проверяется, что таблица не врёт по построению.
 """
@@ -34,7 +39,14 @@ CFG = VisTestConfig.preset_of("balanced")
 
 @pytest.fixture(scope="module")
 def cases():
-    return cp.build()
+    return cp.load()
+
+
+def _of(cases, family):
+    """One case on every raster."""
+    found = [c for c in cases if c.family == family]
+    assert len(found) == len(cp.RENDERS), (family, [c.name for c in found])
+    return found
 
 
 # --------------------------------------------------------------------------- #
@@ -69,7 +81,7 @@ def test_noise_cases_really_are_noise(cases):
     Кроме `identical`, который для того и заведён.
     """
     for c in cases:
-        if c.group != "NOISE" or c.name == "identical":
+        if c.group != "NOISE" or c.family == "identical":
             continue
         if c.expected.shape != c.actual.shape:
             continue
@@ -94,6 +106,16 @@ def test_export_roundtrip(cases, tmp_path):
         assert (out / entry["expected"]).exists()
         assert (out / entry["actual"]).exists()
         assert entry["group"] in ("NOISE", "SIGNAL")
+        for key in ("name", "group", "expected_fail", "why"):
+            assert key in entry, key
+
+    back = cp.load(out)
+    assert [c.name for c in back] == [c.name for c in cases]
+    for a, b in zip(cases, back, strict=True):
+        assert (a.group, a.expected_fail, a.why, a.family, a.render) == \
+               (b.group, b.expected_fail, b.why, b.family, b.render)
+        assert np.array_equal(a.expected, b.expected), a.name
+        assert np.array_equal(a.actual, b.actual), a.name
 
 
 # --------------------------------------------------------------------------- #
@@ -115,7 +137,7 @@ def test_absdiff_is_maximally_strict(cases):
     """
     for c in cases:
         res = bl.absdiff(c.expected, c.actual)
-        if c.name == "identical":
+        if c.family == "identical":
             assert not res.failed
         else:
             assert res.failed, f"absdiff неожиданно простил {c.name}"
@@ -123,41 +145,36 @@ def test_absdiff_is_maximally_strict(cases):
 
 def test_identical_passes_everywhere(cases):
     """На одинаковых изображениях не должен падать никто."""
-    base = next(c for c in cases if c.name == "identical")
-    for engine in bl.ENGINES:
-        assert not engine.run(base.expected, base.actual).failed, engine.key
+    for base in _of(cases, "identical"):
+        for engine in bl.ENGINES:
+            assert not engine.run(base.expected, base.actual).failed, engine.key
 
 
-def test_pixelmatch_threshold_is_monotonic():
+def test_pixelmatch_threshold_is_monotonic(cases):
     """Выше порог — не больше отличий. Иначе порт сломан."""
-    from . import synthetic as syn
-
-    base = syn.page()
-    noisy = syn.add_sensor_noise(base, 3.0, seed=7)
-    counts = [bl.pixelmatch_numpy(base, noisy, threshold=t).diff_pixels
-              for t in (0.0, 0.05, 0.1, 0.2, 0.5)]
-    assert counts == sorted(counts, reverse=True)
+    for c in _of(cases, "sensor noise σ=3.0"):
+        counts = [bl.pixelmatch_numpy(c.expected, c.actual, threshold=t).diff_pixels
+                  for t in (0.0, 0.05, 0.1, 0.2, 0.5)]
+        assert counts == sorted(counts, reverse=True), c.name
+        assert counts[0] > counts[-1], c.name
 
 
-def test_playwright_policy_fails_on_single_pixel():
+def test_playwright_policy_fails_on_single_pixel(cases):
     """Один непрощённый пиксель роняет toHaveScreenshot() — это и есть суть."""
-    from . import synthetic as syn
+    for c in _of(cases, "identical"):
+        base = c.expected
+        touched = base.copy()
+        touched[500, 500] = (255, 0, 0)     # ровно один пиксель, максимальный контраст
 
-    base = syn.page()
-    touched = base.copy()
-    touched[500, 500] = (255, 0, 0)     # ровно один пиксель, максимальный контраст
-
-    assert bl.playwright_screenshot(base, touched).failed
-    assert bl.playwright_screenshot(base, base.copy()).failed is False
+        assert bl.playwright_screenshot(base, touched).failed
+        assert bl.playwright_screenshot(base, base.copy()).failed is False
 
 
-def test_size_change_fails_everywhere():
-    from . import synthetic as syn
-
-    base = syn.page()
-    taller = syn.page(extra_height=160)
-    for engine in bl.ENGINES:
-        assert engine.run(base, taller).failed, engine.key
+def test_size_change_fails_everywhere(cases):
+    for c in _of(cases, "page taller +160"):
+        assert c.expected.shape[0] < c.actual.shape[0], c.name
+        for engine in bl.ENGINES:
+            assert engine.run(c.expected, c.actual).failed, (engine.key, c.name)
 
 
 # --------------------------------------------------------------------------- #

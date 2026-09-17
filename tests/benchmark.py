@@ -14,6 +14,9 @@
     python tests/benchmark.py --no-ai               голый компаратор, без AI-слоя
     python tests/benchmark.py --compare --markdown bench_out/BENCHMARK.md
     python tests/benchmark.py --export bench_out/corpus   выгрузить корпус
+    python tests/benchmark.py --no-timing           no timing column: the output
+                                                    is reproducible byte for byte
+    python tests/benchmark.py --regenerate          redraw the frozen corpus (on purpose)
 
 Главная метрика — **false-fail rate**: доля неизменённых по существу страниц,
 на которых инструмент упал. Она важнее полноты: пропущенный регресс замечает
@@ -23,6 +26,10 @@
 Вторая метрика — **miss rate**: доля настоящих регрессов, которые инструмент
 пропустил. Инструмент, который не падает никогда, имеет идеальный false-fail
 rate и нулевую пользу, поэтому смотреть надо на обе цифры сразу.
+
+The corpus is read from disk (`tests/benchmark_corpus/`), not drawn at run
+time: otherwise the figure would depend on the OpenCV version of whoever runs
+it. Details in `tests/corpus.py`.
 
 Числа в README получаются прогоном этой команды. Порты
 конкурентов помечены как порты; подлинные цифры pixelmatch и Playwright дают
@@ -99,6 +106,41 @@ def _note(ai: AIPipeline | None) -> str:
     return base + (" + обучаемый гейт" if ai else ", AI-слой выключен")
 
 
+def _ms(ms: float, width: int, timing: bool) -> str:
+    """Timing is the one thing in the output that changes from run to run."""
+    return f"{ms:{width}.0f}" if timing else f"{'—':>{width}s}"
+
+
+def _render_line(title: str, s: Score) -> str:
+    return (f"{title}: {s.correct}/{s.total} correct, "
+            f"false failures {s.false_fails}/{s.noise_total}, "
+            f"misses {s.misses}/{s.signal_total}")
+
+
+def by_render(cases: list[cp.Case], s: Score) -> list[tuple[cp.Render, Score]]:
+    """The same score, split by the corpus raster."""
+    out = []
+    for r in cp.RENDERS:
+        part = Score(title=r.key)
+        for c in cases:
+            if c.render == r.key and c.name in s.per_case:
+                part.add(c, s.per_case[c.name])
+        if part.total:
+            out.append((r, part))
+    return out
+
+
+def environment_line() -> str:
+    import platform
+
+    import cv2
+    import numpy
+
+    return (f"OpenCV {cv2.__version__}, numpy {numpy.__version__}, "
+            f"Python {platform.python_version()}, "
+            f"{platform.system()} {platform.machine()}")
+
+
 def score_vistest(cases: list[cp.Case], cfg: VisTestConfig,
                   *, artifacts_dir: Path | None = None,
                   ai: AIPipeline | None = None) -> Score:
@@ -145,11 +187,17 @@ def score_native(cases: list[cp.Case], native: dict, key: str,
 # --------------------------------------------------------------------------- #
 def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
                  artifacts_dir: Path | None,
-                 ai: AIPipeline | None = None) -> Score:
-    header = (f"{'кейс':24s} {'ожид':6s} {'факт':6s} {'sev':>6s} {'изм%':>8s} "
+                 ai: AIPipeline | None = None, *, timing: bool = True) -> Score:
+    w = max(24, *(len(c.name) for c in cases))
+    header = (f"{'кейс':{w}s} {'ожид':6s} {'факт':6s} {'sev':>6s} {'изм%':>8s} "
               f"{'ΔE':>6s} {'SSIM':>7s} {'рег':>4s} {'мс':>5s}  итог")
     print(f"\n=== VisTest benchmark (preset={cfg.preset}, "
           f"AI-слой {'вкл' if ai else 'выкл'}) ===")
+    #  The environment goes to stderr, so stdout stays comparable byte for
+    #  byte between machines.
+    print(f"Run on: {environment_line()}", file=sys.stderr)
+    print("Corpus: tests/benchmark_corpus, rasters "
+          + ", ".join(f"{r.key} ({r.package})" for r in cp.RENDERS))
     print(header)
     print("-" * len(header))
 
@@ -166,22 +214,24 @@ def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
             failed = r.verdict is Verdict.FAIL
             s.add(c, failed)
             ok = failed == c.expected_fail
-            print(f"{c.name:24s} {expected.value:6s} {r.verdict.value:6s} "
+            print(f"{c.name:{w}s} {expected.value:6s} {r.verdict.value:6s} "
                   f"{r.max_severity:6.1f} {r.changed_area_pct:8.4f} "
                   f"{r.de_mean:6.2f} {r.ssim_global:7.5f} {len(r.regions):4d} "
-                  f"{ms:5.0f}  {'ok' if ok else 'ОШИБКА'}")
+                  f"{_ms(ms, 5, timing)}  {'ok' if ok else 'ОШИБКА'}")
             if artifacts_dir and (not ok or group == "SIGNAL"):
                 render_all(r, artifacts_dir / cp._slug(c.name), cfg=cfg.render)
 
     print("\n" + "-" * len(header))
-    print(f"Пройдено {s.correct}/{s.total}, "
-          f"ложных падений {s.false_fails}/{s.noise_total}, "
-          f"пропусков {s.misses}/{s.signal_total}")
+    for r, part in by_render(cases, s):
+        print(_render_line(f"raster {r.key}", part))
+    print(_render_line("total", s))
     return s
 
 
-def print_comparison(scores: list[Score]) -> None:
+def print_comparison(scores: list[Score], cases: list[cp.Case] | None = None,
+                     *, timing: bool = True) -> None:
     print("\n=== Сравнение движков ===")
+    print(f"Run on: {environment_line()}", file=sys.stderr)
     w = max(len(s.title) for s in scores) + 2
     print(f"{'инструмент':{w}s} {'ложных падений':>16s} {'пропусков':>12s} "
           f"{'верно':>8s} {'мс':>7s}")
@@ -193,24 +243,36 @@ def print_comparison(scores: list[Score]) -> None:
               f"{s.false_fail_rate * 100:6.0f}%  "
               f"{s.misses:2d}/{s.signal_total:<2d} "
               f"{s.miss_rate * 100:4.0f}%  "
-              f"{s.correct:3d}/{s.total:<3d} {s.ms:7.0f}")
+              f"{s.correct:3d}/{s.total:<3d} {_ms(s.ms, 7, timing)}")
+    if cases:
+        for r in cp.RENDERS:
+            print(f"\n  raster {r.key}:")
+            for s in scores:
+                part = dict(by_render(cases, s)).get(r)
+                if part:
+                    print(f"  {s.title:{w}s} {part.false_fails:2d}/{part.noise_total:<2d}"
+                          f"{'':9s}{part.misses:2d}/{part.signal_total:<2d}"
+                          f"{'':7s}{part.correct:3d}/{part.total}")
 
 
 def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              native_used: bool) -> str:
-    import platform
     from datetime import date
 
     L: list[str] = []
     L.append("# Бенчмарк движка сравнения")
     L.append("")
     L.append(f"Сгенерировано `python tests/benchmark.py --compare --markdown` "
-             f"{date.today().isoformat()}, "
-             f"{platform.system()} {platform.machine()}, Python "
-             f"{platform.python_version()}, пресет `{cfg.preset}`.")
+             f"{date.today().isoformat()}, {environment_line()}, "
+             f"preset `{cfg.preset}`.")
     L.append("")
-    L.append("Числа ниже воспроизводятся одной командой на любой машине — "
-             "корпус синтетический и генерируется кодом, а не лежит архивом.")
+    L.append("The corpus is synthetic and frozen in the repository as PNG files "
+             "(`tests/benchmark_corpus/`); it is not drawn at run time, so the "
+             "installed OpenCV does not change what is measured. Figures "
+             "published before the freeze were tied to the OpenCV version of "
+             "whoever ran them and are not comparable with these — see "
+             "CHANGELOG. The environment line above still matters; the "
+             "caveats at the end say why.")
     L.append("")
     L.append("VisTest считается в конфигурации по умолчанию, вместе с "
              "AI-слоем: обучаемый гейт включён в поставке, и прогон у "
@@ -229,6 +291,20 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
             f"{s.false_fails}/{s.noise_total} ({s.false_fail_rate * 100:.0f}%) | "
             f"{s.misses}/{s.signal_total} ({s.miss_rate * 100:.0f}%) | "
             f"{s.correct}/{s.total} | {s.ms:.0f} |")
+    L.append("")
+    L.append("By corpus raster (correct · false failures · misses):")
+    L.append("")
+    L.append("| Tool | " + " | ".join(f"`{r.key}`" for r in cp.RENDERS) + " |")
+    L.append("|---|" + "---|" * len(cp.RENDERS))
+    for s in scores:
+        parts = dict(by_render(cases, s))
+        cells = []
+        for r in cp.RENDERS:
+            x = parts.get(r)
+            cells.append("—" if x is None else
+                         f"{x.correct}/{x.total} · {x.false_fails}/{x.noise_total}"
+                         f" · {x.misses}/{x.signal_total}")
+        L.append(f"| {s.title} | " + " | ".join(cells) + " |")
     L.append("")
     if any(not s.native for s in scores):
         L.append("⁽ᵖ⁾ — не оригинальный код, а порт ядра на numpy "
@@ -261,8 +337,22 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append(f"{len(cases)} пар: "
              f"{sum(1 for c in cases if c.group == 'NOISE')} NOISE + "
              f"{sum(1 for c in cases if c.group == 'SIGNAL')} SIGNAL. "
-             "Генерируется `tests/corpus.py`, изображения рисуются "
-             "`tests/synthetic.py`.")
+             "Stored in `tests/benchmark_corpus/` (PNG + `manifest.json`), "
+             "drawn by `tests/synthetic.py` and frozen: "
+             "`python tests/benchmark.py --regenerate` redraws them on purpose, "
+             "and `tests/test_corpus_frozen.py` fails when the code starts "
+             "drawing something other than what is on disk.")
+    L.append("")
+    L.append("The pages are drawn by OpenCV, and OpenCV 5 rasterises text "
+             "differently from 4.x: every pair differs. So both rasters are "
+             "frozen, as separate cases; keeping one would be choosing the "
+             "convenient picture.")
+    L.append("")
+    L.append("| Raster | Drawn with | Case names | What differs |")
+    L.append("|---|---|---|---|")
+    for r in cp.RENDERS:
+        suffix = f"`…{r.suffix}`" if r.suffix else "no suffix"
+        L.append(f"| `{r.key}` | `{r.package}` | {suffix} | {r.note} |")
     L.append("")
     L.append("Почему синтетика, а не настоящие скриншоты: на реальных парах "
              "правильный ответ приходится размечать человеком, и в спорных "
@@ -303,9 +393,9 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("python tests/benchmark.py --compare")
     L.append("")
     L.append("# честный вариант: настоящий pixelmatch")
-    L.append("python tests/benchmark.py --export bench_out/corpus")
     L.append("npm install pixelmatch pngjs")
-    L.append("node scripts/bench_pixelmatch.mjs bench_out/corpus > bench_out/native.json")
+    L.append("node scripts/bench_pixelmatch.mjs tests/benchmark_corpus "
+             "> bench_out/native.json")
     L.append("python tests/benchmark.py --compare --native bench_out/native.json")
     L.append("```")
     L.append("")
@@ -315,6 +405,11 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("- Корпус синтетический. Он проверяет, что движок отличает "
              "известные виды шума от известных видов регресса, а не то, как "
              "он поведёт себя на вашем приложении.")
+    L.append("- The input is frozen, the engine is not: on the same files "
+             "OpenCV 4.14 and 5.0 give the same verdicts, but some region "
+             "metrics differ in the last digits (`cv2.warpAffine` with "
+             "`INTER_LINEAR` rounds differently). The environment line at "
+             "the top says which one produced this table.")
     L.append("- Applitools и Percy здесь не участвуют: закрытые SaaS, "
              "прогнать их на своём корпусе и опубликовать результат нельзя.")
     L.append("- Пороги VisTest настраивались в том числе по этому корпусу. "
@@ -357,11 +452,35 @@ def main() -> int:
     ap.add_argument("--native", help="JSON нативного прогона pixelmatch")
     ap.add_argument("--export", metavar="DIR",
                     help="выгрузить корпус в PNG для чужих инструментов")
+    ap.add_argument("--no-timing", action="store_true",
+                    help="do not print timings: without them the output is "
+                         "reproducible byte for byte and can be diffed "
+                         "between machines")
+    ap.add_argument("--regenerate", action="store_true",
+                    help="redraw the frozen corpus with the installed OpenCV "
+                         "(its own raster only) and exit. A deliberate act: "
+                         "the benchmark figures have to be re-checked and "
+                         "re-published after it")
     ap.add_argument("--markdown", metavar="FILE",
                     help="записать таблицу в markdown")
     args = ap.parse_args()
 
     cfg = VisTestConfig.preset_of(args.preset)
+    timing = not args.no_timing
+
+    if args.regenerate:
+        render, drawn = cp.regenerate()
+        print(f"Redrew raster {render.key} ({len(drawn)} pairs) with "
+              f"{environment_line()}: {cp.FROZEN_DIR}")
+        others = [r for r in cp.RENDERS if r is not render]
+        if others:
+            print("Other rasters are untouched; only their own OpenCV can "
+                  "redraw them: " + ", ".join(
+                      f"{r.key} with {r.package}" for r in others))
+        print("Next: git diff --stat tests/benchmark_corpus, a benchmark run, "
+              "and the new figures in README.")
+        return 0
+
     cases = cp.build()
     # По умолчанию меряем то, что реально уезжает покупателю: CheckService
     # собирает пайплайн на каждой проверке, и бенчмарк обязан мерить ту же
@@ -380,7 +499,7 @@ def main() -> int:
         return 0
 
     if not args.compare:
-        s = print_detail(cases, cfg, artifacts_dir, ai=ai)
+        s = print_detail(cases, cfg, artifacts_dir, ai=ai, timing=timing)
         if args.artifacts:
             print(f"Артефакты: {out.resolve()}")
         return 1 if s.correct != s.total else 0
@@ -400,7 +519,7 @@ def main() -> int:
         ) if native else None
         scores.append(nat or score_engine(cases, engine))
 
-    print_comparison(scores)
+    print_comparison(scores, cases, timing=timing)
 
     if args.markdown:
         path = Path(args.markdown)

@@ -118,17 +118,25 @@ python tests/benchmark.py --artifacts
 ```
 
 ```
-=== VisTest benchmark (preset=balanced) ===
-кейс                     ожид   факт     sev     изм%     ΔE    SSIM  рег    мс  итог
+кейс                            ожид   факт      sev     изм%     ΔE    SSIM  рег    мс  итог
 
 [NOISE]  ожидается pass
-identical                pass   pass     0.0   0.0000   0.00 1.00000    0    31  ok
-sensor noise s=1.6       pass   pass     0.0   0.0003   0.71 0.99412    0   180  ok
-antialias 0.4px          pass   pass     0.0   0.0011   1.04 0.99688    0   210  ok
+identical                       pass   pass      0.0   0.0000   0.00 1.00000    0     —  ok
+antialias 0.4px                 pass   pass      0.0   0.0584  13.30 0.99250    0     —  ok
+antialias 0.4px, thin glyphs    pass   pass      0.0   0.0636  15.26 0.99295    0     —  ok
 ...
 [SIGNAL]  ожидается fail
-button removed           fail   fail    74.2   0.9210  18.31 0.99012    1   205  ok
+button removed                  fail   fail     98.1   1.1961  42.57 0.99355    1     —  ok
+...
+raster opencv-4.14: 26/27 correct, false failures 0/16, misses 1/11
+raster opencv-5.0: 26/27 correct, false failures 0/16, misses 1/11
+total: 52/54 correct, false failures 0/32, misses 2/22
 ```
+
+(Shown as printed with `--no-timing`: the timing column is blank and the
+output can be diffed byte for byte between machines. Excerpt taken with OpenCV 4.14.0; under 5.0.0 the verdicts and
+totals are the same, and a few region metrics differ in the last digits.
+The one miss on each raster is `header color`.)
 
 В `bench_out/` лежат картинки по каждому кейсу — полезно посмотреть глазами,
 что именно движок считает изменением.

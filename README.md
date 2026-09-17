@@ -523,6 +523,7 @@ pytest tests/                           # invariants: noise must not fail, regre
 pytest tests/api                        # API tests: auth, roles, invites, team
 python tests/benchmark.py --artifacts   # noise / signal table plus images
 python tests/benchmark.py --compare     # VisTest vs absdiff, pixelmatch, Playwright
+python tests/benchmark.py --regenerate  # redraw the frozen corpus (deliberately)
 ```
 
 The synthetic benchmark is the main tool for tuning thresholds: after any
@@ -532,6 +533,28 @@ know the ground truth.
 
 The primary metric is **false-fail rate**: the share of pages that did not
 meaningfully change but produced a red test.
+
+### Current figures
+
+Frozen corpus, `python tests/benchmark.py` and `--compare`, preset
+`balanced`, AI layer on. Taken on 2026-09-17 with **opencv-python-headless
+4.14.0.94 and 5.0.0.93** (identical verdicts and an identical comparison
+table under both), numpy 2.5.3, Python 3.13, Linux x86_64:
+
+| Tool | Correct | False failures | Missed regressions |
+|---|---|---|---|
+| VisTest (balanced) | **52/54** (26/27 per raster) | 0/32 | 2/22 |
+| absdiff | 24/54 | 30/32 | 0/22 |
+| pixelmatch t=0.1 (numpy port) | 34/54 | 18/32 | 2/22 |
+| Playwright `toHaveScreenshot()` (numpy port) | 38/54 | 14/32 | 2/22 |
+
+54 pairs = the same 27 cases on two text rasters, OpenCV 4.x and OpenCV 5
+(`, thin glyphs`); VisTest misses `header color` on both. The corpus lives in
+`tests/benchmark_corpus/` and is not redrawn at run time. Figures published
+before the freeze depended on the installed OpenCV and are not comparable with
+these (see CHANGELOG). The engine is not fully version-independent: on the
+same files the verdicts match, but a few region metrics in the detailed table
+differ in the last digits between 4.14 and 5.0.
 
 Statistics from real runs accumulate on their own:
 
