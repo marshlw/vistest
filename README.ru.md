@@ -628,9 +628,18 @@ python run.py docker test    # прогнать тесты в контейнер
 pytest tests/                           # инварианты: шум не валит, регрессы находятся
 pytest tests/api                        # автотесты API: вход, роли, приглашения, команда
 python tests/benchmark.py --artifacts   # таблица «шум / сигнал» + картинки
-python tests/benchmark.py --compare     # VisTest против absdiff, pixelmatch, Playwright
 python tests/benchmark.py --regenerate  # перерисовать замороженный корпус (осознанно)
+
+# VisTest против absdiff и настоящих pixelmatch и Playwright (Node.js >= 18)
+npm ci --prefix scripts/bench
+node scripts/bench_pixelmatch.mjs > docs/benchmark_native.json
+python tests/benchmark.py --compare --native docs/benchmark_native.json \
+    --no-timing --markdown docs/benchmark.md
 ```
+
+Без `--native` команда `--compare` считает pixelmatch и Playwright нашим портом
+их ядра на numpy (`tests/baselines.py`). Это быстрая проверка без Node, она
+помечена как порт и опубликованной цифрой не бывает.
 
 Бенчмарк на синтетике — основной инструмент подстройки порогов: после любой
 правки конфигурации сразу видно, не начал ли движок ловить шум. Настоящие
@@ -641,17 +650,35 @@ python tests/benchmark.py --regenerate  # перерисовать заморо�
 
 ### Текущие цифры
 
-Замороженный корпус, `python tests/benchmark.py` и `--compare`, пресет
-`balanced`, AI-слой включён. Сняты 2026-09-17 на **opencv-python-headless
-4.14.0.94 и 5.0.0.93** (вердикты под обеими одни и те же, таблица сравнения
-совпадает побайтово), numpy 2.5.3, Python 3.13, Linux x86_64:
+Замороженный корпус, команды выше. pixelmatch и Playwright посчитаны **их
+собственным кодом** на тех же PNG, а не нашим пересказом. Сняты 2026-09-17 на
+**opencv-python-headless 4.14.0.94 и 5.0.0.93** (вердикты под обеими одни и
+те же, таблица сравнения совпадает побайтово), numpy 2.5.3, Python 3.13,
+Linux x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
 
 | Инструмент | Верно | Ложные падения | Пропущенные регрессы |
 |---|---|---|---|
 | VisTest (balanced) | **52/54** (26/27 на каждом растре) | 0/32 | 2/22 |
 | absdiff | 24/54 | 30/32 | 0/22 |
-| pixelmatch t=0.1 (порт на numpy) | 34/54 | 18/32 | 2/22 |
-| Playwright `toHaveScreenshot()` (порт на numpy) | 38/54 | 14/32 | 2/22 |
+| pixelmatch 7.2.0 | 34/54 | 18/32 | 2/22 |
+| Playwright 1.63.0 `toHaveScreenshot()` | 38/54 | 14/32 | 2/22 |
+
+У всех инструментов — настройки по умолчанию, ничего не задано:
+
+- **VisTest** — пресет `balanced` (он и есть умолчание), `DiffConfig()` как в
+  поставке, AI-слой так, как его собирает `CheckService` (обучаемый гейт по
+  умолчанию выключен).
+- **pixelmatch** — его CLI, `pixelmatch expected.png actual.png`: `threshold`
+  0.1, `includeAA` false; красный при любом отличающемся пикселе (код 66) или
+  другом размере (код 65).
+- **Playwright** — `getComparator('image/png')` из playwright-core, та самая
+  функция, которую вызывает `toHaveScreenshot()`, с опциями, которые он
+  передаёт, когда ничего не настроено: `threshold` 0.2, `maxDiffPixels` 0,
+  `includeAA` false. Съёмка страницы в таблице не участвует — корпус уже снят.
+- **absdiff** — весь алгоритм самописного скрипта: любой отличающийся пиксель
+  валит тест.
+
+Все значения, версии и таблица по кейсам — `docs/benchmark.md`.
 
 54 пары — те же 27 случаев на двух растрах текста, OpenCV 4.x и OpenCV 5
 (`, thin glyphs`); VisTest на обоих пропускает `header color`. Корпус лежит в

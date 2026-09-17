@@ -5,6 +5,29 @@
 
 ## [Unreleased]
 
+### Competitors in the benchmark are measured with their own code
+
+- **The published pixelmatch and Playwright rows are now native.**
+  `scripts/bench_pixelmatch.mjs` runs the pixelmatch CLI from npm and
+  Playwright's own `getComparator('image/png')` — the function
+  `toHaveScreenshot()` calls — on `tests/benchmark_corpus/`, every tool with
+  its defaults. Before, both rows came from our numpy port and the Playwright
+  "native" row was pixelmatch with `threshold: 0.2`, i.e. our retelling.
+- The figures did not change: on all 54 pairs the native verdicts equal the
+  port's (pixel counts differ, the port has no anti-aliasing detector).
+  README now names the tool versions instead of "numpy port".
+- `scripts/bench/package.json` + `package-lock.json` pin pixelmatch 7.2.0 and
+  @playwright/test 1.63.0 (`npm ci --prefix scripts/bench`). The result is
+  kept in `docs/benchmark_native.json`, the generated table in
+  `docs/benchmark.md` with every setting of every tool and all versions.
+- `--native` checks the corpus fingerprint (sha256 of the manifest and every
+  PNG) and refuses a JSON computed on other files. A tool missing from the JSON
+  stays a port, marked, with a warning. `--with-ports` prints the port next to
+  the original in the console for comparison; it never reaches the markdown.
+- Wording fix: README and the generated table said the benchmark runs with the
+  trained gate "on". It runs with `AIConfig()` as shipped, where
+  `gate_enabled` is `False`.
+
 ### The benchmark corpus is frozen on disk
 
 - **Benchmark figures published before this change were tied to the installed
