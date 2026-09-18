@@ -74,6 +74,7 @@ import numpy as np
 
 from ..models import ChangeKind, DiffRegion
 from . import refit as _refit
+from . import warp as _warp
 
 try:
     import cv2
@@ -520,10 +521,16 @@ def _search(ref, act, raw_mask, r, shifts, *, give_up_after: int = 0,
 
 def _grid(reach: float, step: float, around=(0.0, 0.0)):
     """Shifts around a point, nearest first: the report names the smallest
-    move that explains a region, not the first one the loop happened on."""
+    move that explains a region, not the first one the loop happened on.
+
+    Every point is put on the grid the backend can draw exactly
+    (`warp.applied_shift`), so the shift this rule reports in `suppressed_by`
+    is the one it drew. With the default quarter-pixel step that is already
+    true on every backend; it stops being free the moment the step changes.
+    """
     n = int(round(reach / step))
-    pts = [(around[0] + i * step, around[1] + j * step)
-           for i in range(-n, n + 1) for j in range(-n, n + 1)]
+    pts = {_warp.applied_shift(around[0] + i * step, around[1] + j * step)
+           for i in range(-n, n + 1) for j in range(-n, n + 1)}
     return sorted(pts, key=lambda p: (abs(p[0] - around[0]) + abs(p[1] - around[1]), p))
 
 

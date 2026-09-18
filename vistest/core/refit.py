@@ -49,6 +49,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import warp as _warp
+
 try:
     import cv2
 except ImportError:  # pragma: no cover
@@ -119,14 +121,6 @@ class Fit:
 # --------------------------------------------------------------------------- #
 #  The transformations
 # --------------------------------------------------------------------------- #
-def _shift(img: np.ndarray, dx: float, dy: float) -> np.ndarray:
-    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
-        return img
-    m = np.float32([[1, 0, dx], [0, 1, dy]])
-    return cv2.warpAffine(img, m, (img.shape[1], img.shape[0]),
-                          flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-
-
 def _weighted(img: np.ndarray, t: float) -> np.ndarray:
     """Strokes `|t|` pixels heavier on each side, `t` continuous in [-1, 1].
 
@@ -142,7 +136,7 @@ def _weighted(img: np.ndarray, t: float) -> np.ndarray:
     op = np.minimum if t > 0 else np.maximum
     out = img
     for dx, dy in ((r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r)):
-        out = op(out, _shift(img, dx, dy))
+        out = op(out, _warp.shift(img, dx, dy))
     return out
 
 
@@ -196,7 +190,7 @@ def ink_changed(ref: np.ndarray, redrawn: np.ndarray, *, weight: float, blur: fl
 
 def render(base: np.ndarray, fit: Fit) -> np.ndarray:
     """The baseline, re-drawn the way `fit` says."""
-    return _shift(_soft(_weighted(base, fit.weight), fit.blur), fit.dx, fit.dy)
+    return _warp.shift(_soft(_weighted(base, fit.weight), fit.blur), fit.dx, fit.dy)
 
 
 # --------------------------------------------------------------------------- #
@@ -217,7 +211,7 @@ def estimate_shift(ref: np.ndarray, act: np.ndarray, window: np.ndarray,
     if w.sum() < 3:
         return 0.0, 0.0
     for _ in range(steps):
-        moved = _shift(ref, dx, dy)
+        moved = _warp.shift(ref, dx, dy)
         gx = cv2.Sobel(moved, cv2.CV_32F, 1, 0, ksize=3) / 8.0
         gy = cv2.Sobel(moved, cv2.CV_32F, 0, 1, ksize=3) / 8.0
         gt = act - moved
@@ -255,7 +249,7 @@ def shift_mask(mask: np.ndarray, dx: float, dy: float) -> np.ndarray:
     """A pixel mask carried along with the picture it describes."""
     if abs(dx) < 1e-6 and abs(dy) < 1e-6:
         return mask
-    return _shift(mask.astype(np.float32), dx, dy) > 0.0
+    return _warp.shift(mask.astype(np.float32), dx, dy) > 0.0
 
 
 def fit(ref: np.ndarray, act: np.ndarray, evidence: np.ndarray, tol,
@@ -298,8 +292,11 @@ def fit(ref: np.ndarray, act: np.ndarray, evidence: np.ndarray, tol,
     def consider(dx: float, dy: float, t: float, b: float) -> bool:
         """Try one re-drawing; True when it is good enough to stop."""
         nonlocal best
+        #  What goes into the Fit has to be what was drawn, not what was asked
+        #  for: on OpenCV 4.x the two differ by up to half of 1/32 px.
+        dx, dy = _warp.applied_shift(dx, dy)
         img, ink = redraw(t, b)
-        bad = (np.abs(_shift(img, dx, dy) - act) > tol) & evidence
+        bad = (np.abs(_warp.shift(img, dx, dy) - act) > tol) & evidence
         if ink is not None:
             bad |= shift_mask(ink, dx, dy) & evidence
         left = int(bad.sum())

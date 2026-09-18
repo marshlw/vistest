@@ -53,7 +53,8 @@ exactly the same pairs. Without that, comparing engines means nothing.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+import re
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -310,6 +311,289 @@ def _draw_curated() -> list[Case]:
     cases = [Case(n, "NOISE", False, base, a, w, family=n) for n, a, w in noise]
     cases += [Case(n, "SIGNAL", True, base, a, w, family=n) for n, a, w in signal]
     return cases
+
+
+# --------------------------------------------------------------------------- #
+#  The frozen answer to the frozen question
+#
+#  Freezing the input stopped the corpus from moving. It did not stop the
+#  engine's numbers from moving, and three times now a difference between two
+#  OpenCV majors was found by hand, after the fact, by printing two tables and
+#  diffing them. The last one lived in `core/align.py` for months.
+#
+#  So the output is written down next to the input: for every pair, the columns
+#  of the detailed table. Any change that moves a digit turns a test red on the
+#  spot instead of being noticed half a year later by somebody comparing
+#  versions. The tolerance is zero on purpose — a metric that drifts "only a
+#  little" is exactly the kind that nobody chases.
+#
+#  Rewriting it is a deliberate act, like redrawing the corpus:
+#
+#      python tests/benchmark.py --record-metrics
+#
+#  and the diff of `metrics.json` is then the review: it says in numbers what
+#  the change did to every pair.
+# --------------------------------------------------------------------------- #
+METRICS_PATH = FROZEN_DIR / "metrics.json"
+#: What the numbers below were measured with — the same combination the
+#: published table uses. `--no-ai` must give the same figures (the gate ships
+#: disabled), so the AI layer is not a second recorded variant.
+METRICS_PRESET = "balanced"
+
+#  What the engine's answer is checked against, and why it is two rules and
+#  not one.
+#
+#  Rounding is a tolerance with cliffs. The first version of this file stored
+#  the metrics rounded to what the table printed and compared them exactly; it
+#  went red on the first run on another machine, in the last digit of the
+#  noisiest pair. Rounding harder does not fix that, it only moves the cliff:
+#  measured at 2 decimals of a percentage, `sensor noise σ=3.0, thin glyphs`
+#  sits 3.7e-04 from the nearest rounding boundary while the same number moves
+#  by 3.8e-03 between machines — ten times the margin. It is green by luck.
+#  Two values a hair apart land on opposite sides of a boundary sooner or
+#  later, at any precision.
+#
+#  So: full digits stored, and a flat tolerance to compare them with. Not a
+#  weaker check — a check whose shape matches the thing being checked. The
+#  tolerance is the measured noise floor of the platform, and above that floor
+#  nothing is forgiven.
+#
+#  MEASURED, not chosen, and every tolerance carries where it came from:
+#
+#    * versions do not move these numbers at all — numpy 2.3.5 / 2.4.6 / 2.5.3,
+#      Python 3.11 / 3.13 and opencv-python-headless 4.14 / 5.0, ten
+#      combinations, agree to every digit a float has. So do numpy's own SIMD
+#      dispatch and OpenCV's IPP path, and so does the thread count.
+#    * one thing moves them: which SIMD kernels OpenCV dispatches to. Without
+#      AVX2 the SSIM map differs, the change mask gains or loses a pixel at the
+#      threshold, and area, ΔE and severity follow. `core/structure.py: _blur`
+#      (`cv2.GaussianBlur`) is the only stage involved — every other stage is
+#      bit-identical across the split.
+#
+#  THE SAMPLE IS ALL x86-64. The 25 environments cover OpenCV's dispatcher
+#  *within* one instruction family; Apple Silicon and Graviton are a different
+#  one, with different kernels again, and nobody has run this there. A red
+#  line from an ARM machine, on `changed_area_pct` alone and with the verdict
+#  and the sentences intact, is more likely a platform this floor has never
+#  seen than a regression. The answer to that is to measure on that machine and
+#  widen the floor *with the measurement*, updating `spread`, `environments`
+#  and `measured` below so the next reader knows what the number rests on. Not
+#  by eye, and not by doubling "to be safe": see the headroom note below.
+#
+#  Headroom is thinnest on `changed_area_pct`, x1.3, and stays there. That
+#  metric sits closest to the verdict — it is a pixel count over a threshold —
+#  and widening it blind would halve the sensitivity of the one number that
+#  most nearly says pass or fail.
+#
+#  The floor could be removed instead of tolerated: the blur written out in
+#  numpy, the way `core/warp.py` was. Measured at about +28% of a comparison,
+#  against a budget of 10% for this whole line of work, so it was not taken.
+#  Whoever revisits that does not have to measure it again.
+@dataclass(frozen=True)
+class Floor:
+    """A tolerance and the measurement it came from.
+
+    Kept together on purpose. A tolerance on its own is a number somebody
+    chose; with the spread beside it, a red line answers its own first
+    question — is this machine outside what was measured, or is the engine
+    broken.
+    """
+
+    tolerance: float
+    spread: float          # widest difference seen between environments
+    environments: int
+    measured: str          # ISO date
+
+    @property
+    def headroom(self) -> float:
+        return self.tolerance / self.spread if self.spread else float("inf")
+
+    def provenance(self) -> str:
+        return (f"widest spread measured {self.spread:.1e} over "
+                f"{self.environments} environments on {self.measured}")
+
+
+#: What the environments were, for the record the numbers rest on.
+METRICS_SAMPLE = (
+    "x86-64 only: numpy 2.3.5/2.4.6/2.5.3 x Python 3.11/3.13 x "
+    "opencv-python-headless 4.14.0.94/5.0.0.93, with OpenCV's SIMD dispatch "
+    "full / no AVX2 / no SSE4, IPP on and off, numpy SIMD off, 1 and 2 "
+    "threads. No ARM: see tests/corpus.py before widening anything."
+)
+METRICS_TOLERANCE = {
+    "severity": Floor(1e-4, 5.5e-5, 25, "2026-09-18"),
+    "changed_area_pct": Floor(5e-3, 3.9e-3, 25, "2026-09-18"),
+    "de_mean": Floor(2e-2, 9.7e-3, 25, "2026-09-18"),
+    "ssim": Floor(1e-4, 4.6e-5, 25, "2026-09-18"),
+}
+
+
+def _floors_as_json() -> dict:
+    return {k: asdict(v) for k, v in METRICS_TOLERANCE.items()}
+#: Stored with more digits than the tolerance needs, on purpose: the recorded
+#: value is also what a person reads in the diff, and a Δ has to be legible
+#: against the tolerance it is compared with.
+METRICS_STORED_DECIMALS = 6
+
+#: No tolerance here, on any machine. These are what the published figure is
+#: made of, and all three were identical across every environment measured.
+#: `suppressed` is the engine's explanation of itself — the sentence it puts in
+#: `suppressed_by` — with its digits masked (`_sentence_shape`).
+METRICS_STRICT = ("verdict", "regions", "suppressed")
+
+#: A count or a shift inside an explanation rides with the metric it comes
+#: from: "(10 of 4048 left)" follows the change mask, which is what the
+#: tolerances above cover. What may not move without a word is the sentence —
+#: which rule fired, on how many pieces, saying what. So the digits are masked
+#: and the rest is compared exactly.
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _sentence_shape(regions) -> list[str]:
+    """The suppression sentences, digits masked, sorted."""
+    return sorted(_NUMBER.sub("#", r.suppressed_by or "") for r in regions)
+
+
+def _metrics_row(result) -> dict:
+    """One row of the detailed table, as the file records it."""
+    d = METRICS_STORED_DECIMALS
+    return {
+        "verdict": result.verdict.value,
+        "regions": len(result.regions),
+        "severity": round(float(result.max_severity), d),
+        "changed_area_pct": round(float(result.changed_area_pct), d),
+        "de_mean": round(float(result.de_mean), d),
+        "ssim": round(float(result.ssim_global), d),
+        "suppressed": _sentence_shape(result.suppressed),
+    }
+
+
+def measure(cases: list[Case] | None = None, *, preset: str = METRICS_PRESET) -> dict:
+    """Run the engine over the corpus; -> the detailed table as data."""
+    from vistest.ai.pipeline import AIPipeline
+    from vistest.config import VisTestConfig
+    from vistest.core.comparator import compare
+
+    cfg = VisTestConfig.preset_of(preset)
+    ai = AIPipeline(cfg.ai)
+    rows = {}
+    for c in cases if cases is not None else load():
+        rows[c.name] = _metrics_row(
+            compare(c.expected, c.actual, cfg=cfg.diff, name=c.name, ai_hooks=ai))
+    return {"preset": preset, "cases": rows}
+
+
+def load_metrics(path: str | Path | None = None) -> dict:
+    p = Path(path) if path is not None else METRICS_PATH
+    if not p.is_file():
+        raise CorpusError(
+            f"{p} does not exist. It is the engine's answer to the frozen "
+            "corpus and lives in the repository; write it with "
+            "`python tests/benchmark.py --record-metrics`")
+    return json.loads(p.read_text("utf-8"))
+
+
+def record_metrics(path: str | Path | None = None,
+                   cases: list[Case] | None = None) -> tuple[Path, dict]:
+    """Write the engine's current answer down. Deliberate, like `--regenerate`."""
+    p = Path(path) if path is not None else METRICS_PATH
+    doc = measure(cases)
+    doc = {"note": ("The detailed benchmark table, frozen. An engine change "
+                    "that moves any of this is meant to show up as a red test "
+                    "and a diff of this file, not as a surprise months later. "
+                    "verdict, regions and the suppression sentences are "
+                    "compared exactly; the four metrics against the tolerance "
+                    "below. Each tolerance carries the measurement it came "
+                    "from — `spread` is the widest difference seen between "
+                    "`environments` machines on `measured` — so that a red "
+                    "line says for itself whether this machine is outside "
+                    "what was measured or the engine moved. Widening one "
+                    "means measuring on the new machine and rewriting its "
+                    "record, never raising the number on its own; "
+                    "tests/corpus.py has the argument. Rewrite the whole file "
+                    "with `python tests/benchmark.py --record-metrics`."),
+           "sample": METRICS_SAMPLE,
+           "tolerance": _floors_as_json(),
+           "strict": list(METRICS_STRICT),
+           **doc}
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n",
+                 encoding="utf-8", newline="\n")
+    return p, doc
+
+
+def _sentences_changed(want: list[str], got: list[str]) -> str:
+    """What changed in the explanations, in the words that changed.
+
+    `35 -> 35 sentence(s)` says nothing; the point of pinning the sentence is
+    that somebody can read which one the engine stopped saying.
+    """
+    #  A multiset: the same sentence can be said about several regions, and
+    #  "three of these became two" is exactly the kind of change to show.
+    from collections import Counter
+
+    left, right = Counter(want), Counter(got)
+    gone = sorted((left - right).elements())
+    fresh = sorted((right - left).elements())
+    head = f"{len(want)} -> {len(got)} sentence(s)"
+    lines = [f"- {s}" for s in gone[:2]] + [f"+ {s}" for s in fresh[:2]]
+    more = (len(gone) - 2 if len(gone) > 2 else 0) + (len(fresh) - 2 if len(fresh) > 2 else 0)
+    if more:
+        lines.append(f"... and {more} more")
+    return head + "".join("\n      " + ln for ln in lines)
+
+
+def metrics_drift(path: str | Path | None = None,
+                  cases: list[Case] | None = None,
+                  measured: dict | None = None) -> list[str]:
+    """Cases whose measured metrics no longer match the recorded ones.
+
+    A metric line carries the distance, the tolerance it was compared with and
+    where that tolerance came from:
+
+        ssim 0.947825 -> 0.947815 (Δ 1.0e-05, tolerance 1.0e-04,
+        widest spread measured 4.6e-05 over 25 environments on 2026-09-18)
+
+    All three, because the first question a red line has to answer is which
+    kind of red it is. A Δ a little over the tolerance but of the same order
+    as the measured spread is a machine outside the sample; a Δ orders above
+    it is the engine. Without the provenance the two look the same.
+
+    A line without that annotation is a strict field, where any difference at
+    all is the answer.
+    """
+    recorded = load_metrics(path)
+    want = recorded["cases"]
+    got = measured if measured is not None else measure(cases)["cases"]
+    out: list[str] = []
+    floors = _floors_as_json()
+    stale = {k: v for k, v in (recorded.get("tolerance") or {}).items()
+             if floors.get(k) != v}
+    if stale:
+        out.append("the file was recorded against a different floor than the code "
+                   f"carries now: {stale} vs {floors}")
+    for name in sorted(set(want) | set(got)):
+        if name not in want:
+            out.append(f"{name}: not recorded (a new pair?)")
+            continue
+        if name not in got:
+            out.append(f"{name}: recorded but not measured (a pair went missing?)")
+            continue
+        for field, w in want[name].items():
+            g = got[name].get(field)
+            floor = METRICS_TOLERANCE.get(field)
+            if floor is None:
+                if g == w:
+                    continue
+                if isinstance(w, list) and isinstance(g, list):
+                    out.append(f"{name}: {field} {_sentences_changed(w, g)}")
+                else:
+                    out.append(f"{name}: {field} {w!r} -> {g!r}")
+            elif abs(float(g) - float(w)) > floor.tolerance:
+                out.append(f"{name}: {field} {w} -> {g} "
+                           f"(Δ {abs(float(g) - float(w)):.1e}, "
+                           f"tolerance {floor.tolerance:.1e}, {floor.provenance()})")
+    return out
 
 
 # --------------------------------------------------------------------------- #

@@ -1,0 +1,744 @@
+{
+  "note": "The detailed benchmark table, frozen. An engine change that moves any of this is meant to show up as a red test and a diff of this file, not as a surprise months later. verdict, regions and the suppression sentences are compared exactly; the four metrics against the tolerance below. Each tolerance carries the measurement it came from — `spread` is the widest difference seen between `environments` machines on `measured` — so that a red line says for itself whether this machine is outside what was measured or the engine moved. Widening one means measuring on the new machine and rewriting its record, never raising the number on its own; tests/corpus.py has the argument. Rewrite the whole file with `python tests/benchmark.py --record-metrics`.",
+  "sample": "x86-64 only: numpy 2.3.5/2.4.6/2.5.3 x Python 3.11/3.13 x opencv-python-headless 4.14.0.94/5.0.0.93, with OpenCV's SIMD dispatch full / no AVX2 / no SSE4, IPP on and off, numpy SIMD off, 1 and 2 threads. No ARM: see tests/corpus.py before widening anything.",
+  "tolerance": {
+    "severity": {
+      "tolerance": 0.0001,
+      "spread": 5.5e-05,
+      "environments": 25,
+      "measured": "2026-09-18"
+    },
+    "changed_area_pct": {
+      "tolerance": 0.005,
+      "spread": 0.0039,
+      "environments": 25,
+      "measured": "2026-09-18"
+    },
+    "de_mean": {
+      "tolerance": 0.02,
+      "spread": 0.0097,
+      "environments": 25,
+      "measured": "2026-09-18"
+    },
+    "ssim": {
+      "tolerance": 0.0001,
+      "spread": 4.6e-05,
+      "environments": 25,
+      "measured": "2026-09-18"
+    }
+  },
+  "strict": [
+    "verdict",
+    "regions",
+    "suppressed"
+  ],
+  "preset": "balanced",
+  "cases": {
+    "identical": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 1.0,
+      "suppressed": []
+    },
+    "sensor noise σ=1.6": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.982547,
+      "suppressed": []
+    },
+    "sensor noise σ=3.0": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.688981,
+      "de_mean": 4.292419,
+      "ssim": 0.947825,
+      "suppressed": [
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)"
+      ]
+    },
+    "antialias 0.4px": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.056759,
+      "de_mean": 13.365159,
+      "ssim": 0.99306,
+      "suppressed": [
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was color)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)"
+      ]
+    },
+    "jpeg q=88": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.023333,
+      "de_mean": 4.189136,
+      "ssim": 0.997924,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)"
+      ]
+    },
+    "jpeg q=75": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.048333,
+      "de_mean": 4.856729,
+      "ssim": 0.99469,
+      "suppressed": [
+        "antialias: # pieces; the baseline dark strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline dark strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "jpeg: the baseline re-encoded at JPEG quality # reproduces #% of the changed pixels (# of # left) (was color)",
+        "jpeg: the baseline re-encoded at JPEG quality # reproduces #% of the changed pixels (# of # left) (was content)",
+        "jpeg: the baseline re-encoded at JPEG quality # reproduces #% of the changed pixels (# of # left) (was text)"
+      ]
+    },
+    "global shift 1px": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 1.0,
+      "suppressed": []
+    },
+    "global shift 3px": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 1.0,
+      "suppressed": []
+    },
+    "combined": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.067407,
+      "de_mean": 11.851643,
+      "ssim": 0.989165,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px, dark strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px, light strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline moved +#,+# px, light strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px, light strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px, light strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "morphology: no changed pixel inside the box; the region is a by-product of closing (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was color)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,-# px reproduces #% of the changed pixels (# of # left) (was text)"
+      ]
+    },
+    "font fallback": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.009444,
+      "de_mean": 44.262466,
+      "ssim": 0.994558,
+      "suppressed": [
+        "antialias: the baseline moved +#,-# px, dark strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,-# px, dark strokes # px heavier reproduces #% of the changed pixels (# of # left)"
+      ]
+    },
+    "shadow radius": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.998969,
+      "suppressed": [
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)"
+      ]
+    },
+    "gradient dither": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.986997,
+      "suppressed": []
+    },
+    "scrollbar": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.466389,
+      "de_mean": 7.445415,
+      "ssim": 0.996385,
+      "suppressed": [
+        "scrollbar: inside a #px band on the right edge that changed along its whole length (was added)",
+        "scrollbar: inside a #px band on the right edge that changed along its whole length (was removed)"
+      ]
+    },
+    "caret": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.005278,
+      "de_mean": 66.196785,
+      "ssim": 0.999812,
+      "suppressed": []
+    },
+    "lazy placeholder": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.999953,
+      "suppressed": []
+    },
+    "subpixel text": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.99995,
+      "suppressed": []
+    },
+    "button color": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 94.366983,
+      "changed_area_pct": 1.188796,
+      "de_mean": 25.550247,
+      "ssim": 0.999641,
+      "suppressed": []
+    },
+    "button removed": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 98.139712,
+      "changed_area_pct": 1.196019,
+      "de_mean": 42.569706,
+      "ssim": 0.993545,
+      "suppressed": []
+    },
+    "promo removed": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 99.216034,
+      "changed_area_pct": 8.800093,
+      "de_mean": 11.757792,
+      "ssim": 0.986184,
+      "suppressed": []
+    },
+    "layout +40px": {
+      "verdict": "fail",
+      "regions": 14,
+      "severity": 97.400999,
+      "changed_area_pct": 19.906481,
+      "de_mean": 17.295073,
+      "ssim": 0.832628,
+      "suppressed": []
+    },
+    "page taller +160": {
+      "verdict": "fail",
+      "regions": 2,
+      "severity": 96.013923,
+      "changed_area_pct": 11.802042,
+      "de_mean": 95.845238,
+      "ssim": 0.877443,
+      "suppressed": []
+    },
+    "tiny icon 22px": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 71.34952,
+      "changed_area_pct": 0.034907,
+      "de_mean": 42.680698,
+      "ssim": 0.999496,
+      "suppressed": []
+    },
+    "price changed": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 41.91524,
+      "changed_area_pct": 0.009074,
+      "de_mean": 20.36212,
+      "ssim": 0.99961,
+      "suppressed": []
+    },
+    "button shrunk": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 94.758496,
+      "changed_area_pct": 0.628796,
+      "de_mean": 41.902527,
+      "ssim": 0.995408,
+      "suppressed": []
+    },
+    "text overflow": {
+      "verdict": "fail",
+      "regions": 2,
+      "severity": 90.022984,
+      "changed_area_pct": 0.171574,
+      "de_mean": 59.085655,
+      "ssim": 0.99596,
+      "suppressed": [
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)"
+      ]
+    },
+    "header color": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.166667,
+      "de_mean": 6.700346,
+      "ssim": 0.998813,
+      "suppressed": []
+    },
+    "promo text": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 80.032241,
+      "changed_area_pct": 0.063796,
+      "de_mean": 15.832918,
+      "ssim": 0.998893,
+      "suppressed": []
+    },
+    "identical, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 1.0,
+      "suppressed": []
+    },
+    "sensor noise σ=1.6, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.982328,
+      "suppressed": []
+    },
+    "sensor noise σ=3.0, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.69537,
+      "de_mean": 4.292403,
+      "ssim": 0.947181,
+      "suppressed": [
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was color)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)",
+        "rerender: the baseline as it is reproduces #% of the changed pixels (# of # left), within zero-mean sensor noise (was content)"
+      ]
+    },
+    "antialias 0.4px, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.065093,
+      "de_mean": 15.202669,
+      "ssim": 0.993352,
+      "suppressed": [
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)"
+      ]
+    },
+    "jpeg q=88, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.012407,
+      "de_mean": 5.04157,
+      "ssim": 0.998178,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)"
+      ]
+    },
+    "jpeg q=75, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.025648,
+      "de_mean": 5.47059,
+      "ssim": 0.995283,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "jpeg: the baseline re-encoded at JPEG quality # reproduces #% of the changed pixels (# of # left) (was color)",
+        "jpeg: the baseline re-encoded at JPEG quality # reproduces #% of the changed pixels (# of # left) (was color)"
+      ]
+    },
+    "global shift 1px, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 1.0,
+      "suppressed": []
+    },
+    "global shift 3px, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 1.0,
+      "suppressed": []
+    },
+    "combined, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.075185,
+      "de_mean": 13.005769,
+      "ssim": 0.990379,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px, dark strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px, light strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: # pieces; the baseline moved by at most # px, light strokes up to # px heavier reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline as it is reproduces #% of the changed pixels (# of # left), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: the baseline moved +#,+# px, light strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px, light strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "antialias: the baseline moved +#,+# px, light strokes # px heavier reproduces #% of the changed pixels (# of # left)",
+        "morphology: no changed pixel inside the box; the region is a by-product of closing (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved +#,-# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was color)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)",
+        "rerender: the baseline moved -#,+# px reproduces #% of the changed pixels (# of # left) (was text)"
+      ]
+    },
+    "font fallback, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.999829,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)",
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)"
+      ]
+    },
+    "shadow radius, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.998969,
+      "suppressed": [
+        "antialias: the baseline moved +#,+# px reproduces #% of the changed pixels (# of # left)"
+      ]
+    },
+    "gradient dither, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.98684,
+      "suppressed": []
+    },
+    "scrollbar, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.466389,
+      "de_mean": 7.445415,
+      "ssim": 0.996385,
+      "suppressed": [
+        "scrollbar: inside a #px band on the right edge that changed along its whole length (was added)",
+        "scrollbar: inside a #px band on the right edge that changed along its whole length (was removed)"
+      ]
+    },
+    "caret, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.007685,
+      "de_mean": 77.845528,
+      "ssim": 0.999711,
+      "suppressed": []
+    },
+    "lazy placeholder, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.999953,
+      "suppressed": []
+    },
+    "subpixel text, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.0,
+      "de_mean": 0.0,
+      "ssim": 0.99995,
+      "suppressed": []
+    },
+    "button color, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 94.366983,
+      "changed_area_pct": 1.221481,
+      "de_mean": 25.550264,
+      "ssim": 0.999645,
+      "suppressed": []
+    },
+    "button removed, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 98.139712,
+      "changed_area_pct": 1.216204,
+      "de_mean": 42.644104,
+      "ssim": 0.993743,
+      "suppressed": []
+    },
+    "promo removed, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 99.159041,
+      "changed_area_pct": 8.830648,
+      "de_mean": 11.52008,
+      "ssim": 0.987249,
+      "suppressed": []
+    },
+    "layout +40px, thin glyphs": {
+      "verdict": "fail",
+      "regions": 13,
+      "severity": 97.3865,
+      "changed_area_pct": 19.298426,
+      "de_mean": 16.193665,
+      "ssim": 0.8508,
+      "suppressed": []
+    },
+    "page taller +160, thin glyphs": {
+      "verdict": "fail",
+      "regions": 2,
+      "severity": 96.013923,
+      "changed_area_pct": 11.804493,
+      "de_mean": 95.83197,
+      "ssim": 0.877588,
+      "suppressed": []
+    },
+    "tiny icon 22px, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 71.34952,
+      "changed_area_pct": 0.034907,
+      "de_mean": 42.680698,
+      "ssim": 0.999496,
+      "suppressed": []
+    },
+    "price changed, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 35.826224,
+      "changed_area_pct": 0.005926,
+      "de_mean": 22.695694,
+      "ssim": 0.999742,
+      "suppressed": []
+    },
+    "button shrunk, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 94.689743,
+      "changed_area_pct": 0.596111,
+      "de_mean": 42.070946,
+      "ssim": 0.995688,
+      "suppressed": []
+    },
+    "text overflow, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 94.08507,
+      "changed_area_pct": 0.121204,
+      "de_mean": 55.07465,
+      "ssim": 0.996774,
+      "suppressed": [
+        "antialias: # pieces; the baseline as it is reproduces #% of the changed pixels (# of # left; worst piece #% left, # of #), within the tolerance (# levels, or #% of the local contrast on an edge)"
+      ]
+    },
+    "header color, thin glyphs": {
+      "verdict": "pass",
+      "regions": 0,
+      "severity": 0.0,
+      "changed_area_pct": 0.166667,
+      "de_mean": 6.700346,
+      "ssim": 0.998817,
+      "suppressed": []
+    },
+    "promo text, thin glyphs": {
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 76.87541,
+      "changed_area_pct": 0.050463,
+      "de_mean": 17.481888,
+      "ssim": 0.999111,
+      "suppressed": []
+    }
+  }
+}

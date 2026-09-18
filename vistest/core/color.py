@@ -72,7 +72,8 @@ def luminance(rgb_u8: np.ndarray) -> np.ndarray:
     contrast in shadows, so SSIM "misses" changes on dark themes.
     """
     lab = srgb_to_lab(rgb_u8)
-    return np.clip(lab[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
+    from .warp import to_uint8
+    return to_uint8(lab[:, :, 0] * 2.55)
 
 
 def delta_e_ciede2000(
