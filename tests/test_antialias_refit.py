@@ -38,12 +38,10 @@ is a call to a drawing routine:
   1356 pixels on every version of every library, which is the point: an
   invariant has to be checkable without a rasteriser having an opinion.
 
-One thing is worth knowing when reading the numbers below. `refit._shift`
-goes through `cv2.warpAffine`, and OpenCV 4.x quantises the translation to
-1/32 px (5 fractional bits) while 5.0 does it in float. So on 4.x the engine
-can only re-draw the baseline on a 1/32 grid, and the shift it reports is
-accurate to about half of that. Where a test names a shift to two decimals it
-uses one the engine can draw exactly on both — a multiple of 1/32.
+`_moved` below is the file's own bilinear shift, kept separate from the
+engine's `core/warp.py` on purpose: a test that asks the engine to undo its
+own arithmetic proves less than one that hands it a picture somebody else
+built.
 """
 
 from __future__ import annotations
@@ -204,16 +202,16 @@ def test_a_shift_beyond_the_reach_is_clipped():
 def test_a_subpixel_shift_is_reproduced_whole():
     """And the sentence names the shift it found, to the last digit it prints.
 
-    The shift is a multiple of 1/32 px on purpose: `refit._shift` re-draws
-    through `cv2.warpAffine`, which on OpenCV 4.x rounds the translation to
-    that grid. Ask for +0.30 there and the picture moves by +0.3125, so a
-    two-decimal assertion would be measuring OpenCV, not the estimator.
+    The shift is an arbitrary fraction, not a round one: `warp.shift` draws
+    the offset it was given, so the printed number is checkable against the
+    one the picture was built with. That it does — on both stages that
+    translate a picture — is `tests/test_warp.py`.
     """
     ref = _blocks()
-    act = _moved(ref, 0.25, -0.5)
+    act = _moved(ref, 0.3, -0.2)
     f = refit.fit(ref, act, _changed(ref, act), 12.0)
     assert f.left == 0 and f.total > 500
-    assert "moved +0.25,-0.50 px" in f.sentence()
+    assert "moved +0.30,-0.20 px" in f.sentence()
 
 
 @pytest.mark.parametrize("t", [0.25, -0.25, 0.5, -0.5])

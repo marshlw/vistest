@@ -26,6 +26,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import warp as _warp
+
 try:
     import cv2
 except ImportError:  # pragma: no cover
@@ -66,18 +68,20 @@ def estimate_shift(gray_exp: np.ndarray, gray_act: np.ndarray) -> Alignment:
 def apply_shift(img: np.ndarray, dx: float, dy: float) -> np.ndarray:
     """Shift actual by (-dx,-dy) to align with expected.
 
-    BORDER_REPLICATE, not zeros: a black border would produce a guaranteed
-    false diff with width equal to the shift.
+    Goes through `core/warp.py` like every other translation in the engine —
+    bilinear, edge replicated, written out in numpy. It used to be
+    `cv2.warpAffine`, which rounds the offset to 1/32 px on OpenCV 4.x, and
+    that made this the last stage whose output depended on which major was
+    installed: six rows of the benchmark's detailed table differed between
+    4.14 and 5.0 because of this one call, verdicts alike but metrics not.
+
+    `warp.to_uint8` rounds half to even on the way back to 8-bit levels; its
+    docstring says why that and not truncation.
     """
-    if cv2 is None or (abs(dx) < 1e-3 and abs(dy) < 1e-3):
+    if abs(dx) < 1e-3 and abs(dy) < 1e-3:
         return img
-    m = np.array([[1.0, 0.0, -dx], [0.0, 1.0, -dy]], dtype=np.float32)
-    h, w = img.shape[:2]
-    return cv2.warpAffine(
-        img, m, (w, h),
-        flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
+    moved = _warp.shift(img, -dx, -dy)
+    return _warp.to_uint8(moved) if img.dtype == np.uint8 else moved
 
 
 def align_images(
@@ -108,6 +112,13 @@ def align_images(
                      " — this is a layout regression")
         return rgb_act, al
 
+    #  What is reported is what is drawn. `phaseCorrelate` answers in full
+    #  precision, the backend may not be able to draw that, and printing the
+    #  request to two decimals claims a precision the stage does not have —
+    #  the same defect `core/refit.py` was carrying. With the numpy shift the
+    #  two are equal; with `cv2.warpAffine` on OpenCV 4.x they are not, and
+    #  `warp.applied_shift` puts the estimate on the grid before it is used.
+    al.dx, al.dy = _warp.applied_shift(al.dx, al.dy)
     al.applied = True
     al.reason = f"compensated shift dx={al.dx:+.2f} dy={al.dy:+.2f}"
     return apply_shift(rgb_act, al.dx, al.dy), al

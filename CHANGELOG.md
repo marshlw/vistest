@@ -5,6 +5,139 @@
 
 ## [Unreleased]
 
+### metrics.json compares with a measured tolerance, the table prints what reproduces
+
+- **The frozen metrics went red on the first run on another machine**, on the
+  noisiest pair of the corpus and in the last digit: `sensor noise σ=3.0`,
+  `changed_area_pct` 0.689 against 0.6891, `ssim` 0.94783 against 0.94782,
+  verdicts identical. The file recorded four decimals of a percentage and five
+  of SSIM because that is what the table printed — a precision those numbers do
+  not have. Same defect as the shift the engine used to print in
+  `suppressed_by`: claiming precision that is not there.
+- **What was measured** (25 environments, 54 pairs): the **version axis does
+  not move these numbers at all** — numpy 2.3.5 / 2.4.6 / 2.5.3, Python
+  3.11 / 3.13 and opencv-python-headless 4.14 / 5.0, ten combinations, agree to
+  every digit a float has; so do numpy's own SIMD dispatch and OpenCV's IPP
+  path. **One thing moves them: which SIMD kernels OpenCV dispatches to.**
+  Without AVX2 the SSIM map differs, the change mask gains or loses a pixel at
+  the threshold, and area, ΔE and severity follow. `core/structure.py: _blur`
+  (`cv2.GaussianBlur`) is the only stage involved — every other stage of the
+  cascade is bit-identical across the split.
+- **Rounding harder was not the answer, and the measurement said so.**
+  Rounding is a tolerance with cliffs: at two decimals of a percentage
+  `sensor noise σ=3.0, thin glyphs` sits 3.7e-04 from a rounding boundary
+  while that number moves by 3.8e-03 between machines — green by luck. So the
+  file stores six decimals and compares them against a **flat tolerance**
+  (`corpus.METRICS_TOLERANCE`): severity 1e-04, changed area 5e-03, ΔE00 2e-02,
+  SSIM 1e-04, each above the widest spread measured (headroom x1.3 to x2.2).
+  Not a weaker check — a check shaped like the thing it checks; above the
+  floor nothing is forgiven.
+- **Each tolerance carries the measurement it came from** — `spread`,
+  `environments`, `measured` — in `corpus.METRICS_TOLERANCE` and in the file
+  next to the number, and a failure prints all of it:
+  `(Δ 7.0e-03, tolerance 5.0e-03, widest spread measured 3.9e-03 over 25
+  environments on 2026-09-18)`. A Δ a little over the tolerance and of the
+  same order as the spread is a machine outside the sample; a Δ orders above
+  it is the engine. Without the provenance, in six months those two look
+  alike.
+- **The sample is all x86-64** (`corpus.METRICS_SAMPLE`), which the file says
+  about itself. It covers OpenCV's SIMD dispatcher inside one instruction
+  family; Apple Silicon and Graviton are another. Red from ARM on
+  `changed_area_pct` alone, verdict and sentences intact, is most likely the
+  new platform — and the way to widen the floor for it is to measure there and
+  rewrite the provenance with the tolerance, not to raise the number until it
+  passes.
+- **Three things keep zero tolerance on every machine**: the verdict, the
+  region count, and the sentence the engine writes into `suppressed_by`, with
+  its digits masked (`antialias: the baseline moved +#,-# px reproduces #% …`).
+  The counts inside a sentence follow the change mask, which the tolerances
+  already cover; which rule fired and what it claims may not move quietly.
+- **More sensitive than the rounding it replaced**, measured on the previous
+  entry's own defect: `core/align.py` showed on six rows of the detailed table;
+  rounded, five survived; with the tolerance and the strict sentence, all six
+  do — `antialias 0.4px` moves no metric past its tolerance and is caught only
+  by its explanation changing. A failure line now reads
+  `de_mean 15.202669 -> 15.239262 (Δ 3.7e-02, tolerance 2.0e-02)`, so a hair
+  and a mile do not look alike.
+- The **detailed table prints the reproducible precision** — changed area 2
+  decimals, ΔE 1, SSIM 3, severity 1. That is about honest publication, and it
+  is a separate question from how sensitively the file detects a change.
+- Not done, deliberately: the blur could be written out in numpy the way
+  `core/warp.py` was, which would remove the machine dependence entirely and
+  let both the precision and the tolerance go away. **Measured at about +28% of
+  a comparison** (`structure.ssim_map` 18 ms -> 99 ms per page, x5.5) against a
+  budget of 10% for this line of work. Whoever revisits it need not measure
+  again.
+
+### The engine is deterministic across OpenCV majors, and a test says so
+
+- **`core/align.py: apply_shift` was the last stage that still moved a picture
+  with `cv2.warpAffine`**, and therefore the last reason the same two PNGs came
+  out with different numbers on OpenCV 4.14 and 5.0: six rows of the detailed
+  benchmark table differed in region metrics — verdicts alike — because that
+  one call rounds the offset to a 1/32 px grid on 4.x. It now goes through
+  `core/warp.py` like everything else. **The detailed table is identical on
+  4.14.0.94 and 5.0.0.93: all 54 pairs, every metric, not the verdicts alone.**
+  Verdicts are unchanged (52/54, 0/32 false failures, 2/22 misses).
+- **The second lie of the same kind, in the same file**: `Alignment.reason`
+  printed `compensated shift dx=+0.25 dy=+0.19` — the compensation asked for,
+  while 4.x applied 8/32 and 6/32. The estimate now goes through
+  `warp.applied_shift` before it is used, so the note names what was drawn.
+- **`core/warp.py` is the one door**: `shift`, `to_uint8`, `shift_grid`,
+  `applied_shift`, shared by `align`, `refit` and `explain`. Its rounding rule
+  is written down and is now the cascade's only one — **round half to even**.
+  `align.apply_shift`, `color.luminance`, the two copies of it in
+  `comparator.compare` and `pngio.encode` used `astype(np.uint8)`, which
+  truncates: not a rounding mode but a systematic bias of half a level
+  downwards, in the grey channel every mask and SSIM is computed on.
+  `tests/test_warp.py` stands a rounding backend in for the real one and checks
+  that *both* stages report a grid point — a safety net over one path and not
+  the other is how this defect survived.
+- **`tests/benchmark_corpus/metrics.json`**: the engine's answer to the frozen
+  corpus, frozen too — verdict, severity, changed area, ΔE00, SSIM, region
+  count and the suppression sentences, for each of the 54 pairs.
+  `tests/test_corpus_frozen.py` checks it on every run and names what moved and
+  by how much. Three OpenCV differences were found by hand, months late, by
+  diffing two printed tables; this is that diff, run on every merge. Rewriting
+  it is deliberate: `python tests/benchmark.py --record-metrics`, and the diff
+  of the file is the review. (How it compares was settled a day later — see
+  the entry above.)
+- `docs/benchmark.md` no longer carries the caveat that the input is frozen and
+  the engine is not; it states the determinism and names the test that holds
+  it. The environment line stays, for repeating a run and for the milliseconds.
+
+### The engine names the shift it drew
+
+- **`refit._shift` reported the shift it was asked for, not the one it
+  applied.** `cv2.warpAffine` with `INTER_LINEAR` interpolates in fixed point
+  on OpenCV 4.x — `INTER_BITS` is 5 — so it rounds the translation to a 1/32 px
+  grid before a pixel is touched: a request for +0.30 moved the picture by
+  +0.3125. `suppressed_by`, and from it the HTML report, the
+  `ScreenshotMismatch` message and the pytest summary, printed +0.30 to two
+  decimals — a precision that version does not have. OpenCV 5 applies the
+  offset as given, so the same pair was explained with different numbers on the
+  two majors. Explainability is the whole argument for calling something noise;
+  an explanation that is wrong in the last digit it prints is worse than none.
+- **`refit._shift` is now bilinear arithmetic on numpy arrays**: the same
+  bilinear interpolation and the same `BORDER_REPLICATE`, written out, so the
+  offset is applied exactly on every version of every library. Verdicts on the
+  frozen corpus are unchanged — 52/54, 0/32 false failures, 2/22 misses, on
+  both 4.14.0.94 and 5.0.0.93 — and no row of the detailed table moved on
+  either version. It costs +1.5% (4.14) and +2.2% (5.0) of a comparison,
+  measured over the whole corpus in one process with the two backends
+  alternating.
+- **Every shift is put on the grid the backend can draw, before it is drawn**
+  (`refit.applied_shift`, used by `refit.fit` and `explain._grid`), so a `Fit`
+  describes the picture that was drawn whatever the backend would have rounded
+  to. `refit.shift_grid()` measures that grid rather than assuming it: with the
+  shift above it is 0, and the guarantee survives somebody putting
+  `cv2.warpAffine` back.
+- `core/align.py: apply_shift` was left for its own change, the one above:
+  it compensated the global shift with `cv2.warpAffine` and its `reason` string
+  named the requested compensation. `core/explain.py` was measured and was
+  never a source — it only ever warps by multiples of 0.25 px, which fixed
+  point represents exactly.
+
 ### Competitors in the benchmark are measured with their own code
 
 - **The published pixelmatch and Playwright rows are now native.**
@@ -59,8 +192,9 @@
   (`header color` on both rasters). The comparison table is byte-identical
   under both versions. The detailed table is not: on the same files, six rows
   differ in region metrics (not verdicts), because `cv2.warpAffine` with
-  `INTER_LINEAR` rounds differently in 4.14 and 5.0 (`core/align.py`,
-  `core/refit.py`, `core/explain.py`).
+  `INTER_LINEAR` rounds differently in 4.14 and 5.0. Closed since: the table is
+  identical under both — see "The engine is deterministic across OpenCV majors"
+  above.
 
 ### The anti-aliasing filter answers for itself
 

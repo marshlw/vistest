@@ -295,9 +295,13 @@ def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
             failed = r.verdict is Verdict.FAIL
             s.add(c, failed)
             ok = failed == c.expected_fail
+            #  Printed at the precision that reproduces across machines, the
+            #  same one `corpus.METRICS_DECIMALS` records — publishing digits
+            #  we cannot reproduce is the defect this engine just removed from
+            #  `suppressed_by`. `tests/corpus.py` says what was measured.
             print(f"{c.name:{w}s} {expected.value:6s} {r.verdict.value:6s} "
-                  f"{r.max_severity:6.1f} {r.changed_area_pct:8.4f} "
-                  f"{r.de_mean:6.2f} {r.ssim_global:7.5f} {len(r.regions):4d} "
+                  f"{r.max_severity:6.1f} {r.changed_area_pct:8.2f} "
+                  f"{r.de_mean:6.1f} {r.ssim_global:7.3f} {len(r.regions):4d} "
                   f"{_ms(ms, 5, timing)}  {'ok' if ok else 'ОШИБКА'}")
             if artifacts_dir and (not ok or group == "SIGNAL"):
                 render_all(r, artifacts_dir / cp._slug(c.name), cfg=cfg.render)
@@ -409,11 +413,18 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("")
     L.append("The corpus is synthetic and frozen in the repository as PNG files "
              "(`tests/benchmark_corpus/`); it is not drawn at run time, so the "
-             "installed OpenCV does not change what is measured. Figures "
+             "installed OpenCV does not change what is measured — and neither "
+             "does the engine. Every stage that moves a picture by a fraction of "
+             "a pixel goes through `core/warp.py`, which is numpy and not "
+             "`cv2.warpAffine`, so the detailed table is identical under "
+             "opencv-python-headless 4.14.0.94 and 5.0.0.93: not the verdicts "
+             "alone, but every metric of all 54 pairs. "
+             "`tests/benchmark_corpus/metrics.json` records those metrics and "
+             "`tests/test_corpus_frozen.py` checks them on every run with zero "
+             "tolerance, so a figure here cannot drift unnoticed. Figures "
              "published before the freeze were tied to the OpenCV version of "
              "whoever ran them and are not comparable with these — see "
-             "CHANGELOG. The environment line above still matters; the "
-             "caveats at the end say why.")
+             "CHANGELOG.")
     L.append("")
     L.append("Every tool runs with the settings a user gets after installing it "
              "and changing nothing — VisTest included. The exact values are "
@@ -597,11 +608,10 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("- Корпус синтетический. Он проверяет, что движок отличает "
              "известные виды шума от известных видов регресса, а не то, как "
              "он поведёт себя на вашем приложении.")
-    L.append("- The input is frozen, the engine is not: on the same files "
-             "OpenCV 4.14 and 5.0 give the same verdicts, but some region "
-             "metrics differ in the last digits (`cv2.warpAffine` with "
-             "`INTER_LINEAR` rounds differently). The environment line at "
-             "the top says which one produced this table.")
+    L.append("- The environment line at the top is there so that the run can "
+             "be repeated, not because the figures depend on it. The one "
+             "column that does depend on the machine is the milliseconds, and "
+             "`--no-timing` leaves it out.")
     if native_used:
         L.append("- У Playwright сравниваются готовые снимки. Съёмка "
                  "`toHaveScreenshot()` (отключение анимаций, скрытие каретки, "
@@ -658,6 +668,10 @@ def main() -> int:
                     help="do not print timings: without them the output is "
                          "reproducible byte for byte and can be diffed "
                          "between machines")
+    ap.add_argument("--record-metrics", action="store_true",
+                    help="rewrite tests/benchmark_corpus/metrics.json — the "
+                         "detailed table frozen as data, which "
+                         "tests/test_corpus_frozen.py checks on every run")
     ap.add_argument("--regenerate", action="store_true",
                     help="redraw the frozen corpus with the installed OpenCV "
                          "(its own raster only) and exit. A deliberate act: "
@@ -669,6 +683,14 @@ def main() -> int:
 
     cfg = VisTestConfig.preset_of(args.preset)
     timing = not args.no_timing
+
+    if args.record_metrics:
+        path, doc = cp.record_metrics()
+        print(f"Recorded the detailed table for {len(doc['cases'])} pairs "
+              f"(preset={doc['preset']}, AI layer on): {path}")
+        print("The numbers are the same on every OpenCV; `git diff` on this "
+              "file is the review of what the change did to each pair.")
+        return 0
 
     if args.regenerate:
         render, drawn = cp.regenerate()

@@ -96,7 +96,8 @@ def encode(rgb: np.ndarray) -> bytes:
         raise PngError(
             f"expected an RGB array of shape H x W x 3, got {array.shape}")
     if array.dtype != np.uint8:
-        array = np.clip(array, 0, 255).astype(np.uint8)
+        from .warp import to_uint8  # the cascade's one rounding rule
+        array = to_uint8(array)
 
     try:
         import cv2

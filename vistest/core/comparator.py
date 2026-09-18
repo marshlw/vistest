@@ -22,6 +22,7 @@ from . import color as _color
 from . import explain as _explain
 from . import segment as _seg
 from . import structure as _struct
+from . import warp as _warp
 from .settings import DiffConfig
 
 
@@ -92,7 +93,7 @@ def compare(
 
     # ---------- 1. Perceptual lightness ----------
     lab_exp = _color.srgb_to_lab(exp)
-    gray_exp = np.clip(lab_exp[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
+    gray_exp = _warp.to_uint8(lab_exp[:, :, 0] * 2.55)
     gray_act_raw = _color.luminance(act)
 
     # ---------- 2. Global alignment ----------
@@ -106,7 +107,7 @@ def compare(
         res.notes.append(f"Alignment: {al.reason}")
 
     lab_act = _color.srgb_to_lab(act_aligned)
-    gray_act = np.clip(lab_act[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
+    gray_act = _warp.to_uint8(lab_act[:, :, 0] * 2.55)
 
     # ---------- 3. Perceptual and structural maps ----------
     de_map = _color.delta_e_ciede2000(lab_exp, lab_act)

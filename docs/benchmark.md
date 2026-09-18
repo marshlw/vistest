@@ -2,7 +2,7 @@
 
 Сгенерировано `python tests/benchmark.py --compare --native docs/benchmark_native.json --no-timing --markdown` 2026-09-17, OpenCV 4.14.0, numpy 2.5.3, Python 3.13.13, Linux x86_64, preset `balanced`.
 
-The corpus is synthetic and frozen in the repository as PNG files (`tests/benchmark_corpus/`); it is not drawn at run time, so the installed OpenCV does not change what is measured. Figures published before the freeze were tied to the OpenCV version of whoever ran them and are not comparable with these — see CHANGELOG. The environment line above still matters; the caveats at the end say why.
+The corpus is synthetic and frozen in the repository as PNG files (`tests/benchmark_corpus/`); it is not drawn at run time, so the installed OpenCV does not change what is measured — and neither does the engine. Every stage that moves a picture by a fraction of a pixel goes through `core/warp.py`, which is numpy and not `cv2.warpAffine`, so the detailed table is identical under opencv-python-headless 4.14.0.94 and 5.0.0.93: not the verdicts alone, but every metric of all 54 pairs. `tests/benchmark_corpus/metrics.json` records those metrics and `tests/test_corpus_frozen.py` checks them on every run with zero tolerance, so a figure here cannot drift unnoticed. Figures published before the freeze were tied to the OpenCV version of whoever ran them and are not comparable with these — see CHANGELOG.
 
 Every tool runs with the settings a user gets after installing it and changing nothing — VisTest included. The exact values are listed under «Настройки». Nothing was tuned for this table.
 
@@ -185,7 +185,7 @@ python tests/benchmark.py --compare --native docs/benchmark_native.json \
 ## Что эта таблица не доказывает
 
 - Корпус синтетический. Он проверяет, что движок отличает известные виды шума от известных видов регресса, а не то, как он поведёт себя на вашем приложении.
-- The input is frozen, the engine is not: on the same files OpenCV 4.14 and 5.0 give the same verdicts, but some region metrics differ in the last digits (`cv2.warpAffine` with `INTER_LINEAR` rounds differently). The environment line at the top says which one produced this table.
+- The environment line at the top is there so that the run can be repeated, not because the figures depend on it. The one column that does depend on the machine is the milliseconds, and `--no-timing` leaves it out.
 - У Playwright сравниваются готовые снимки. Съёмка `toHaveScreenshot()` (отключение анимаций, скрытие каретки, повторные кадры до стабильности) здесь не участвует — как и стабилизация съёмки у VisTest: корпус уже снят.
 - Applitools и Percy здесь не участвуют: закрытые SaaS, прогнать их на своём корпусе и опубликовать результат нельзя.
 - Пороги VisTest настраивались в том числе по этому корпусу. Это конфликт интересов, и мы о нём говорим прямо — поэтому корпус и код открыты, а не приложены картинкой.
