@@ -295,10 +295,13 @@ def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
             failed = r.verdict is Verdict.FAIL
             s.add(c, failed)
             ok = failed == c.expected_fail
-            #  Printed at the precision that reproduces across machines, the
-            #  same one `corpus.METRICS_DECIMALS` records — publishing digits
-            #  we cannot reproduce is the defect this engine just removed from
-            #  `suppressed_by`. `tests/corpus.py` says what was measured.
+            #  Printed coarser than `corpus.METRICS_STORED_DECIMALS` records,
+            #  and on purpose: the file keeps more digits so that a Δ stays
+            #  legible against the tolerance it is compared with, while this
+            #  column is read by a person and shows only what reproduces
+            #  across machines. Publishing digits we cannot reproduce is the
+            #  defect this engine just removed from `suppressed_by`.
+            #  `tests/corpus.py` says what was measured, and over what.
             print(f"{c.name:{w}s} {expected.value:6s} {r.verdict.value:6s} "
                   f"{r.max_severity:6.1f} {r.changed_area_pct:8.2f} "
                   f"{r.de_mean:6.1f} {r.ssim_global:7.3f} {len(r.regions):4d} "
@@ -396,6 +399,47 @@ def print_port_check(scores: list[Score], ports: list[Score],
               + (": " + ", ".join(differ) if differ else ""))
 
 
+#: Friendly names for the metrics that carry a floor, in the order the table
+#: prints them.
+_FLOOR_TITLES = {
+    "severity": "severity",
+    "changed_area_pct": "changed area",
+    "de_mean": "ΔE00",
+    "ssim": "SSIM",
+}
+
+
+def _frozen_answer_paragraph() -> str:
+    """What the recorded answer promises, written from the code that enforces it.
+
+    Generated rather than typed. A published paragraph claiming a tolerance
+    the tests do not hold would be the same defect the engine just removed
+    from `suppressed_by`: a sentence true everywhere except in its digits.
+    """
+    floors = cp.METRICS_TOLERANCE
+    listed = ", ".join(f"{_FLOOR_TITLES.get(k, k)} {f.tolerance:.0e}"
+                       for k, f in floors.items())
+    envs = max(f.environments for f in floors.values())
+    when = max(f.measured for f in floors.values())
+    return (
+        "`tests/benchmark_corpus/metrics.json` holds the engine's answer next "
+        "to the frozen question, and `tests/test_corpus_frozen.py` replays it "
+        "on every run. Verdicts are strict: not one of the 54 may move, on any "
+        "machine. Region counts are strict too, and so is every rule the "
+        "engine names when it suppresses a difference — the sentence without "
+        "its pixel counts, which ride the change mask and move with it. The "
+        f"continuous metrics carry a tolerance that was measured rather than "
+        f"chosen ({listed}): each one sits above the widest spread seen across "
+        f"{envs} environments on {when}, and that measurement is recorded in "
+        "the file beside the number, so a red line can say whether a drift "
+        "looks like a new machine or like a changed engine. All "
+        f"{envs} environments are x86-64 — the published tolerances are "
+        "measured there and nowhere else, and `tests/corpus.py` says what to "
+        "do before widening them. The verdicts above were additionally "
+        "reproduced on Linux and on Windows, under both OpenCV majors."
+    )
+
+
 def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              native_used: bool, *, native: dict | None = None,
              ai: AIPipeline | None = None, timing: bool = True) -> str:
@@ -418,13 +462,12 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "a pixel goes through `core/warp.py`, which is numpy and not "
              "`cv2.warpAffine`, so the detailed table is identical under "
              "opencv-python-headless 4.14.0.94 and 5.0.0.93: not the verdicts "
-             "alone, but every metric of all 54 pairs. "
-             "`tests/benchmark_corpus/metrics.json` records those metrics and "
-             "`tests/test_corpus_frozen.py` checks them on every run with zero "
-             "tolerance, so a figure here cannot drift unnoticed. Figures "
+             "alone, but every metric of all 54 pairs. Figures "
              "published before the freeze were tied to the OpenCV version of "
              "whoever ran them and are not comparable with these — see "
              "CHANGELOG.")
+    L.append("")
+    L.append(_frozen_answer_paragraph())
     L.append("")
     L.append("Every tool runs with the settings a user gets after installing it "
              "and changing nothing — VisTest included. The exact values are "
@@ -612,6 +655,11 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "be repeated, not because the figures depend on it. The one "
              "column that does depend on the machine is the milliseconds, and "
              "`--no-timing` leaves it out.")
+    L.append("- The tolerances the other columns are checked under were "
+             "measured on x86-64 and on nothing else. A machine of another "
+             "architecture is outside that sample, so a red line there is not "
+             "yet evidence of anything; `tests/corpus.py` says how to tell the "
+             "two apart and what to measure before widening a number.")
     if native_used:
         L.append("- У Playwright сравниваются готовые снимки. Съёмка "
                  "`toHaveScreenshot()` (отключение анимаций, скрытие каретки, "
