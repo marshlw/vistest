@@ -128,15 +128,16 @@ antialias 0.4px, thin glyphs    pass   pass      0.0   0.0636  15.26 0.99295    
 [SIGNAL]  ожидается fail
 button removed                  fail   fail     98.1   1.1961  42.57 0.99355    1     —  ok
 ...
-raster opencv-4.14: 26/27 correct, false failures 0/16, misses 1/11
-raster opencv-5.0: 26/27 correct, false failures 0/16, misses 1/11
-total: 52/54 correct, false failures 0/32, misses 2/22
+raster opencv-4.14: 27/27 correct, false failures 0/16, misses 0/11
+raster opencv-5.0: 27/27 correct, false failures 0/16, misses 0/11
+total: 54/54 correct, false failures 0/32, misses 0/22
 ```
 
 (Shown as printed with `--no-timing`: the timing column is blank and the
 output can be diffed byte for byte between machines. Excerpt taken with OpenCV 4.14.0; under 5.0.0 the verdicts and
 totals are the same, and a few region metrics differ in the last digits.
-The one miss on each raster is `header color`.)
+`header color`, the one miss on each raster before the large-flat-recolour
+rule, is found on both since.)
 
 В `bench_out/` лежат картинки по каждому кейсу — полезно посмотреть глазами,
 что именно движок считает изменением.

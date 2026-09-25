@@ -5,6 +5,42 @@
 
 ## [Unreleased]
 
+### A flat recolour is found: the last miss of the frozen corpus
+
+- **`header color` was missed on both rasters**, and not by segmentation.
+  The header is repainted, ΔE00 6.7 on every one of its 57 600 pixels — above
+  the 2.3 of a visible difference, below the 9.2 of `strong_color`. Consensus
+  wants structure to agree, and SSIM is blind to a uniform shift of colour by
+  construction: it removes the mean before it compares. Only the bottom edge
+  of the header changed structure, a 900×2 line, and the opening removed it.
+- **New third term of consensus, next to `strong_color`: large flat recolour**
+  (`core/recolour.py`). A connected area of ΔE00 > `delta_e_threshold` is taken
+  past consensus when it covers **≥ 1.25 % of the frame** and ΔE is uniform
+  across it, **σ/μ ≤ 0.09**. Both numbers sit in the geometric middle of a
+  measured gap, recorded beside them in `core/settings.py`
+  (`FLAT_RECOLOUR_AREA`, `FLAT_RECOLOUR_CV`) — frozen corpus and
+  `generate(6)`, 178 pairs, every component: uniform noise is at most 0.309 %
+  of the frame (a scroll bar), a header at least 5.217 % (16.9×); a header is
+  at most 0.049 uneven, large noise at least 0.178 (a re-dithered gradient,
+  3.6×). Area is in percent, not pixels, so it means the same on any screenshot
+  size.
+- **Rejected on the way, with the measurement**: a test of direction (all
+  pixels moved along one Lab vector) separates nothing the two conditions do
+  not; a threshold on ΔE itself has no room (header μ 3.86 vs gradient μ 3.09).
+- **What it does not find**: a small uniform recolour — a 40×20 badge — sits
+  where the scroll bar sits. A known limit, named in the module.
+- **Frozen corpus: 54/54, 0/32 false failures, 0/22 misses** (was 52/54,
+  0/32, 2/22). `metrics.json` moves on two pairs only, the two `header color`
+  rows. `generate(6)`: misses 6/54 → 0/54, false failures unchanged at 7/70
+  — the same seven pairs as before (`font weight` ×6, a known limit;
+  `layout1/shadow radius`, an open defect).
+- **`tests/test_margins.py`** pins the room between noise and content for this
+  rule and for `explain.AA_KEEP_ABOVE` (now recorded as `AA_KEEP_ABOVE_GAP`):
+  it fails, naming the gap and the pair, when either side crosses the
+  threshold or moves past the worst case its record was placed against. It
+  also lowers the area threshold under a scroll bar on purpose and checks that
+  `explain.py` still names the bar and the verdict stays pass.
+
 ### metrics.json compares with a measured tolerance, the table prints what reproduces
 
 - **The frozen metrics went red on the first run on another machine**, on the
@@ -74,8 +110,8 @@
   what is measured: "zero tolerance" became strict on verdicts, region counts
   and the rule named in a suppression — the sentence without its digits, which
   is the part that reproduces — and the published tolerances are now said to
-  be measured on x86-64 and nowhere else, with the same point repeated under
-  «Что эта таблица не доказывает».
+  be measured on x86-64 and nowhere else, with the same point repeated in the
+  caveats section, where a sceptical reader looks first.
 
 ### The engine is deterministic across OpenCV majors, and a test says so
 
