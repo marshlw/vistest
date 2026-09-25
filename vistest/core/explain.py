@@ -502,15 +502,12 @@ def _search(ref, act, raw_mask, r, shifts, *, give_up_after: int = 0,
         e = drawn
 
     best = (total + 1, (0.0, 0.0))
-    size = (e.shape[1], e.shape[0])
     tried = 0
     for dx, dy in shifts:
-        if dx == 0.0 and dy == 0.0:
-            moved = e
-        else:
-            m = np.float32([[1, 0, dx], [0, 1, dy]])
-            moved = cv2.warpAffine(e, m, size, flags=cv2.INTER_LINEAR,
-                                   borderMode=cv2.BORDER_REPLICATE)
+        # Through the engine's one door for translation, like `align` and
+        # `refit`: `_grid` puts every shift on the grid `warp.shift` draws
+        # exactly, and that promise only holds for the backend it measured.
+        moved = e if dx == 0.0 and dy == 0.0 else _warp.shift(e, dx, dy)
         diff = _chmax(np.abs(moved - a))
         mean_diff = _chmax(np.abs(cv2.blur(moved, win, borderType=cv2.BORDER_REPLICATE)
                                   - a_mean))

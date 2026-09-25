@@ -40,7 +40,6 @@ EXTENSION_MODULES = {
     "vistest.ai.train",           # trains the gate; leaves with it
     "vistest.api.directory",
     "vistest.api.directory_routes",
-    "vistest.transfer",
 }
 
 

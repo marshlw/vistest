@@ -10,8 +10,13 @@
 # Базовый образ (с mcr.microsoft.com — обычно доступен даже когда Docker Hub
 # нет) вынесен в build-arg: при недоступном реестре укажите зеркало через
 #   --build-arg BASE_IMAGE=<зеркало>/playwright/python:v1.47.0-jammy
-ARG BASE_IMAGE=mcr.microsoft.com/playwright/python:v1.47.0-jammy
+# The pin of the browser. The base image tag and the pip package both
+# come from this one argument, so they cannot drift apart; pyproject.toml
+# asks only for a range. Dockerfile.runner carries the same value: change both.
+ARG PLAYWRIGHT_VERSION=1.47.0
+ARG BASE_IMAGE=mcr.microsoft.com/playwright/python:v${PLAYWRIGHT_VERSION}-jammy
 FROM ${BASE_IMAGE}
+ARG PLAYWRIGHT_VERSION
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -39,7 +44,7 @@ COPY pyproject.toml README.md ./
 COPY vistest ./vistest
 COPY frontend ./frontend
 COPY docker/entrypoint.sh /usr/local/bin/vistest-entrypoint
-RUN pip install -e ".[full]" \
+RUN pip install -e ".[full]" "playwright==${PLAYWRIGHT_VERSION}" \
     && chmod +x /usr/local/bin/vistest-entrypoint
 
 VOLUME /data

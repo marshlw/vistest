@@ -79,6 +79,8 @@ capture:
 
   # Без фиксации одна и та же страница покажет разную дату и формат чисел
   # у разработчика и в CI.
+  # This repository's own choice. The package default is null for both:
+  # the browser keeps its own unless a project pins them here.
   timezone: "Europe/Moscow"
   locale: "ru-RU"
   color_scheme: null            # null | light | dark

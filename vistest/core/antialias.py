@@ -72,32 +72,3 @@ def antialias_mask(
     on_edge = gradient >= min_gradient
 
     return b_in_a & a_in_b & on_edge
-
-
-def text_shift_mask(
-    gray_exp: np.ndarray,
-    gray_act: np.ndarray,
-    *,
-    radius: int = 1,
-    tolerance: float = 10.0,
-) -> np.ndarray:
-    """Pixels that match with a shift of ±radius.
-
-    Catches "text moved by one pixel due to different kerning": the pixel value
-    in actual is found somewhere within a radius-sized window in expected.
-    Unlike global alignment, it works locally — for individual text lines.
-    """
-    if cv2 is None:
-        return np.zeros(gray_exp.shape, dtype=bool)
-
-    k = 2 * radius + 1
-    kernel = np.ones((k, k), np.uint8)
-    lo = cv2.erode(gray_exp, kernel).astype(np.float32) - tolerance
-    hi = cv2.dilate(gray_exp, kernel).astype(np.float32) + tolerance
-    bf = gray_act.astype(np.float32)
-
-    lo2 = cv2.erode(gray_act, kernel).astype(np.float32) - tolerance
-    hi2 = cv2.dilate(gray_act, kernel).astype(np.float32) + tolerance
-    af = gray_exp.astype(np.float32)
-
-    return ((bf >= lo) & (bf <= hi)) & ((af >= lo2) & (af <= hi2))

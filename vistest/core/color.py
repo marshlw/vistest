@@ -165,11 +165,3 @@ def _de2000_block(lab1, lab2, kL, kC, kH):
 
     de = np.sqrt(np.maximum(tL * tL + tC * tC + tH * tH + R_T * tC * tH, 0.0))
     return de.astype(np.float32)
-
-
-def delta_e_76(lab1: np.ndarray, lab2: np.ndarray) -> np.ndarray:
-    """Euclidean ΔE in Lab. ~15 times faster than ΔE00, lower accuracy.
-    Used as a pre-filter: ΔE76 is an upper bound, where it is small,
-    ΔE00 is definitely small, and the full formula need not be computed."""
-    d = lab1.astype(np.float32) - lab2.astype(np.float32)
-    return np.sqrt(np.einsum("...i,...i->...", d, d)).astype(np.float32)

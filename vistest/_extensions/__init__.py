@@ -18,7 +18,12 @@ the core does not notice.
 
     vistest.ai.gate, vistest.ai.perceptual  -> RegionScorer, RegionAnnotator
     vistest.api.directory                   -> AuthProvider
-    vistest.transfer                        -> BaselineSyncBackend
+    vistest.transfer.ArchiveSyncBackend     -> BaselineSyncBackend
+
+`vistest.transfer` itself is core: `vistest baselines export|import` call it
+directly and work with every plugin switched off. What is registered here is
+the server's side of it — the HTTP routes that move a set between running
+installations.
 """
 
 from __future__ import annotations

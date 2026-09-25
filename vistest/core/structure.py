@@ -6,7 +6,7 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Structural metrics: SSIM map, gradient similarity, edge density.
+"""Structural metrics: SSIM map, local SSIM, edge density.
 
 SSIM is implemented with cv2 convolutions to avoid pulling scikit-image into
 mandatory dependencies and to get a map, not a single number: a single number
@@ -68,26 +68,6 @@ def local_ssim(gray_exp: np.ndarray, gray_act: np.ndarray) -> float:
     sigma = 1.5 if min(h, w) >= 11 else max(0.6, min(h, w) / 7.0)
     _, mean = ssim_map(gray_exp, gray_act, sigma=sigma)
     return float(mean)
-
-
-def gradient_magnitude(gray: np.ndarray) -> np.ndarray:
-    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    return cv2.magnitude(gx, gy)
-
-
-def gradient_similarity(gray_exp: np.ndarray, gray_act: np.ndarray) -> np.ndarray:
-    """GMS map (Gradient Magnitude Similarity), 1 = shapes match.
-
-    Complements SSIM: sensitive specifically to edge displacement/appearance,
-    while almost ignoring uniform brightness changes (e.g., different gamma).
-    """
-    if cv2 is None:
-        return np.ones(gray_exp.shape, dtype=np.float32)
-    ga = gradient_magnitude(gray_exp)
-    gb = gradient_magnitude(gray_act)
-    c = 170.0
-    return ((2.0 * ga * gb + c) / (ga * ga + gb * gb + c)).astype(np.float32)
 
 
 def edge_density(gray: np.ndarray) -> float:

@@ -321,3 +321,106 @@ def test_the_licence_limit_applies_to_directory_users(
     assert "active users" in r.text
     assert not mainmod.db.one("SELECT id FROM user WHERE login='anna'"), \
         "и записи не появляется: место занимать нечем"
+
+
+# --------------------------------------------------------------------------- #
+#  A directory entry is not a claim on a local account
+# --------------------------------------------------------------------------- #
+def _in_directory(monkeypatch, login, password):
+    """Put an entry called `login` into the fake directory."""
+    monkeypatch.setitem(PEOPLE, login, {
+        "dn": f"CN={login},OU=QA,DC=acme,DC=local",
+        "name": f"Directory {login}",
+        "mail": f"{login}@acme.local",
+        "groups": ["CN=QA Leads,OU=Groups,DC=acme,DC=local"],
+        "password": password,
+    })
+
+
+def _account(db, login):
+    return db.one("SELECT role, password, active, status, source, external_dn"
+                  "  FROM user WHERE login=?", (login,))
+
+
+def test_a_directory_admin_does_not_sign_in_as_the_local_admin(
+        service, fake_directory, monkeypatch):
+    """(a) Whoever controls "admin" in the directory is not the admin here."""
+    client, mainmod = service
+    _local_admin(mainmod, "admin", "local-password-1")
+    _enable_ldap(mainmod.db)
+    _in_directory(monkeypatch, "admin", "directory-password")
+    before = dict(_account(mainmod.db, "admin"))
+
+    r = client.post("/api/auth/login",
+                    json={"login": "admin", "password": "directory-password"})
+
+    assert r.status_code == 401, r.text
+    assert dict(_account(mainmod.db, "admin")) == before, "the row is not touched"
+    refused = mainmod.db.query(
+        "SELECT who, target FROM audit WHERE action='auth.external_refused'")
+    assert [(a["who"], a["target"]) for a in refused] == \
+        [("admin", "ldap: a local account has this login")]
+    assert "admin" not in fake_directory["asked"], \
+        "a password typed for a local account does not travel to the directory"
+
+
+def test_a_disabled_local_account_is_not_switched_back_on_by_the_directory(
+        service, fake_directory, monkeypatch):
+    """(b) Switched off here stays off, whatever the directory answers."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    from vistest.api.auth import create_user
+    create_user(mainmod.db, "dora", "local-password-2", role="reviewer")
+    mainmod.db.execute(
+        "UPDATE user SET active=0, status='disabled' WHERE login='dora'")
+    _enable_ldap(mainmod.db)
+    _in_directory(monkeypatch, "dora", "directory-password")
+    before = dict(_account(mainmod.db, "dora"))
+
+    for password in ("directory-password", "local-password-2"):
+        r = client.post("/api/auth/login",
+                        json={"login": "dora", "password": password})
+        assert r.status_code == 401, (password, r.text)
+
+    after = _account(mainmod.db, "dora")
+    assert dict(after) == before
+    assert (after["active"], after["status"], after["source"]) == (0, "disabled", "local")
+
+
+def test_the_local_admin_still_signs_in_after_the_directory_tried(
+        service, fake_directory, monkeypatch):
+    """(c) The refused attempt leaves the local password working."""
+    client, mainmod = service
+    _local_admin(mainmod, "admin", "local-password-1")
+    _enable_ldap(mainmod.db)
+    _in_directory(monkeypatch, "admin", "directory-password")
+
+    r = client.post("/api/auth/login",
+                    json={"login": "admin", "password": "directory-password"})
+    assert r.status_code == 401, r.text
+
+    r = client.post("/api/auth/login",
+                    json={"login": "admin", "password": "local-password-1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["role"] == "admin"
+    assert _account(mainmod.db, "admin")["source"] == "local"
+
+
+def test_a_directory_account_disabled_here_stays_disabled(
+        service, fake_directory):
+    """The same rule for an account that did come from the directory."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    r = client.post("/api/auth/login",
+                    json={"login": "boris", "password": "another-secret"})
+    assert r.status_code == 200, r.text
+    mainmod.db.execute(
+        "UPDATE user SET active=0, status='disabled' WHERE login='boris'")
+
+    r = client.post("/api/auth/login",
+                    json={"login": "boris", "password": "another-secret"})
+
+    assert r.status_code == 401, r.text
+    row = _account(mainmod.db, "boris")
+    assert (row["active"], row["status"], row["source"]) == (0, "disabled", "ldap")

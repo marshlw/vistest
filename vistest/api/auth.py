@@ -731,6 +731,20 @@ def _try_external(db, login_name: str, password: str, row):
     provider = active_registry().auth_provider()
     if provider is None:
         return None
+    if row is not None and (row["source"] or "local") == "local":
+        # A login the directory knows is not a claim on the account of the
+        # same name here. A local account is opened by its own password and
+        # nothing else: taking it over on a directory match would let whoever
+        # controls an entry called "admin" in the directory become the local
+        # administrator, and would switch back on an account somebody here
+        # switched off. Refused and written down; the row is not touched.
+        #
+        # The provider is not even asked. What was typed here was meant for a
+        # local account, and a password that failed locally has no business
+        # travelling to another system.
+        audit(db, login_name, "auth.external_refused",
+              f"{provider.name}: a local account has this login")
+        return None
     try:
         person = _runtime.authenticate(provider, login_name, password)
     except _runtime.ProviderUnavailable as e:
@@ -761,15 +775,22 @@ def _try_external(db, login_name: str, password: str, row):
         #
         # The exception is a role raised by hand in VisTest: it is kept,
         # otherwise "make Anna an admin here" would quietly undo itself.
+        #
+        # `source`, `active` and `status` are never written here. They are
+        # decisions — where an account comes from, whether it may sign in —
+        # and a sign-in is not the place to take them: an account switched
+        # off in VisTest stays off however often the directory says yes.
+        if not row["active"] or (row["status"] or "active") != "active":
+            audit(db, login_name, "auth.external_refused",
+                  f"{provider.name}: the account is disabled here")
+            return None
         current = row["role"] or "viewer"
         if _RANK.get(role, 0) > _RANK.get(current, 0):
-            db.execute("UPDATE user SET role=?, active=1, status='active',"
-                       " source=?, external_dn=? WHERE id=?",
-                       (role, person.source, person.external_id, row["id"]))
+            db.execute("UPDATE user SET role=?, external_dn=? WHERE id=?",
+                       (role, person.external_id, row["id"]))
         else:
-            db.execute("UPDATE user SET active=1, status='active',"
-                       " source=?, external_dn=? WHERE id=?",
-                       (person.source, person.external_id, row["id"]))
+            db.execute("UPDATE user SET external_dn=? WHERE id=?",
+                       (person.external_id, row["id"]))
 
     fresh = db.one(
         "SELECT id, login, name, role, password, active, status, source"

@@ -4,8 +4,13 @@
 # браузера, набора шрифтов, hinting'а и субпиксельного сглаживания. Пока эти
 # четыре вещи не зафиксированы, «одинаковые» эталоны между машинами
 # невозможны в принципе — поэтому версия базового образа прибита гвоздями.
-ARG BASE_IMAGE=mcr.microsoft.com/playwright/python:v1.47.0-jammy
+# The pin of the browser. The base image tag and the pip package both
+# come from this one argument, so they cannot drift apart; pyproject.toml
+# asks only for a range. Dockerfile.full carries the same value: change both.
+ARG PLAYWRIGHT_VERSION=1.47.0
+ARG BASE_IMAGE=mcr.microsoft.com/playwright/python:v${PLAYWRIGHT_VERSION}-jammy
 FROM ${BASE_IMAGE}
+ARG PLAYWRIGHT_VERSION
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -24,7 +29,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY vistest ./vistest
-RUN pip install -e ".[full]"
+RUN pip install -e ".[full]" "playwright==${PLAYWRIGHT_VERSION}"
 
 WORKDIR /work
 COPY . /work

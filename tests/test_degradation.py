@@ -545,15 +545,83 @@ def test_server_mode_with_broken_plugins_behaves_as_without_them(
 # --------------------------------------------------------------------------- #
 #  The command line
 # --------------------------------------------------------------------------- #
-def test_the_sync_command_says_it_is_not_available(tmp_path):
+def _cli(args, *, cwd, env_extra=None):
+    """`python -m vistest.cli` with every plugin off and nothing inherited."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("VISTEST_")}
     env["VISTEST_DISABLE_PLUGINS"] = "1"
     env["PYTHONPATH"] = str(ROOT)
-    done = subprocess.run(
-        [sys.executable, "-m", "vistest.cli", "baselines", "export",
-         str(tmp_path / "out.tar.gz")],
-        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 2, done.stdout + done.stderr
-    assert "not available in this installation" in done.stderr
-    assert "Traceback" not in done.stderr
-    assert not (tmp_path / "out.tar.gz").exists()
+    env.update(env_extra or {})
+    done = subprocess.run([sys.executable, "-m", "vistest.cli", *args],
+                          cwd=cwd, env=env, capture_output=True, text=True,
+                          timeout=120)
+    assert "Traceback" not in done.stderr, done.stderr
+    return done
+
+
+def _flat(shade: int) -> np.ndarray:
+    img = np.zeros((10, 16, 3), np.uint8)
+    img[:] = (shade, shade, shade)
+    return img
+
+
+@pytest.mark.parametrize("mode", ["new", "update", "replace"])
+def test_baselines_travel_with_every_plugin_switched_off(tmp_path, mode):
+    """`vistest baselines export` -> `import`, round trip, no extension loaded.
+
+    The archive is the core's: leaving the library mode for a server, or
+    handing a set to another team, does not wait for a plugin. Each merge mode
+    is driven through the command line into a target that already has a
+    baseline of its own under one of the incoming names, and the result on
+    disk is what the mode promises.
+    """
+    from vistest.storage import BaselineRecord, FileBaselineStore
+
+    platform = "linux-chromium-1x"
+    src_root = tmp_path / "src" / ".vistest"
+    src = FileBaselineStore(src_root / "baselines" / platform)
+    src.save(BaselineRecord(name="shop/checkout.png", image=_flat(40)))
+    src.save(BaselineRecord(name="shop/cart.png", image=_flat(60)))
+
+    dst_root = tmp_path / "dst" / "baselines"
+    dst = FileBaselineStore(dst_root / platform)
+    dst.save(BaselineRecord(name="shop/checkout.png", image=_flat(200)))
+    dst.add_ignore_box("shop/checkout.png",
+                       {"x": 1, "y": 1, "w": 4, "h": 4, "reason": "clock"})
+
+    archive = tmp_path / "set.tar.gz"
+    #  Export from the installation's own set: VISTEST_ROOT, no --baselines.
+    done = _cli(["baselines", "export", str(archive)], cwd=tmp_path / "src",
+                env_extra={"VISTEST_ROOT": str(src_root)})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "2 snapshots" in done.stdout
+    assert archive.exists()
+
+    #  A dry run first: it names both snapshots and changes nothing.
+    done = _cli(["baselines", "import", str(archive), "--mode", mode,
+                 "--baselines", str(dst_root), "--dry-run"], cwd=tmp_path)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "shop/checkout.png" in done.stdout and "shop/cart.png" in done.stdout
+    assert not (dst_root / platform / "shop" / "cart").exists()
+
+    done = _cli(["baselines", "import", str(archive), "--mode", mode,
+                 "--baselines", str(dst_root), "--who", "anna"], cwd=tmp_path)
+    assert done.returncode == 0, done.stdout + done.stderr
+
+    store = FileBaselineStore(dst_root / platform)
+    cart = store.load("shop/cart.png")
+    assert cart is not None and int(cart.image[0, 0, 0]) == 60, "the missing one arrives"
+    checkout = store.load("shop/checkout.png")
+    shade = int(checkout.image[0, 0, 0])
+    if mode == "new":
+        assert "added 1" in done.stdout and "skipped 1" in done.stdout
+        assert shade == 200, "new leaves what is already here"
+        assert checkout.ignore_boxes
+    elif mode == "update":
+        assert "new versions 1" in done.stdout
+        assert shade == 40
+        assert len(store.versions("shop/checkout.png")) >= 2, "the old one is history"
+        assert checkout.ignore_boxes, "this team's masks survive an update"
+    else:
+        assert "replaced 1" in done.stdout
+        assert shade == 40
+        assert not checkout.ignore_boxes, "replace is the mode that discards"

@@ -673,10 +673,23 @@ def test_context_options_fix_timezone_and_locale():
     from vistest.capture.stabilize import context_options
 
     cfg = VisTestConfig.preset_of("balanced")
+    cfg.capture.timezone = "Europe/Berlin"
+    cfg.capture.locale = "de-DE"
     opts = context_options(cfg, 390, 844)
     assert opts["viewport"] == {"width": 390, "height": 844}
-    assert opts["timezone_id"] == "Europe/Moscow"
-    assert opts["locale"] == "ru-RU"
+    assert opts["timezone_id"] == "Europe/Berlin"
+    assert opts["locale"] == "de-DE"
+
+
+def test_timezone_and_locale_are_not_overridden_by_default():
+    """Unset, the browser keeps its own: the defaults pin nobody's city."""
+    from vistest.capture.stabilize import context_options
+    from vistest.core.settings import CaptureConfig
+
+    assert CaptureConfig().timezone is None
+    assert CaptureConfig().locale is None
+    opts = context_options(VisTestConfig.preset_of("balanced"), 390, 844)
+    assert "timezone_id" not in opts and "locale" not in opts
 
 
 def test_record_and_run_share_the_same_clock():

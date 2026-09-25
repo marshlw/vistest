@@ -277,10 +277,13 @@ class CaptureConfig:
     # breaks animations, debounces, and timer-based polling.
     clock_ticks: bool = True
 
-    # Context timezone and locale. Without pinning, the same page will show a
-    # different date and a different number format for a developer and in CI.
-    timezone: str | None = "Europe/Moscow"
-    locale: str | None = "ru-RU"
+    # Context timezone and locale. None leaves the browser's own: a library
+    # has no business deciding that everyone who installs it lives in one
+    # city. Pin them in the project's `vistest.yaml` — without pinning, the
+    # same page shows a different date and number format for a developer and
+    # in CI, and a baseline taken on one does not match the other.
+    timezone: str | None = None         # IANA name, e.g. "Europe/Berlin"
+    locale: str | None = None           # BCP 47 tag, e.g. "de-DE"
     color_scheme: str | None = None      # None | "light" | "dark"
 
     wait_fonts: bool = True
