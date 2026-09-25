@@ -5,6 +5,39 @@
 
 ## [Unreleased]
 
+### Stage R0 tails
+
+- **A directory role follows the groups down as well as up.** `_try_external`
+  only ever raised a role (`_RANK[role] > _RANK[current]`), so somebody taken
+  out of the admins group in the directory stayed an administrator here for
+  good — while the comment above that code and the README said the role was
+  recalculated at every sign-in. Now an existing directory account gets the
+  directory's role at each sign-in, in both directions, and every change is
+  audited as `user.role` with the provider as the author and `from`/`to` in
+  the details. Two exceptions. A role set by hand (`PATCH /api/users/{login}`)
+  is pinned in the new column `user.role_manual` and no sign-in moves it, up
+  or down; `{"role": "directory"}` to the same endpoint hands it back and the
+  next sign-in recalculates it (refused for a local account, and for your own
+  account, like removing your own administrator role). And the last active
+  administrator is never demoted: the role is kept and `auth.role_kept` says
+  why, so a mistake in the role map cannot leave the installation without an
+  administrator. The role is read from the `user` row on every request, so
+  the demotion reaches open sessions — at the person's next sign-in, because
+  that is the only time the directory is asked.
+  `test_the_role_follows_group_membership_on_every_sign_in` stopped after
+  Boris's sign-in without a single assert (and raised a row that did not exist
+  yet); it now checks that a role raised by hand survives the sign-in. New
+  tests in `tests/api/test_directory.py`; before the change,
+  `test_leaving_the_admins_group_takes_the_role_at_the_next_sign_in` failed
+  with Anna still an admin.
+  **Upgrade note — check the roles of directory users.** The migration pins
+  (`role_manual=1`) every directory account that has a `user.role` entry in the
+  audit, that is, every role an administrator set by hand. The audit keeps a
+  year by default (`retention_audit_days`), so a role set by hand before that
+  is not found: at the next sign-in such a person gets the role their groups
+  give, which may be lower. Look through **Settings → Team** after upgrading,
+  and set by hand again any role that should not follow the directory.
+
 ### Pre-publication hygiene (review of 25.09)
 
 What the plan counted as done and the code did not, and what stood between

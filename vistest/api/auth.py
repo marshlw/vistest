@@ -302,11 +302,40 @@ def set_password(db, login: str, password: str, *, keep_token: str = "") -> bool
     return changed
 
 
+#  What `PATCH /api/users/{login}` accepts in place of a role to undo a role set
+#  by hand on a directory account.
+ROLE_FROM_DIRECTORY = "directory"
+
+
 def set_role(db, login: str, role: str) -> bool:
+    """Set a role by hand — and pin it.
+
+    For an account from a directory the pin is what makes the decision stick:
+    without it the next sign-in would recompute the role from groups and undo
+    it in either direction. `release_role` hands the role back.
+    """
     if role not in ROLES:
         raise ValueError(f"Role must be one of: {', '.join(ROLES)}")
-    return db.execute("UPDATE user SET role=? WHERE login=?",
+    return db.execute("UPDATE user SET role=?, role_manual=1 WHERE login=?",
                       (role, login.strip().lower())) > 0
+
+
+def release_role(db, login: str) -> bool:
+    """Hand a directory account's role back to the directory.
+
+    The role itself does not change here: it is recomputed from group
+    membership at the person's next sign-in, because only a sign-in asks the
+    directory. A local account has no directory to hand it to, so that is a
+    refusal rather than a silent no-op.
+    """
+    login = login.strip().lower()
+    row = db.one("SELECT source FROM user WHERE login=?", (login,))
+    if row is None:
+        return False
+    if (row["source"] or "local") == "local":
+        raise ValueError(
+            f"{login!r} is a local account: its role is not managed by a directory")
+    return db.execute("UPDATE user SET role_manual=0 WHERE login=?", (login,)) > 0
 
 
 def deactivate(db, login: str) -> bool:
@@ -769,12 +798,10 @@ def _try_external(db, login_name: str, password: str, row):
         audit(db, login_name, "user.created", login_name,
               role=role, source=person.source)
     else:
-        # The role is recomputed on every sign-in: a person who left the
-        # reviewers group must stop being a reviewer at the next sign-in, not
-        # when somebody remembers.
-        #
-        # The exception is a role raised by hand in VisTest: it is kept,
-        # otherwise "make Anna an admin here" would quietly undo itself.
+        # The role is recomputed on every sign-in, in both directions: a person
+        # who left the admins group stops being an admin at the next sign-in,
+        # not when somebody remembers. See `_follow_directory_role` for the two
+        # exceptions — a role set by hand, and the last administrator.
         #
         # `source`, `active` and `status` are never written here. They are
         # decisions — where an account comes from, whether it may sign in —
@@ -784,18 +811,57 @@ def _try_external(db, login_name: str, password: str, row):
             audit(db, login_name, "auth.external_refused",
                   f"{provider.name}: the account is disabled here")
             return None
-        current = row["role"] or "viewer"
-        if _RANK.get(role, 0) > _RANK.get(current, 0):
-            db.execute("UPDATE user SET role=?, external_dn=? WHERE id=?",
-                       (role, person.external_id, row["id"]))
-        else:
-            db.execute("UPDATE user SET external_dn=? WHERE id=?",
-                       (person.external_id, row["id"]))
+        db.execute("UPDATE user SET external_dn=? WHERE id=?",
+                   (person.external_id, row["id"]))
+        _follow_directory_role(db, provider.name, row, role)
 
     fresh = db.one(
         "SELECT id, login, name, role, password, active, status, source"
         "  FROM user WHERE login=?", (login_name,))
     return (fresh, True) if fresh else None
+
+
+def _follow_directory_role(db, provider: str, row, role: str) -> None:
+    """Make an existing directory account's role what the directory says.
+
+    Both ways. Raising only — which is what this did before — meant that
+    somebody taken out of the admins group stayed an administrator here for
+    good, which is the opposite of what connecting a directory is for.
+
+    Two exceptions, and each is written down:
+
+    - **A role set by hand** (`role_manual=1`, set by `set_role`) is a decision,
+      like `active` and `status`, and a sign-in does not overrule it — up or
+      down. `release_role` hands it back to the directory.
+    - **The last active administrator is not demoted.** A mistake in the role
+      map — a renamed group, a typo — would otherwise leave the installation
+      with nobody who can fix the mistake. The role is kept and the audit says
+      why (`auth.role_kept`).
+
+    The new role is read from the `user` row on every request, so it reaches
+    sessions that are already open — but only once the person signs in again,
+    because a sign-in is the only time the directory is asked.
+    """
+    current = row["role"] or "viewer"
+    if row["role_manual"] or role == current:
+        return
+    if current == "admin":
+        # One statement, so that two last administrators signing in at the
+        # same moment cannot both pass the check and leave nobody.
+        changed = db.execute(
+            "UPDATE user SET role=? WHERE id=? AND EXISTS ("
+            "  SELECT 1 FROM user other WHERE other.id<>user.id"
+            "     AND other.role='admin' AND other.active=1"
+            "     AND other.status='active')",
+            (role, row["id"]))
+        if not changed:
+            audit(db, provider, "auth.role_kept", row["login"],
+                  role=current, directory_role=role,
+                  reason="the last active administrator is not demoted")
+            return
+    else:
+        db.execute("UPDATE user SET role=? WHERE id=?", (role, row["id"]))
+    audit(db, provider, "user.role", row["login"], **{"from": current, "to": role})
 
 
 def _check_user_limit(db) -> None:
@@ -992,7 +1058,8 @@ def build_router(db):
                 headers={"Retry-After": str(wait)})
 
         row = db.one(
-            "SELECT id, login, name, role, password, active, status, source"
+            "SELECT id, login, name, role, role_manual, password, active, status,"
+            "       source"
             "  FROM user WHERE login=?", (login_name,))
 
         # We check the password even when the user is absent: otherwise the
@@ -1148,12 +1215,18 @@ def build_router(db):
         me_ = require(db, vistest_session, "admin")
 
         if payload.get("role"):
+            # "directory" is covered by this too: handing your own role to the
+            # directory is handing it a chance to take the administrator role
+            # away from you at your next sign-in.
             if login.lower() == me_["login"] and payload["role"] != "admin":
                 raise HTTPException(
                     400, "You cannot remove the administrator role from yourself — "
                          "the installation would be left without management")
             try:
-                set_role(db, login, payload["role"])
+                if payload["role"] == ROLE_FROM_DIRECTORY:
+                    release_role(db, login)
+                else:
+                    set_role(db, login, payload["role"])
             except ValueError as e:
                 raise HTTPException(400, str(e)) from None
             audit(db, me_["login"], "user.role", login, role=payload["role"])

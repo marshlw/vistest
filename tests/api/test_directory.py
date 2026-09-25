@@ -239,16 +239,250 @@ def test_the_role_follows_group_membership_on_every_sign_in(
     _local_admin(mainmod)
     _enable_ldap(mainmod.db)
 
-    client.post("/api/auth/login",
-                json={"login": "anna", "password": "directory-secret"})
-    assert mainmod.db.one("SELECT role FROM user WHERE login='anna'")["role"] \
-        == "admin"
+    _sign_in(client, "anna")
+    assert _role(mainmod.db, "anna") == "admin"
 
-    # Роль, поднятая руками в VisTest, переживает вход: иначе «сделай Анну
-    # администратором здесь» отменялось бы само.
-    mainmod.db.execute("UPDATE user SET role='admin' WHERE login='boris'")
-    client.post("/api/auth/login",
-                json={"login": "boris", "password": "another-secret"})
+    # A role raised by hand in VisTest survives the sign-in: otherwise "make
+    # Boris an admin here" would undo itself. Boris has to exist first — the
+    # version of this test that raised him before his first sign-in updated no
+    # row and asserted nothing.
+    _sign_in(client, "boris")
+    assert _role(mainmod.db, "boris") == "reviewer"
+    _as_root(client)
+    assert client.patch("/api/users/boris", json={"role": "admin"}).status_code == 200
+
+    _sign_in(client, "boris")
+    assert _role(mainmod.db, "boris") == "admin"
+
+
+# --------------------------------------------------------------------------- #
+#  The role follows the directory both ways; a hand-set role is pinned
+# --------------------------------------------------------------------------- #
+def _sign_in(client, login, password=None):
+    password = password or PEOPLE[login]["password"]
+    r = client.post("/api/auth/login", json={"login": login, "password": password})
+    assert r.status_code == 200, r.text
+    return r
+
+
+def _as_root(client):
+    _sign_in(client, "root", "password123")
+
+
+def _role(db, login):
+    return db.one("SELECT role FROM user WHERE login=?", (login,))["role"]
+
+
+def _pinned(db, login):
+    return db.one("SELECT role_manual FROM user WHERE login=?", (login,))["role_manual"]
+
+
+def _audit(db, action):
+    return [(r["who"], r["target"], r["details"]) for r in db.query(
+        "SELECT who, target, details FROM audit WHERE action=? ORDER BY id", (action,))]
+
+
+def _leave_groups(monkeypatch, login, groups):
+    monkeypatch.setitem(PEOPLE, login, {**PEOPLE[login], "groups": groups})
+
+
+QA = "CN=QA,OU=Groups,DC=acme,DC=local"
+
+
+def test_leaving_the_admins_group_takes_the_role_at_the_next_sign_in(
+        service, fake_directory, monkeypatch):
+    """(a) Down as well as up: removed from QA Leads, Anna is no longer an admin."""
+    import json
+
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "anna")
+    assert _role(mainmod.db, "anna") == "admin"
+
+    # Still in QA: the role map says reviewer.
+    _leave_groups(monkeypatch, "anna", [QA])
+    r = _sign_in(client, "anna")
+    assert r.json()["role"] == "reviewer"
+    assert _role(mainmod.db, "anna") == "reviewer"
+
+    # In no mapped group at all: the default role.
+    _leave_groups(monkeypatch, "anna", ["CN=Everyone,OU=Groups,DC=acme,DC=local"])
+    _sign_in(client, "anna")
+    assert _role(mainmod.db, "anna") == "viewer"
+
+    changes = [(who, target, json.loads(details))
+               for who, target, details in _audit(mainmod.db, "user.role")]
+    assert changes == [("ldap", "anna", {"from": "admin", "to": "reviewer"}),
+                       ("ldap", "anna", {"from": "reviewer", "to": "viewer"})]
+
+
+def test_the_demotion_reaches_a_session_that_is_already_open(
+        service, fake_directory, monkeypatch):
+    """The role is read from the row on each request, so an open session sees it."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "anna")
+    other = TestClient(mainmod.app)
+    _sign_in(other, "anna")
+    assert other.get("/api/users").status_code == 200
+
+    _leave_groups(monkeypatch, "anna", [QA])
+    _sign_in(client, "anna")
+
+    assert other.get("/api/users").status_code == 403
+
+
+def test_a_role_set_by_hand_survives_the_sign_in_both_ways(
+        service, fake_directory):
+    """(b) Raised by hand stays raised; lowered by hand is not raised back."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "anna")          # admin by groups
+    _sign_in(client, "boris")         # reviewer by groups
+
+    _as_root(client)
+    assert client.patch("/api/users/boris", json={"role": "admin"}).status_code == 200
+    assert client.patch("/api/users/anna", json={"role": "viewer"}).status_code == 200
+    assert _pinned(mainmod.db, "boris") == 1
+    assert _pinned(mainmod.db, "anna") == 1
+
+    _sign_in(client, "boris")
+    _sign_in(client, "anna")
+
+    assert _role(mainmod.db, "boris") == "admin"
+    assert _role(mainmod.db, "anna") == "viewer"
+    assert [who for who, _target, _details in _audit(mainmod.db, "user.role")
+            if who == "ldap"] == [], "the directory changed nothing, so nothing recorded"
+
+
+def test_handing_the_role_back_to_the_directory(service, fake_directory):
+    """(c) `{"role": "directory"}` unpins; the next sign-in recomputes the role."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "boris")
+    _as_root(client)
+    client.patch("/api/users/boris", json={"role": "viewer"})
+    _sign_in(client, "boris")
+    assert _role(mainmod.db, "boris") == "viewer", "pinned"
+
+    _as_root(client)
+    r = client.patch("/api/users/boris", json={"role": "directory"})
+    assert r.status_code == 200, r.text
+    assert _pinned(mainmod.db, "boris") == 0
+    assert _role(mainmod.db, "boris") == "viewer", \
+        "nothing changes until the directory is asked, at the next sign-in"
+
+    _sign_in(client, "boris")
+    assert _role(mainmod.db, "boris") == "reviewer"
+
+
+def test_a_local_account_has_no_directory_to_hand_its_role_to(service):
+    client, mainmod = service
+    _local_admin(mainmod)
+    from vistest.api.auth import create_user
+    create_user(mainmod.db, "dora", "local-password-2", role="reviewer")
+    _as_root(client)
+
+    r = client.patch("/api/users/dora", json={"role": "directory"})
+
+    assert r.status_code == 400, r.text
+    assert "local account" in r.text
+    assert _role(mainmod.db, "dora") == "reviewer"
+
+
+def test_an_administrator_cannot_hand_their_own_role_to_the_directory(
+        service, fake_directory):
+    """The same guard as "cannot remove the administrator role from yourself"."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "anna")
+    client.patch("/api/users/anna", json={"role": "admin"})    # anna pins herself
+
+    r = client.patch("/api/users/anna", json={"role": "directory"})
+
+    assert r.status_code == 400, r.text
+    assert _pinned(mainmod.db, "anna") == 1
+
+
+def test_the_last_active_administrator_is_not_demoted(
+        service, fake_directory, monkeypatch):
+    """(d) A broken role map must not leave the installation without an admin."""
+    import json
+
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "anna")
+    # Root switched off: Anna is now the only active administrator.
+    mainmod.db.execute("UPDATE user SET active=0, status='disabled' WHERE login='root'")
+
+    _leave_groups(monkeypatch, "anna", [QA])
+    r = _sign_in(client, "anna")
+
+    assert r.json()["role"] == "admin"
+    assert _role(mainmod.db, "anna") == "admin"
+    kept = _audit(mainmod.db, "auth.role_kept")
+    assert [(who, target) for who, target, _ in kept] == [("ldap", "anna")]
+    details = json.loads(kept[0][2])
+    assert details["role"] == "admin" and details["directory_role"] == "reviewer"
+    assert "last active administrator" in details["reason"]
+    assert _audit(mainmod.db, "user.role") == [], "no change was made, none recorded"
+
+    # With a second active administrator, the same sign-in does demote her.
+    mainmod.db.execute("UPDATE user SET active=1, status='active' WHERE login='root'")
+    _sign_in(client, "anna")
+    assert _role(mainmod.db, "anna") == "reviewer"
+
+
+def test_an_old_database_carries_hand_set_directory_roles_over(tmp_path):
+    """(e) Opened with this code, a database made by d048b25 keeps the decisions.
+
+    A directory account whose role an administrator set by hand (there is a
+    `user.role` row for it in the audit) comes out pinned; one without such a
+    row follows the directory; local accounts are left as they were.
+    """
+    import sqlite3
+
+    import schema_d048b25 as old
+
+    from vistest.api.db import SCHEMA_VERSION, Database
+
+    path = tmp_path / "vistest.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(old.SCHEMA)
+    conn.execute(f"PRAGMA user_version = {old.USER_VERSION}")
+    conn.executemany(
+        "INSERT INTO user(login, password, role, source) VALUES(?,?,?,?)",
+        [("root", "x", "admin", "local"),
+         ("dora", "x", "reviewer", "local"),
+         ("anna", "ldap", "viewer", "ldap"),
+         ("boris", "ldap", "reviewer", "ldap")])
+    conn.executemany(
+        "INSERT INTO audit(who, action, target, details) VALUES(?,?,?,?)",
+        [("root", "user.role", "Anna", '{"role": "viewer"}'),   # as typed in the URL
+         ("root", "user.role", "dora", '{"role": "reviewer"}'),
+         ("root", "user.disabled", "boris", None)])
+    conn.commit()
+    conn.close()
+
+    db = Database(path)
+
+    assert db.schema_version() == SCHEMA_VERSION
+    rows = {r["login"]: (r["role"], r["role_manual"]) for r in db.query(
+        "SELECT login, role, role_manual FROM user")}
+    assert rows == {"root": ("admin", 0), "dora": ("reviewer", 0),
+                    "anna": ("viewer", 1), "boris": ("reviewer", 0)}
+
+    # The backfill runs once. Handed back to the directory, Anna stays handed
+    # back after the service restarts, although the audit row is still there.
+    db.execute("UPDATE user SET role_manual=0 WHERE login='anna'")
+    Database(path)
+    assert db.one("SELECT role_manual FROM user WHERE login='anna'")["role_manual"] == 0
 
 
 def test_a_local_administrator_still_gets_in_when_the_directory_is_down(

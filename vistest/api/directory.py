@@ -32,11 +32,15 @@ working on one kind of user. The row carries `source='ldap'` and no usable
 password hash: it cannot be used to sign in locally, and the password never
 travels anywhere but to the directory itself.
 
-**The role comes from group membership, on every sign-in.** Not once at
-creation: a person moved out of the reviewers group should stop being a
-reviewer at their next sign-in, not at the next time someone remembers. The
-exception is deliberate — a role RAISED by hand in VisTest is kept, because
-otherwise «make Anna an admin here» would silently undo itself.
+**The role comes from group membership, on every sign-in, both ways.** Not
+once at creation: a person moved out of the admins group should stop being an
+administrator at their next sign-in, not at the next time someone remembers.
+Two exceptions are deliberate. A role set by hand in VisTest is pinned and a
+sign-in leaves it alone, up or down, because otherwise «make Anna an admin
+here» would silently undo itself; `PATCH /api/users/{login}` with
+`{"role": "directory"}` hands it back. And the last active administrator is
+never demoted by a sign-in — a typo in the role map must not lock everybody
+out of the screen where the typo is fixed.
 
 **We do not store the service account password in the database.** It goes in
 the environment (`VISTEST_LDAP_BIND_PASSWORD`) or in `secrets.env`. The

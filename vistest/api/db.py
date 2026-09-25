@@ -419,8 +419,15 @@ SCOPES = ("global", "project", "vistest")
 #  a new column never reaches an installation that has been running for a
 #  month — and the failure looks like «no such column» deep inside a query.
 #  The list below is applied on every open; each step must be safe to run
-#  against a database where it has already been applied.
+#  against a database where it has already been applied. The exception is a
+#  step listed in `ONCE`, which runs only on the upgrade that introduces it.
 # --------------------------------------------------------------------------- #
+ROLE_MANUAL_BACKFILL = (
+    "UPDATE user SET role_manual=1"
+    " WHERE source<>'local' AND role_manual=0"
+    "   AND EXISTS (SELECT 1 FROM audit a"
+    "                WHERE a.action='user.role' AND lower(a.target)=user.login)")
+
 MIGRATIONS: list[tuple[str, str]] = [
     ("run", "ALTER TABLE run ADD COLUMN project_key TEXT"),
     ("run", "ALTER TABLE run ADD COLUMN baseline_scope TEXT NOT NULL DEFAULT 'global'"),
@@ -482,6 +489,18 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("region", "ALTER TABLE region ADD COLUMN score REAL"),
     ("region", "ALTER TABLE region ADD COLUMN annotations TEXT NOT NULL DEFAULT '[]'"),
     ("region", "ALTER TABLE region ADD COLUMN suppressed_by TEXT"),
+    # Whether an administrator decided this person's role by hand. For an
+    # account from a directory the role otherwise follows group membership on
+    # every sign-in, in both directions; a role set here is a decision, and a
+    # sign-in does not overrule it. Local accounts ignore the column.
+    ("user", "ALTER TABLE user ADD COLUMN role_manual INTEGER NOT NULL DEFAULT 0"),
+    # Until this column existed, a role set by hand on a directory account was
+    # indistinguishable from one the directory gave. The audit remembers who
+    # set roles by hand, for as long as it keeps rows (a year by default), so
+    # those decisions are carried over; older ones are not found this way,
+    # which is why the changelog asks for a look at directory roles after the
+    # upgrade. Runs once — see `ONCE`.
+    ("user", ROLE_MANUAL_BACKFILL),
 ]
 
 
@@ -497,6 +516,13 @@ MIGRATIONS: list[tuple[str, str]] = [
 #  ровно тем, что заметно это станет через неделю и по совершенно другим
 #  симптомам.
 SCHEMA_VERSION = len(MIGRATIONS)
+
+#  Steps that change data rather than shape, and must run only on the upgrade
+#  that introduces them. Every other step is replayed on each open and is safe
+#  to replay; these are not. The role backfill replayed at every restart would
+#  pin again a role an administrator has since handed back to the directory,
+#  because the audit row that pinned it the first time is still there.
+ONCE: frozenset[str] = frozenset({ROLE_MANUAL_BACKFILL})
 
 
 def _score(value) -> float | None:
@@ -569,8 +595,10 @@ class Database:
 
             existing = {r[0] for r in c.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
-            for table, statement in MIGRATIONS:
+            for number, (table, statement) in enumerate(MIGRATIONS, start=1):
                 if table not in existing:
+                    continue
+                if statement in ONCE and number <= found:
                     continue
                 try:
                     c.execute(statement)
