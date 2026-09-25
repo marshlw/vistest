@@ -60,6 +60,80 @@ class ConfigError(ValueError):
 
 
 # --------------------------------------------------------------------------- #
+#  Measured gaps
+#
+#  A threshold that separates two populations is only as good as the room
+#  between them. `Gap` keeps the number together with that room: the worst
+#  case on each side, where each was seen, on what and when. The same shape as
+#  `Floor` in tests/corpus.py, for the same reason — a number on its own is a
+#  number somebody chose; with the measurement beside it, whoever wants to move
+#  it can see how far it can go before it lands on one side.
+#
+#  `tests/test_margins.py` replays the measurement on the frozen corpus and
+#  fails, naming the gap, when either side crosses the threshold.
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class Gap:
+    """A threshold between two measured populations, and the measurement."""
+
+    value: float
+    noise: float            # the worst case on the side that must stay below/out
+    noise_at: str           # where it was seen
+    signal: float           # the worst case on the side that must get through
+    signal_at: str
+    sample: str
+    measured: str           # ISO date
+
+    @property
+    def ratio(self) -> float:
+        lo, hi = sorted((self.noise, self.signal))
+        return hi / lo if lo else float("inf")
+
+
+#: What both gaps below were measured on. The component is a connected region
+#: (8-connectivity) of ΔE00 > delta_e_threshold, on the ΔE map the consensus
+#: sees — after global alignment. Every component of every pair, not only the
+#: largest: the rule acts on each one.
+FLAT_RECOLOUR_SAMPLE = (
+    "178 pairs, 158 of them with any ΔE00 > 2.3, 903 154 components: frozen "
+    "corpus 54 (opencv-4.14 and opencv-5.0 rasters) + "
+    "tests/corpus.generate(layout_count=6), 124, 6 layouts; preset balanced "
+    "(delta_e_threshold 2.3); "
+    "opencv-python-headless 4.14.0.94, numpy 2.4, x86-64")
+
+#: Area of the component, % of the frame. Percent, not pixels: a fixed pixel
+#: count means a different thing on a screenshot of another size.
+#: Largest noise component that is as uniform as the rule asks (σ/μ <= 0.09):
+#: 0.309 % (layout2/scrollbar, a 8x341 bar that appeared). Smallest header
+#: recolour: 5.217 % (layout5/header color). 16.9x apart; the geometric middle
+#: is 1.27 %, rounded down to 1.25.
+FLAT_RECOLOUR_AREA = Gap(
+    value=1.25,
+    noise=0.309, noise_at="generator layout2/scrollbar (and layout4)",
+    signal=5.217, signal_at="generator layout5/header color",
+    sample=FLAT_RECOLOUR_SAMPLE, measured="2026-09-25")
+
+#: Coefficient of variation of ΔE00 inside the component (σ/μ).
+#: Largest among header recolours: 0.049 (layout5/header color). Smallest among
+#: noise components at least as large as the area threshold: 0.178
+#: (layout0/gradient dither, 2.7 % of the frame). 3.6x apart; the geometric
+#: middle is 0.093, rounded down to 0.09.
+#:
+#: The two thresholds are not equally backed. Below the area threshold the
+#: noise rules of core/explain.py still stand: with the area lowered to 0.05 %
+#: the rule fires on JPEG, combined and scroll-bar pairs and every one of them
+#: is still explained and passes. Above this one nothing stands: loosened to
+#: σ/μ 0.25 the re-dithered gradient (layout0) is taken past consensus and
+#: fails — no rule explains a dither. This number is the only thing between
+#: that pair and a false failure.
+FLAT_RECOLOUR_CV = Gap(
+    value=0.09,
+    noise=0.178, noise_at="generator layout0/gradient dither",
+    signal=0.049, signal_at="generator layout5/header color",
+    sample=FLAT_RECOLOUR_SAMPLE, measured="2026-09-25")
+
+
+# --------------------------------------------------------------------------- #
 #  Comparison thresholds
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -72,6 +146,12 @@ class DiffConfig:
     # structure have diverged. Consensus instead of OR.
     ssim_threshold: float = 0.90
     require_consensus: bool = True
+    # Large flat recolour: the third way past consensus, next to strong colour.
+    # See core/recolour.py for why it exists and what it cannot see, and
+    # FLAT_RECOLOUR_AREA / FLAT_RECOLOUR_CV above for where the numbers come from.
+    flat_recolour: bool = True
+    flat_recolour_min_area_pct: float = FLAT_RECOLOUR_AREA.value
+    flat_recolour_max_cv: float = FLAT_RECOLOUR_CV.value
 
     # --- alignment ---
     align_enabled: bool = True

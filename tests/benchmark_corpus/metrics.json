@@ -377,11 +377,11 @@
       ]
     },
     "header color": {
-      "verdict": "pass",
-      "regions": 0,
-      "severity": 0.0,
-      "changed_area_pct": 0.166667,
-      "de_mean": 6.700346,
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 84.363731,
+      "changed_area_pct": 4.928704,
+      "de_mean": 6.700345,
       "ssim": 0.998813,
       "suppressed": []
     },
@@ -723,10 +723,10 @@
       ]
     },
     "header color, thin glyphs": {
-      "verdict": "pass",
-      "regions": 0,
-      "severity": 0.0,
-      "changed_area_pct": 0.166667,
+      "verdict": "fail",
+      "regions": 1,
+      "severity": 84.391885,
+      "changed_area_pct": 4.982407,
       "de_mean": 6.700346,
       "ssim": 0.998817,
       "suppressed": []

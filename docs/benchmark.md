@@ -1,6 +1,6 @@
 # Бенчмарк движка сравнения
 
-Сгенерировано `python tests/benchmark.py --compare --native docs/benchmark_native.json --no-timing --markdown` 2026-09-17, OpenCV 4.14.0, numpy 2.5.3, Python 3.13.13, Linux x86_64, preset `balanced`.
+Сгенерировано `python tests/benchmark.py --compare --native docs/benchmark_native.json --no-timing --markdown` 2026-09-25, OpenCV 4.14.0, numpy 2.4.6, Python 3.11.15, Linux x86_64, preset `balanced`.
 
 The corpus is synthetic and frozen in the repository as PNG files (`tests/benchmark_corpus/`); it is not drawn at run time, so the installed OpenCV does not change what is measured — and neither does the engine. Every stage that moves a picture by a fraction of a pixel goes through `core/warp.py`, which is numpy and not `cv2.warpAffine`, so the detailed table is identical under opencv-python-headless 4.14.0.94 and 5.0.0.93: not the verdicts alone, but every metric of all 54 pairs. Figures published before the freeze were tied to the OpenCV version of whoever ran them and are not comparable with these — see CHANGELOG.
 
@@ -12,7 +12,7 @@ Every tool runs with the settings a user gets after installing it and changing n
 
 | Инструмент | Ложные падения | Пропущенные регрессы | Верно | мс |
 |---|---|---|---|---|
-| VisTest (balanced) | 0/32 (0%) | 2/22 (9%) | 52/54 | — |
+| VisTest (balanced) | 0/32 (0%) | 0/22 (0%) | 54/54 | — |
 | absdiff (самопис) | 30/32 (94%) | 0/22 (0%) | 24/54 | — |
 | pixelmatch 7.2.0 | 18/32 (56%) | 2/22 (9%) | 34/54 | — |
 | Playwright 1.63.0 toHaveScreenshot() | 14/32 (44%) | 2/22 (9%) | 38/54 | — |
@@ -21,7 +21,7 @@ By corpus raster (correct · false failures · misses):
 
 | Tool | `opencv-4.14` | `opencv-5.0` |
 |---|---|---|
-| VisTest (balanced) | 26/27 · 0/16 · 1/11 | 26/27 · 0/16 · 1/11 |
+| VisTest (balanced) | 27/27 · 0/16 · 0/11 | 27/27 · 0/16 · 0/11 |
 | absdiff (самопис) | 12/27 · 15/16 · 0/11 | 12/27 · 15/16 · 0/11 |
 | pixelmatch 7.2.0 | 17/27 · 9/16 · 1/11 | 17/27 · 9/16 · 1/11 |
 | Playwright 1.63.0 toHaveScreenshot() | 19/27 · 7/16 · 1/11 | 19/27 · 7/16 · 1/11 |
@@ -41,7 +41,7 @@ By corpus raster (correct · false failures · misses):
 **VisTest (balanced)**
 
 - пресет `balanced` — значение по умолчанию, `vistest.yaml` не читается
-- `DiffConfig`: `delta_e_threshold=2.3`, `ssim_threshold=0.9`, `require_consensus=True`, `align_enabled=True`, `max_align_shift_px=8.0`, `antialias_filter=True`, `aa_tolerance=0.1`, `morph_open_px=2`, `morph_close_px=6`, `min_region_px=24`, `min_region_fill=0.06`, `max_regions=200`, `explain_noise=True`, `detect_moved=True`, `move_search_px=64`, `move_match_threshold=0.93`, `fail_severity=25.0`, `max_changed_area_pct=0.15`, `area_requires_region=True`, `area_hard_fail_pct=5.0`, `above_fold_px=900`, `above_fold_weight=1.5`, `ignore_kinds=('noise', 'antialias')`, `moved_severity_scale=0.35`, `size_tolerance_px=0`, `fail_on_size_change=True`, `max_pixels=80000000`
+- `DiffConfig`: `delta_e_threshold=2.3`, `ssim_threshold=0.9`, `require_consensus=True`, `flat_recolour=True`, `flat_recolour_min_area_pct=1.25`, `flat_recolour_max_cv=0.09`, `align_enabled=True`, `max_align_shift_px=8.0`, `antialias_filter=True`, `aa_tolerance=0.1`, `morph_open_px=2`, `morph_close_px=6`, `min_region_px=24`, `min_region_fill=0.06`, `max_regions=200`, `explain_noise=True`, `detect_moved=True`, `move_search_px=64`, `move_match_threshold=0.93`, `fail_severity=25.0`, `max_changed_area_pct=0.15`, `area_requires_region=True`, `area_hard_fail_pct=5.0`, `above_fold_px=900`, `above_fold_weight=1.5`, `ignore_kinds=('noise', 'antialias')`, `moved_severity_scale=0.35`, `size_tolerance_px=0`, `fail_on_size_change=True`, `max_pixels=80000000`
 - `AIPipeline(AIConfig())` — как у `CheckService`: `gate_enabled=False`, `perceptual_enabled=False`, `attribution_enabled=True` (атрибуция ищет селектор по DOM и на вердикт не влияет)
 - политика: падение, если есть регион с `severity ≥ fail_severity`, или изменённая площадь выше порога, или изменился размер
 
@@ -72,8 +72,8 @@ By corpus raster (correct · false failures · misses):
 
 | Что | Версия |
 |---|---|
-| Python | 3.13.13 |
-| numpy | 2.5.3 |
+| Python | 3.11.15 |
+| numpy | 2.4.6 |
 | opencv-python-headless | 4.14.0.94 |
 | pillow | 12.3.0 |
 | PyYAML | 6.0.3 |
@@ -222,7 +222,7 @@ python tests/benchmark.py --compare --native docs/benchmark_native.json \
 | `price changed` | падение | падение | падение | падение | падение |
 | `button shrunk` | падение | падение | падение | падение | падение |
 | `text overflow` | падение | падение | падение | падение | падение |
-| `header color` | падение | проход ❌ | падение | проход ❌ | проход ❌ |
+| `header color` | падение | падение | падение | проход ❌ | проход ❌ |
 | `promo text` | падение | падение | падение | падение | падение |
 | `identical, thin glyphs` | проход | проход | проход | проход | проход |
 | `sensor noise σ=1.6, thin glyphs` | проход | проход | падение ❌ | проход | проход |
@@ -249,5 +249,5 @@ python tests/benchmark.py --compare --native docs/benchmark_native.json \
 | `price changed, thin glyphs` | падение | падение | падение | падение | падение |
 | `button shrunk, thin glyphs` | падение | падение | падение | падение | падение |
 | `text overflow, thin glyphs` | падение | падение | падение | падение | падение |
-| `header color, thin glyphs` | падение | проход ❌ | падение | проход ❌ | проход ❌ |
+| `header color, thin glyphs` | падение | падение | падение | проход ❌ | проход ❌ |
 | `promo text, thin glyphs` | падение | падение | падение | падение | падение |

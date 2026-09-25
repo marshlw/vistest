@@ -75,6 +75,7 @@ import numpy as np
 from ..models import ChangeKind, DiffRegion
 from . import refit as _refit
 from . import warp as _warp
+from .settings import Gap
 
 try:
     import cv2
@@ -253,6 +254,18 @@ AA_COVER = 0.50
 #: for the whole group: those pixels are not "a blend of two edges", whatever
 #: each of them looks like on its own.
 AA_KEEP_ABOVE = 0.30
+#: The room around AA_KEEP_ABOVE, as the paragraph above states it, in the
+#: shape `tests/test_margins.py` replays: sub-pixel rendering residue leaves at
+#: most 15 % of a group unexplained, a changed glyph at least 57 %.
+#: Replayed on the frozen corpus on 2026-09-25: residue at most 5.3 %
+#: (`combined`), a changed glyph at least 67.2 % (`price changed, thin glyphs`).
+AA_KEEP_ABOVE_GAP = Gap(
+    value=AA_KEEP_ABOVE,
+    noise=0.15, noise_at="sub-pixel rendering residue, generator",
+    signal=0.57, signal_at="a changed glyph, generator",
+    sample="tests/corpus.generate(6), families split in two, OpenCV 4.14 and 5.0",
+    measured="when AA_KEEP_ABOVE was fitted (CHANGELOG: \"The anti-aliasing "
+             "filter answers for itself\"); replayed 2026-09-25")
 #: Grayscale tolerance of the re-drawing, levels of L*·2.55.
 AA_TOLERANCE = 12.0
 #: Groups smaller than this are thinned, never asked: they cannot become a

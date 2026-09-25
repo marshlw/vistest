@@ -553,7 +553,7 @@ x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
 
 | Tool | Correct | False failures | Missed regressions |
 |---|---|---|---|
-| VisTest (balanced) | **52/54** (26/27 per raster) | 0/32 | 2/22 |
+| VisTest (balanced) | **54/54** (27/27 per raster) | 0/32 | 0/22 |
 | absdiff | 24/54 | 30/32 | 0/22 |
 | pixelmatch 7.2.0 | 34/54 | 18/32 | 2/22 |
 | Playwright 1.63.0 `toHaveScreenshot()` | 38/54 | 14/32 | 2/22 |
@@ -575,7 +575,9 @@ Every tool runs with its defaults, nothing set:
 Every value, the versions and the per-case table: `docs/benchmark.md`.
 
 54 pairs = the same 27 cases on two text rasters, OpenCV 4.x and OpenCV 5
-(`, thin glyphs`); VisTest misses `header color` on both. The corpus lives in
+(`, thin glyphs`). The VisTest row was re-measured on 2026-09-25 (numpy 2.4.6,
+Python 3.11) after the large-flat-recolour rule: `header color`, missed on
+both rasters before it, is found on both. The corpus lives in
 `tests/benchmark_corpus/` and is not redrawn at run time. Figures published
 before the freeze depended on the installed OpenCV and are not comparable with
 these (see CHANGELOG). The engine is not fully version-independent: on the

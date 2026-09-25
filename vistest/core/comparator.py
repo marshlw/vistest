@@ -20,6 +20,7 @@ from . import antialias as _aa
 from . import classify as _cls
 from . import color as _color
 from . import explain as _explain
+from . import recolour as _recolour
 from . import segment as _seg
 from . import structure as _struct
 from . import warp as _warp
@@ -124,6 +125,21 @@ def compare(
         # a background color change would go unnoticed.
         strong_color = de_map > (cfg.delta_e_threshold * 4.0)
         candidate = (color_hit & struct_hit) | strong_color
+        # Second exception, for a moderate difference that is uniform over a
+        # large area: SSIM is blind to a flat recolour by construction, not by
+        # chance. Next to strong colour, not instead of it — see core/recolour.py.
+        if cfg.flat_recolour:
+            flat, n_flat = _recolour.large_flat_recolour(
+                de_map, color_hit,
+                min_area_pct=cfg.flat_recolour_min_area_pct,
+                max_cv=cfg.flat_recolour_max_cv)
+            if n_flat:
+                candidate |= flat
+                res.notes.append(
+                    f"Large flat recolour: {n_flat} area(s) of uniform ΔE00 "
+                    f"(σ/μ ≤ {cfg.flat_recolour_max_cv:g}, ≥ "
+                    f"{cfg.flat_recolour_min_area_pct:g}% of the frame) taken "
+                    "past consensus — SSIM does not see a uniform shift of colour.")
     else:
         candidate = color_hit | struct_hit
 
