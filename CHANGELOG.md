@@ -68,6 +68,14 @@
   a comparison** (`structure.ssim_map` 18 ms -> 99 ms per page, x5.5) against a
   budget of 10% for this line of work. Whoever revisits it need not measure
   again.
+- **`docs/benchmark.md` now states what the file actually promises, and the
+  paragraph is generated** from `corpus.METRICS_TOLERANCE` rather than typed,
+  so it cannot outlive the numbers it describes. Two claims were cut down to
+  what is measured: "zero tolerance" became strict on verdicts, region counts
+  and the rule named in a suppression — the sentence without its digits, which
+  is the part that reproduces — and the published tolerances are now said to
+  be measured on x86-64 and nowhere else, with the same point repeated under
+  «Что эта таблица не доказывает».
 
 ### The engine is deterministic across OpenCV majors, and a test says so
 
