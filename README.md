@@ -653,9 +653,18 @@ Three things worth knowing before you turn it on:
   login does not open a local account: that sign-in is refused and audited, and
   no sign-in switches an account on or changes where it comes from.
 - **People appear on first sign-in.** No import, no sync job. The role is
-  recalculated from group membership at every sign-in, so leaving a group takes
-  effect immediately — except a role you raised by hand in VisTest, which is
-  kept.
+  recalculated from group membership at every sign-in, up or down, so leaving
+  a group takes effect at the next sign-in. The directory is asked only when
+  someone signs in; nothing polls it in between. Once it has answered, the new
+  role applies to that person's open sessions as well.
+- **A role you set by hand is pinned.** Changing a directory account's role in
+  **Settings → Team** (or `PATCH /api/users/{login}` with `{"role": …}`) keeps
+  that role across sign-ins, whatever the groups say. To hand it back to the
+  directory, send `{"role": "directory"}` to the same endpoint: the role is
+  recalculated at that person's next sign-in. The one role a sign-in never
+  takes away is that of the last active administrator — a mistake in the
+  group mapping must not lock everybody out of the screen where it is fixed;
+  the audit records it as `auth.role_kept`.
 - **A directory account cannot be opened with a local password**, so disabling
   someone in the directory really does mean they cannot sign in.
 

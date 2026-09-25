@@ -175,11 +175,12 @@ class RegionContext:
 class AuthResult:
     """A person the provider recognised.
 
-    ``role`` is a suggestion: the core accepts only ``viewer``, ``reviewer``
-    and ``admin``, falls back to ``viewer`` for anything else, and never lowers
-    a role raised by hand inside VisTest. ``source`` is stored with the account
-    and must not be ``local`` — an account that came from outside cannot be
-    opened with a local password.
+    ``role`` is what the account's role becomes at this sign-in, up or down:
+    the core accepts only ``viewer``, ``reviewer`` and ``admin`` and falls back
+    to ``viewer`` for anything else. It does not move a role set by hand inside
+    VisTest, and does not demote the last active administrator. ``source`` is
+    stored with the account and must not be ``local`` — an account that came
+    from outside cannot be opened with a local password.
     """
 
     login: str
