@@ -50,6 +50,20 @@ interface becomes one. Inside a perimeter that is fine. On an open network it
 is not — set `VISTEST_SETUP_TOKEN` before starting the service, and the setup
 form will ask for it.
 
+**An external identity never takes over a local account.** With directory
+sign-in (LDAP/AD, or any `AuthProvider`) on, two accounts can share a login: the
+one created here and the one the directory knows. They stay two. A local
+account (`source = local`) is opened by its local password only: when that
+password fails, the directory is not asked — a password typed for a local
+account does not travel to another system — the attempt is recorded as
+`auth.external_refused`, and the row is left as it was. No sign-in, from any
+source, writes an account's `source`, `active` or `status`: those change only
+when an administrator changes them. So an account switched off here stays off
+whatever the directory answers, and whoever controls an entry called `admin` in
+the directory is not the administrator of this installation. The reverse holds
+too: an account that came from the directory cannot be opened with a local
+password.
+
 ## What VisTest does
 
 - Passwords: PBKDF2-HMAC-SHA256, 480 000 iterations, per-password salt, the

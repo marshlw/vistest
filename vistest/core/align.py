@@ -197,25 +197,6 @@ def find_shift_candidates(
     return peaks
 
 
-def find_local_shift(
-    gray_exp: np.ndarray,
-    gray_act: np.ndarray,
-    bbox: tuple[int, int, int, int],
-    *,
-    search_px: int = 64,
-) -> tuple[int, int, float]:
-    """Find the region's content within the search window in actual.
-
-    Answers: "Did this block change or just move?".
-    Returns (dx, dy, ncc) of the best match. ncc close to 1 → this is MOVED,
-    not CONTENT — unless `find_shift_candidates` finds a second match as good,
-    which is what the classifier checks.
-    """
-    peaks = find_shift_candidates(gray_exp, gray_act, bbox,
-                                  search_px=search_px, margin=0.0)
-    return peaks[0] if peaks else (0, 0, 0.0)
-
-
 def match_at(
     gray_exp: np.ndarray,
     gray_act: np.ndarray,

@@ -8,10 +8,13 @@
 
 """Moving a picture by a fraction of a pixel — the one door in the engine.
 
-Two stages translate a picture: `align` compensates a global shift before the
-comparison, `refit` re-draws the baseline while deciding whether a difference
-is a rasteriser or a regression. Both used to call `cv2.warpAffine` for it, and
-both were wrong in the same way.
+Three places translate a picture: `align` compensates a global shift before
+the comparison, `refit` re-draws the baseline while deciding whether a
+difference is a rasteriser or a regression, and the `rerender` rule in
+`explain` searches for the shift that reproduces a region. All three used to
+call `cv2.warpAffine` for it. The first two were wrong because of it; the third
+was right only because its quarter-pixel steps happen to lie on the grid
+described below, which is luck rather than a guarantee.
 
 `cv2.warpAffine` with `INTER_LINEAR` interpolates in fixed point on OpenCV 4.x
 — `INTER_BITS` is 5 — so it rounds the translation to a 1/32 px grid before a
@@ -28,7 +31,7 @@ and the second is the expensive one:
   for calling something noise, and an explanation that is wrong in the last
   digit it prints is worse than none.
 
-So the arithmetic is written out here, once, for both stages: the same bilinear
+So the arithmetic is written out here, once, for all of them: the same bilinear
 interpolation and the same edge replication OpenCV did, in numpy, identical on
 every version of every library. `shift_grid()` measures what the backend
 actually applies and `applied_shift()` snaps a request to it before anything is

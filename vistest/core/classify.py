@@ -257,12 +257,3 @@ def _severity(
     raw = size_term * intensity * kind_weight * pos_weight
     return float(np.clip(100.0 * (1.0 - np.exp(-raw / _SATURATION_TAU)),
                          0.0, 100.0))
-
-
-def recompute_severity(r: DiffRegion, total_pixels: int, cfg) -> float:
-    weight = (moved_weight(r, cfg.moved_severity_scale)
-              if r.kind is ChangeKind.MOVED
-              else KIND_WEIGHT.get(r.kind, 1.0))
-    r.severity = _severity(r, total_pixels, weight,
-                           cfg.above_fold_px, cfg.above_fold_weight)
-    return r.severity

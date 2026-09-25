@@ -6,7 +6,7 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 12618 lines in 218 files.
+# 12612 lines in 218 files.
 
 52	.github/workflows/ci.yml
 57	.gitlab-ci.example.yml
@@ -63,7 +63,7 @@
 79	frontend/js/team.js
 60	frontend/js/tip.js
 296	frontend/ui.css
-11	pyproject.toml
+5	pyproject.toml
 8	run.ps1
 34	run.py
 5	run.sh

@@ -5,6 +5,68 @@
 
 ## [Unreleased]
 
+### Pre-publication hygiene (review of 25.09)
+
+What the plan counted as done and the code did not, and what stood between
+the repository and publication outside the engine. The engine's answers do
+not move: `benchmark.py --no-timing` is byte-identical before and after, and
+`metrics.json` re-records with no diff.
+
+- **The `rerender` rule draws its shifts through `core/warp.py`.**
+  `explain._search` was the last direct caller of `cv2.warpAffine`, past the
+  door `align` and `refit` go through. Its quarter-pixel steps lie on OpenCV
+  4.x's 1/32 px grid, so nothing it printed was wrong — by luck.
+  `test_warp.py::test_both_paths_go_through_the_same_door` now spies on all
+  three stages.
+- **`vistest baselines export|import` is core.** The command called the
+  archive through the plugin registry and answered «not available in this
+  installation» with plugins off. It now calls `vistest.transfer` directly and
+  works with `VISTEST_DISABLE_PLUGINS=1` in all three modes; `vistest.transfer`
+  left the extension list in `tests/test_plugin_boundary.py`. What stays
+  behind `BaselineSyncBackend` is orchestration between running
+  installations — for now the server's `/api/baselines/export|import` routes.
+  `test_degradation.py::test_baselines_travel_with_every_plugin_switched_off`
+  drives export → dry run → import through the command line for `new`,
+  `update` and `replace`.
+- **A directory sign-in no longer takes over a local account.** `_try_external`
+  found the row by login and wrote `source`, `active=1` and `status='active'`
+  into it: a directory entry called `admin` became the local administrator,
+  and an account switched off here came back on at the next directory sign-in.
+  Now a local row under that login is a refusal, audited as
+  `auth.external_refused`, with no `UPDATE` — and the provider is not asked,
+  so a password typed for a local account never reaches the directory; an
+  external row switched off here
+  is refused the same way; and no sign-in writes `source`, `active` or
+  `status`. The invariant is in `SECURITY.md`; four tests in
+  `tests/api/test_directory.py` hold it.
+- **The wheel carries the review UI.** `frontend/` lives outside the package,
+  so a wheel had none and `pip install "vistest[server]" && vistest serve`
+  answered 404 on `/ui/`. A build step in the new `setup.py` (the rest of the
+  metadata stays in `pyproject.toml`) copies it into the wheel as
+  `vistest/frontend`, where `_find_frontend` looks first; editable installs are
+  left alone. `docker/Dockerfile.api`, the non-editable image, now copies
+  `setup.py` too. `tests/test_wheel_ui.py` builds the wheel from a copy of the
+  sources, installs it with `[server]` into a fresh venv, starts `vistest
+  serve` from an empty directory and asks for `/ui/`; marked `packaging`.
+- **`CaptureConfig.timezone` and `.locale` default to `None`**: the browser
+  keeps its own. `Europe/Moscow` and `ru-RU` were this repository's choice
+  shipped as everyone's default; they stay only in this repository's
+  `vistest.yaml`. Pin them in your project's `vistest.yaml` for baselines
+  that travel between machines.
+- **The `browser` and `full` extras ask for `playwright>=1.47,<2`**, not
+  `==1.47.0`: an exact pin refused every Playwright but ours in somebody
+  else's environment. The pin reproducible pictures need lives with the image:
+  `docker/Dockerfile.full` and `docker/Dockerfile.runner` take
+  `PLAYWRIGHT_VERSION` once and use it for both the base image tag and
+  `pip install "playwright==…"`.
+- **Dead code out of the core**: `color.delta_e_76`, `antialias.text_shift_mask`,
+  `structure.gradient_similarity` (and `gradient_magnitude`, used only by it),
+  `align.find_local_shift`, `classify.recompute_severity`. Nothing called
+  them. `delta_e_76` also carried a false docstring: ΔE76 is not an upper bound
+  of ΔE00 — on close pairs ΔE00 comes out larger in a fraction of a percent to
+  about 1.4 % of cases depending on the sample, by up to ~1.45×, so a
+  pre-filter built on it would have dropped real differences.
+
 ### A flat recolour is found: the last miss of the frozen corpus
 
 - **`header color` was missed on both rasters**, and not by segmentation.

@@ -21,6 +21,8 @@ what the backend applies, and `applied_shift()`, which puts a request on that
 grid before anything is drawn. The tests below stand a rounding backend in for
 the real one and check that both stages report a grid point — because a net
 over one path and not the other is the failure mode that produced this file.
+The `rerender` rule in `core/explain.py` draws shifts too, on the grid of
+`applied_shift`; the wiring test at the end holds it to the same door.
 """
 
 from __future__ import annotations
@@ -28,7 +30,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from vistest.core import align, refit, warp
+from vistest.core import align, explain, refit, warp
+from vistest.models import DiffRegion
 
 GRID = 1.0 / 32.0
 
@@ -162,12 +165,14 @@ def test_align_reports_a_shift_the_backend_can_draw(rounding_backend):
 
 
 def test_both_paths_go_through_the_same_door():
-    """One stand-in reaches both stages: that is what makes the net one net.
+    """One stand-in reaches every stage: that is what makes the net one net.
 
     Not an assertion about the numbers — the two tests above cover those — but
     about the wiring. A stage that kept its own `cv2.warpAffine` would sail
     past `shift_grid` and `applied_shift` without either of them noticing, and
-    that is exactly how `core/align.py` stayed wrong for months.
+    that is exactly how `core/align.py` stayed wrong for months — and how the
+    `rerender` rule in `core/explain.py` kept a private copy after both of the
+    others had been moved over.
     """
     calls = []
     exact = warp.shift
@@ -180,12 +185,27 @@ def test_both_paths_go_through_the_same_door():
     shifted = warp.to_uint8(_moved(base, 0.7, 0.4))
     ref = _blocks()
     act = _moved(ref, 0.3, -0.2)
+    #  The `rerender` rule: a page re-drawn a quarter pixel off, one region
+    #  over what changed. Its search tries shifts until one explains the
+    #  region, and every shift other than zero has to be drawn by `warp.shift`.
+    page = _page()
+    redrawn = warp.to_uint8(_moved(page, 0.25, -0.25))
+    raw = np.abs(page.astype(np.int16) - redrawn).max(axis=2) > 12
+    ys, xs = np.nonzero(raw)
+    box = DiffRegion(x=int(xs.min()), y=int(ys.min()),
+                     w=int(xs.max() - xs.min() + 1), h=int(ys.max() - ys.min() + 1),
+                     pixel_count=int(raw.sum()))
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(warp, "shift", spy)
         align.align_images(base, shifted, base[:, :, 0].copy(), shifted[:, :, 0].copy())
         after_align = len(calls)
         refit.fit(ref, act, _changed(ref, act), 12.0)
+        after_refit = len(calls)
+        explain.explain_regions([box], expected=page, actual=redrawn, raw_mask=raw,
+                                aligned=False, size_changed=False)
 
     assert after_align, "align did not go through warp.shift"
-    assert len(calls) > after_align, "refit did not go through warp.shift"
+    assert after_refit > after_align, "refit did not go through warp.shift"
+    assert len(calls) > after_refit, "explain's rerender did not go through warp.shift"
+    assert all((dx, dy) != (0.0, 0.0) for dx, dy in calls[after_refit:])

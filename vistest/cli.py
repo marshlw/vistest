@@ -446,20 +446,19 @@ def _baselines_root() -> Path:
 
 
 def _baselines_transfer(args) -> int:
-    from .plugins.api import BaselineSelection
-    from .plugins.loader import active_registry
+    """`vistest baselines export|import` — the archive, in the core.
 
-    backend = active_registry().sync_backend()
-    if backend is None:
-        print("Moving baselines between installations is not available in "
-              "this installation.", file=sys.stderr)
-        return 2
-    sync = backend.impl
-    export, inspect = sync.export, sync.inspect
-    plan, import_ = sync.plan, sync.apply
+    Straight to `vistest.transfer`, not through the plugin registry: packing a
+    set of baselines and merging one in is what a project needs to leave the
+    library mode or hand its set over, and it works with every plugin switched
+    off. What an extension may add on top is orchestration between running
+    installations; that is `BaselineSyncBackend`, and this command does not
+    need one.
+    """
+    from .transfer import Selection, export, import_, inspect, plan
 
-    selection = BaselineSelection(project=args.project, platform=args.platform,
-                                  names=tuple(args.names))
+    selection = Selection(project=args.project, platform=args.platform,
+                          names=tuple(args.names))
     root = Path(args.baselines) if getattr(args, "baselines", "") \
         else _baselines_root()
 

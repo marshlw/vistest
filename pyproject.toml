@@ -54,12 +54,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# playwright прибит ровно к версии браузера в Docker-образе
-# (mcr.microsoft.com/playwright/python:v1.47.0-jammy). Если поставить новее —
-# pip-пакет ждёт браузер /ms-playwright/chromium-<новее>, которого в образе нет,
-# и запуск падает: "Executable doesn't exist ... Please update docker image".
-# Меняете версию — меняйте её ОДНОВРЕМЕННО здесь, в full и в BASE_IMAGE образов.
-browser = ["playwright==1.47.0", "pytest>=7.4"]
+# A range, not a pin. This extra goes into other people's environments, next
+# to a Playwright they may already have, and an exact pin would refuse every
+# version but ours. The pin that matters for reproducible pictures — the
+# browser build, the fonts, the image — lives with the image: the Dockerfiles
+# (docker/Dockerfile.full, docker/Dockerfile.runner) take PLAYWRIGHT_VERSION
+# once and use it for both the base image tag and the pip package, so the two
+# cannot drift apart.
+browser = ["playwright>=1.47,<2", "pytest>=7.4"]
 # The server: the review interface, the API, the database. Renamed from
 # `service` in 0.2 — one word for one thing, and the library mode made the
 # distinction worth being exact about. `pip install "vistest[service]"` no
@@ -74,7 +76,7 @@ report  = ["allure-pytest>=2.13"]
 dev     = ["pytest>=7.4", "pytest-cov", "pytest-xdist>=3.5", "ruff",
            "httpx>=0.27", "tomli>=2.0; python_version<'3.11'"]
 full    = [
-    "playwright==1.47.0", "pytest>=7.4",   # см. комментарий у browser: версия = версии образа
+    "playwright>=1.47,<2", "pytest>=7.4",   # a range: see `browser` above
     "fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
     "requests>=2.31", "pyyaml>=6.0",
     "onnxruntime>=1.17", "allure-pytest>=2.13",
@@ -111,6 +113,7 @@ vistest = ["ai/*.json"]
 testpaths = ["tests"]
 markers = ["visual: visual checks",
            "e2e: run of our own interface in a browser",
+           "packaging: builds the wheel and installs it into a fresh environment",
            # Registered here so the mark is known even without pytest-xdist
            # installed. It groups the jsdom screen checks onto one worker
            # under `--dist loadgroup`: they contend for the disk, not the CPU.

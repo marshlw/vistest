@@ -56,7 +56,7 @@ re-captured.
 ## Requirements
 
 - Python 3.10+
-- For browser capture: Playwright 1.47 and its Chromium build (installed by `setup`)
+- For browser capture: Playwright 1.47 or newer 1.x and its Chromium build (installed by `setup`)
 - Optional: Docker, for reproducible cross-machine baselines
 
 The comparison core itself needs only `numpy`, `opencv-python-headless` and
@@ -647,9 +647,11 @@ work» is not something anyone can act on.
 
 Three things worth knowing before you turn it on:
 
-- **Local accounts keep working.** The directory is asked second. If it is
-  unreachable, an administrator with a local password still gets in and can
-  turn the integration off.
+- **Local accounts keep working, and stay local.** The directory is asked
+  second. If it is unreachable, an administrator with a local password still
+  gets in and can turn the integration off. A directory entry with the same
+  login does not open a local account: that sign-in is refused and audited, and
+  no sign-in switches an account on or changes where it comes from.
 - **People appear on first sign-in.** No import, no sync job. The role is
   recalculated from group membership at every sign-in, so leaving a group takes
   effect immediately — except a role you raised by hand in VisTest, which is
@@ -680,8 +682,10 @@ answers: `new` keeps what is here and takes only what is missing (the default);
 one stays in the history and can be rolled back to from the interface;
 `replace` lets the incoming set win, history included.
 
-The same thing is available over the API (`GET /api/baselines/export`,
-`POST /api/baselines/import`) for a reviewer.
+The command line works in every installation, plugins or not: the archive is
+part of the core. Over the API (`GET /api/baselines/export`,
+`POST /api/baselines/import`, for a reviewer) the same thing is served by the
+server's sync extension, and those routes exist only while it is active.
 
 Approval history does not travel. A signature under «I looked at this and it is
 correct» belongs to the person who gave it, in the installation where they gave
