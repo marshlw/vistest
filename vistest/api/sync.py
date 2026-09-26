@@ -8,10 +8,18 @@
 
 """Moving baselines between installations, over HTTP.
 
-The routes exist only when a `BaselineSyncBackend` is active — `main` mounts
-this router conditionally. Without one there is nothing to answer, and the
-paths are simply unknown to the server, the same as any path that was never
-there. The interface reads `/api/capabilities` and does not offer the action.
+The archive is core, and so are these two routes: `main` mounts them in
+every installation, next to the baselines router and outside the plugin
+wiring, so a plugin that fails cannot take them away. They do what
+`vistest baselines export|import` does on the command line, through
+`vistest.transfer.ArchiveSyncBackend`.
+
+A plugin that registers a `BaselineSyncBackend` replaces that default here —
+that slot is how something beyond the archive plugs in. Orchestration
+between running installations (schedules, promotion from staging to
+production, conflict policies) is not these routes' business; it arrives as a
+plugin's own routes. `/api/capabilities` reports `baseline_sync` only for
+such a backend: it is a capability beyond the core, and the archive is not.
 
 What stays here is what is the server's business whatever the backend does:
 who may call it, how much may be uploaded, and the audit record.
@@ -39,14 +47,23 @@ def _baselines_root() -> Path:
 
 
 def _backend():
-    from ..plugins.loader import active_registry
+    """The plugin's backend if one is registered, the core archive otherwise.
 
-    reg = active_registry().sync_backend()
-    if reg is None:
-        #  The backend was active when the router was mounted and is gone now
-        #  (a test replaced the registry). Answer as an unknown path would.
-        raise HTTPException(404, "Not Found")
-    return reg
+    Asked on every request rather than fixed when the router is mounted: the
+    registry can be replaced (tests do), and a registry that cannot be read at
+    all means no plugin, not no route.
+    """
+    try:
+        from ..plugins.loader import active_registry
+
+        reg = active_registry().sync_backend()
+    except Exception:
+        reg = None
+    if reg is not None:
+        return reg.impl
+    from ..transfer import ArchiveSyncBackend
+
+    return ArchiveSyncBackend()
 
 
 def _names(raw: str) -> tuple[str, ...]:
@@ -78,9 +95,9 @@ def build_router() -> APIRouter:
                                       names=_names(name))
         tmp = Path(tempfile.mkdtemp(prefix="vistest-export-")) / "baselines.tar.gz"
         try:
-            info = backend.impl.export(tmp, baselines_root=_baselines_root(),
-                                       selection=selection,
-                                       with_history=with_history)
+            info = backend.export(tmp, baselines_root=_baselines_root(),
+                                  selection=selection,
+                                  with_history=with_history)
         except FileNotFoundError as e:
             raise HTTPException(404, str(e)) from None
         except ValueError as e:
@@ -108,7 +125,7 @@ def build_router() -> APIRouter:
 
         user = _require(request, "reviewer", project or None)
         backend = _backend()
-        modes = tuple(backend.impl.modes)
+        modes = tuple(backend.modes)
         if mode not in modes:
             raise HTTPException(400, f"mode must be one of: {', '.join(modes)}")
 
@@ -128,9 +145,9 @@ def build_router() -> APIRouter:
             selection = BaselineSelection(project=project.strip(),
                                           platform=platform.strip())
             try:
-                manifest = backend.impl.inspect(archive)
-                steps = backend.impl.plan(archive, baselines_root=_baselines_root(),
-                                          mode=mode, selection=selection)
+                manifest = backend.inspect(archive)
+                steps = backend.plan(archive, baselines_root=_baselines_root(),
+                                     mode=mode, selection=selection)
             except (OSError, ValueError) as e:
                 raise HTTPException(400, str(e)) from None
 
@@ -139,9 +156,9 @@ def build_router() -> APIRouter:
                         "created_at": manifest.get("created_at"), "plan": steps}
 
             try:
-                result = backend.impl.apply(archive, baselines_root=_baselines_root(),
-                                            mode=mode, selection=selection,
-                                            who=user.get("login", ""))
+                result = backend.apply(archive, baselines_root=_baselines_root(),
+                                       mode=mode, selection=selection,
+                                       who=user.get("login", ""))
             except ValueError as e:
                 raise HTTPException(400, str(e)) from None
 

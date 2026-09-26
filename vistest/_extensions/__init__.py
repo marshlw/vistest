@@ -18,12 +18,12 @@ the core does not notice.
 
     vistest.ai.gate, vistest.ai.perceptual  -> RegionScorer, RegionAnnotator
     vistest.api.directory                   -> AuthProvider
-    vistest.transfer.ArchiveSyncBackend     -> BaselineSyncBackend
 
-`vistest.transfer` itself is core: `vistest baselines export|import` call it
-directly and work with every plugin switched off. What is registered here is
-the server's side of it — the HTTP routes that move a set between running
-installations.
+Nothing is registered as a `BaselineSyncBackend`. Moving a set of baselines
+as an archive is core on both sides: `vistest baselines export|import` call
+`vistest.transfer` directly, and the server's `/api/baselines/export|import`
+fall back to `vistest.transfer.ArchiveSyncBackend` when no plugin fills the
+slot. The slot stays for what goes beyond the archive.
 """
 
 from __future__ import annotations
@@ -69,7 +69,6 @@ def register(registry) -> None:
     from ..ai.gate import GateScorer
     from ..ai.perceptual import PerceptualScorer
     from ..api.directory import DirectoryAuthProvider
-    from ..transfer import ArchiveSyncBackend
 
     gate = GateScorer()
     perceptual = PerceptualScorer()
@@ -77,4 +76,3 @@ def register(registry) -> None:
     registry.add_annotator(gate, name="gate")
     registry.add_annotator(perceptual, name="perceptual")
     registry.set_auth_provider(DirectoryAuthProvider(registry.host), name="ldap")
-    registry.set_sync_backend(ArchiveSyncBackend(), name="archive")

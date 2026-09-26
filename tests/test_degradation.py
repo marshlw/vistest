@@ -17,8 +17,8 @@ with ``VISTEST_DISABLE_PLUGINS=1``:
   configuration is green and *said out loud*. Run twice; the results are
   identical.
 * **server mode** — the app in-process: capabilities all false, the extension
-  routes absent, local sign-in, a check against a baseline, a run recorded
-  with every region field present and empty.
+  routes absent and the archive routes present, local sign-in, a check against
+  a baseline, a run recorded with every region field present and empty.
 
 Then the same scenarios run with a set of deliberately broken plugins
 installed — one that fails to import, one that calls ``sys.exit``, one for the
@@ -480,18 +480,60 @@ def test_server_mode_with_plugins_disabled_is_complete_and_deterministic(
     caps = client.get("/api/capabilities").json()
     assert caps == {"region_scores": False, "region_annotations": False,
                     "external_sign_in": False, "baseline_sync": False}
-    for method, path in (("get", "/api/ldap"), ("post", "/api/ldap/test"),
-                         ("get", "/api/baselines/export")):
+    _no_extension_routes(client)
+    # The archive is core: its routes are here with nothing loaded.
+    _core_transfer_routes(client, mainmod)
+
+
+def _no_extension_routes(client):
+    for method, path in (("get", "/api/ldap"), ("post", "/api/ldap/test")):
         r = getattr(client, method)(path)
         assert r.status_code in (404, 405), (path, r.status_code)
         assert "ldap" not in r.text.lower()
-    r = client.post("/api/baselines/import",
-                    files={"file": ("a.tar.gz", b"x", "application/gzip")})
-    assert r.status_code in (404, 405)
-
-    # The health answer lists routes; none of the extension ones is there.
     routes = client.get("/api/health").json().get("routes", [])
-    assert "/api/ldap" not in routes and "/api/baselines/export" not in routes
+    assert "/api/ldap" not in routes
+
+
+def _core_transfer_routes(client, mainmod):
+    """Export and import answer without any plugin: reviewer, dry run, refusal.
+
+    Runs after `_server_scenario`, which signed `root` in and made a baseline
+    for the project `shop`.
+    """
+    from fastapi.testclient import TestClient
+
+    from vistest.api.auth import create_user
+
+    routes = client.get("/api/health").json().get("routes", [])
+    assert "/api/baselines/export" in routes and "/api/baselines/import" in routes
+
+    create_user(mainmod.db, "rita", "password123", role="reviewer")
+    reviewer = TestClient(mainmod.app)
+    assert reviewer.post("/api/auth/login", json={
+        "login": "rita", "password": "password123"}).status_code == 200
+    exported = reviewer.get("/api/baselines/export", params={"project": "shop"})
+    assert exported.status_code == 200, exported.text
+    assert exported.headers["content-type"] == "application/gzip"
+    assert int(exported.headers["x-vistest-snapshots"]) >= 1
+
+    r = reviewer.post("/api/baselines/import",
+                      files={"file": ("shop.tar.gz", exported.content,
+                                      "application/gzip")},
+                      data={"mode": "update", "dry_run": "true"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dry_run"] is True and body["plan"], body
+
+    create_user(mainmod.db, "vic", "password123", role="viewer")
+    viewer = TestClient(mainmod.app)
+    assert viewer.post("/api/auth/login", json={
+        "login": "vic", "password": "password123"}).status_code == 200
+    assert viewer.get("/api/baselines/export",
+                      params={"project": "shop"}).status_code == 403
+    assert viewer.post("/api/baselines/import",
+                       files={"file": ("shop.tar.gz", exported.content,
+                                       "application/gzip")},
+                       data={"dry_run": "true"}).status_code == 403
 
 
 def test_server_mode_with_broken_plugins_behaves_as_without_them(
@@ -540,6 +582,11 @@ def test_server_mode_with_broken_plugins_behaves_as_without_them(
     assert [r["suppressed_by"] for r in broken["detail"]["regions"]] == \
         [r["suppressed_by"] for r in reference["detail"]["regions"]]
     assert any("Region scorer skipped" in n for n in broken["changed"]["notes"])
+
+    # Broken plugins take no core routes with them: the same as none at all.
+    assert client.get("/api/capabilities").json()["baseline_sync"] is False
+    _no_extension_routes(client)
+    _core_transfer_routes(client, mainmod)
 
 
 # --------------------------------------------------------------------------- #

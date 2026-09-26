@@ -502,6 +502,13 @@ app.add_middleware(
 
 # Order matters: specific routes (/api/baselines/snap) must be registered
 # before parametric ones (/api/baselines/{name}/upload).
+#
+# Baseline archives in and out come first. They are core, so they are mounted
+# here and not with the plugins: a plugin that fails to load must not take
+# these routes with it.
+from .sync import build_router as _sync_router  # noqa: E402
+
+app.include_router(_sync_router())     # /api/baselines/export, /api/baselines/import
 app.include_router(baselines_router)   # baselines and launching checks from the UI
 app.include_router(check_router)       # POST /api/check for tests in any language
 app.include_router(settings_router)    # environment variables for scenarios behind login
@@ -531,7 +538,6 @@ def _wire_plugins() -> None:
     from ..plugins.loader import active_registry
     from .auth import audit as _audit
     from .prefs import DatabaseSettings
-    from .sync import build_router as _sync_router
 
     registry = active_registry()
     host = registry.host
@@ -552,9 +558,6 @@ def _wire_plugins() -> None:
         except Exception as e:
             log.warning("plugin %r: its routes are not mounted: %s: %s",
                         role.plugin, type(e).__name__, e)
-
-    if registry.sync_backend() is not None:
-        app.include_router(_sync_router())
 
 
 try:
@@ -2003,11 +2006,33 @@ def health(request: Request):
         "root": str(ROOT),
         "module": where,
         "editable": not installed_copy,
-        "routes": sorted({
-            route.path for route in app.routes
-            if getattr(route, "path", "").startswith("/api/")
-        }),
+        "routes": sorted(p for p in _route_paths(app.routes) if p.startswith("/api/")),
     }
+
+
+def _route_paths(routes, prefix: str = "") -> set[str]:
+    """Every path the app answers, including those of included routers.
+
+    `app.routes` used to hold one route per path. FastAPI 0.141 keeps an
+    included router as a single `_IncludedRouter` entry with no `path` of its
+    own, so reading `route.path` listed only the routes declared on `app`
+    itself — and every router included above (baselines, check, auth, sync,
+    a plugin's) was missing from the list. The walk goes into included routers
+    where they exist and reads a plain `path` where they do not, so it gives
+    the same answer on the old layout and the new one.
+    """
+    out: set[str] = set()
+    for route in routes:
+        path = getattr(route, "path", None)
+        if isinstance(path, str):
+            out.add(prefix + path)
+            continue
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            context = getattr(route, "include_context", None)
+            out |= _route_paths(inner.routes,
+                                prefix + (getattr(context, "prefix", "") or ""))
+    return out
 
 
 # --------------------------------------------------------------------------- #
