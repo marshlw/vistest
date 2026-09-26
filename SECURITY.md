@@ -55,14 +55,48 @@ sign-in (LDAP/AD, or any `AuthProvider`) on, two accounts can share a login: the
 one created here and the one the directory knows. They stay two. A local
 account (`source = local`) is opened by its local password only: when that
 password fails, the directory is not asked — a password typed for a local
-account does not travel to another system — the attempt is recorded as
-`auth.external_refused`, and the row is left as it was. No sign-in, from any
+account does not travel to another system — and the attempt is one ordinary
+`login.failed` row whose details say `reason: local_account`,
+`directory: not_asked`; the account row is left as it was. No sign-in, from any
 source, writes an account's `source`, `active` or `status`: those change only
 when an administrator changes them. So an account switched off here stays off
-whatever the directory answers, and whoever controls an entry called `admin` in
-the directory is not the administrator of this installation. The reverse holds
-too: an account that came from the directory cannot be opened with a local
-password.
+whatever the directory answers — that attempt, the directory saying yes to an
+account disabled here, is the one recorded as `auth.external_refused` — and
+whoever controls an entry called `admin` in the directory is not the
+administrator of this installation. The reverse holds too: an account that came
+from the directory cannot be opened with a local password.
+
+**The price of that, in response time.** With directory sign-in turned on, a
+sign-in under a login that has a local account is answered without a trip to
+the directory; every other login — a directory account, or one that exists nowhere
+— waits for the directory's answer. So the time a failed sign-in takes tells an
+outsider which logins have a local account here. This is deliberate: the
+alternative is to send a password typed for a local account to another system,
+and to let a directory entry answer for a local login. What bounds the guessing
+that follows is the sign-in throttle, counted from the audit log over a
+15-minute window: 8 failures for one login from one address, 40 for one login
+from all addresses, 30 from one address across all logins; each count starts
+afresh after a successful sign-in. With no directory to ask, the response
+time is flat: a login that does not exist is checked against a dummy hash of the same
+cost, so timing does not tell existing logins from missing ones. Either way,
+do not give the local administrator an obvious name — `admin`, `root`,
+`administrator` are the first ones guessed.
+
+**Roles from the directory.** A directory account's role is recalculated from
+group membership at every sign-in, down as well as up, and each change is
+audited as `user.role` with the provider as its author. A role an administrator
+set by hand in VisTest is pinned: no sign-in moves it until it is handed back
+with `{"role": "directory"}`. The last active administrator is never demoted by
+a sign-in (`auth.role_kept`), so a broken group mapping cannot leave the
+installation without anyone able to fix it.
+
+**Disabling someone in the directory stops new sign-ins, not open sessions.**
+The directory is asked only when someone signs in; nothing polls it. A session
+opened before the account was disabled in the directory keeps working until it
+expires, which is 14 days after it was opened. To cut a person off at once,
+disable the account in VisTest as well (**Settings → Team**): that deletes every
+session the account has. The same holds for a role lowered in the directory —
+it takes effect at the next sign-in.
 
 ## What VisTest does
 

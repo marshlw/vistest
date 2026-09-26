@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 
 import pytest
@@ -292,8 +293,6 @@ QA = "CN=QA,OU=Groups,DC=acme,DC=local"
 def test_leaving_the_admins_group_takes_the_role_at_the_next_sign_in(
         service, fake_directory, monkeypatch):
     """(a) Down as well as up: removed from QA Leads, Anna is no longer an admin."""
-    import json
-
     client, mainmod = service
     _local_admin(mainmod)
     _enable_ldap(mainmod.db)
@@ -412,8 +411,6 @@ def test_an_administrator_cannot_hand_their_own_role_to_the_directory(
 def test_the_last_active_administrator_is_not_demoted(
         service, fake_directory, monkeypatch):
     """(d) A broken role map must not leave the installation without an admin."""
-    import json
-
     client, mainmod = service
     _local_admin(mainmod)
     _enable_ldap(mainmod.db)
@@ -590,12 +587,115 @@ def test_a_directory_admin_does_not_sign_in_as_the_local_admin(
 
     assert r.status_code == 401, r.text
     assert dict(_account(mainmod.db, "admin")) == before, "the row is not touched"
+    assert "admin" not in fake_directory["asked"], \
+        "a password typed for a local account does not travel to the directory"
+    # One row, the ordinary failure, with the reason in its details — not a
+    # second `auth.external_refused` for a directory that was never asked.
+    rows = mainmod.db.query(
+        "SELECT who, action, target, details FROM audit"
+        " WHERE action IN ('login.failed', 'auth.external_refused')")
+    assert [(a["who"], a["action"], json.loads(a["details"])) for a in rows] == \
+        [("admin", "login.failed",
+          {"reason": "local_account", "directory": "not_asked"})]
+
+
+def test_a_mistyped_local_password_is_one_audit_row(
+        service, fake_directory):
+    """An administrator's typo is not an event about the directory."""
+    client, mainmod = service
+    _local_admin(mainmod, "root", "password123")
+    _enable_ldap(mainmod.db)
+
+    for _ in range(3):
+        r = client.post("/api/auth/login",
+                        json={"login": "root", "password": "typo-typo-typo"})
+        assert r.status_code == 401
+
+    actions = [a["action"] for a in mainmod.db.query(
+        "SELECT action FROM audit WHERE who='root' ORDER BY id")]
+    assert actions == ["login.failed"] * 3
+    assert fake_directory["asked"] == []
+
+
+@pytest.mark.parametrize("provider", [True, False], ids=["provider", "no-provider"])
+def test_the_details_do_not_change_what_the_throttle_counts(
+        service, fake_directory, monkeypatch, provider):
+    """The pair limit trips at the same attempt with a provider and without.
+
+    With one, each `login.failed` carries details; without, it carries none.
+    """
+    from vistest.api import auth as authmod
+    from vistest.plugins.loader import active_registry
+
+    client, mainmod = service
+    _local_admin(mainmod, "root", "password123")
+    if provider:
+        _enable_ldap(mainmod.db)
+    else:
+        monkeypatch.setattr(active_registry(), "auth_provider", lambda: None)
+
+    codes = [client.post("/api/auth/login",
+                         json={"login": "root", "password": "typo-typo-typo"}).status_code
+             for _ in range(authmod.LOGIN_MAX_FAILURES_PAIR + 1)]
+
+    assert codes == [401] * authmod.LOGIN_MAX_FAILURES_PAIR + [429]
+    assert authmod._recent_pair_failures(mainmod.db, "root", "testclient") \
+        == authmod.LOGIN_MAX_FAILURES_PAIR
+    details = {a["details"] for a in mainmod.db.query(
+        "SELECT details FROM audit WHERE action='login.failed'")}
+    assert details == ({'{"reason": "local_account", "directory": "not_asked"}'}
+                       if provider else {None})
+    # And the right password waits out the same window.
+    r = client.post("/api/auth/login", json={"login": "root", "password": "password123"})
+    assert r.status_code == 429
+
+
+def test_a_directory_yes_for_an_account_disabled_here_is_still_recorded(
+        service, fake_directory):
+    """`auth.external_refused` stays for the case it is useful for."""
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    _sign_in(client, "boris")
+    mainmod.db.execute(
+        "UPDATE user SET active=0, status='disabled' WHERE login='boris'")
+
+    r = client.post("/api/auth/login",
+                    json={"login": "boris", "password": "another-secret"})
+
+    assert r.status_code == 401
     refused = mainmod.db.query(
         "SELECT who, target FROM audit WHERE action='auth.external_refused'")
     assert [(a["who"], a["target"]) for a in refused] == \
-        [("admin", "ldap: a local account has this login")]
-    assert "admin" not in fake_directory["asked"], \
-        "a password typed for a local account does not travel to the directory"
+        [("boris", "ldap: the account is disabled here")]
+
+
+def test_disabled_in_the_directory_ends_new_sign_ins_not_open_sessions(
+        service, fake_directory, monkeypatch):
+    """What SECURITY.md says about sessions after a directory disable, held here.
+
+    The directory is asked at sign-in only, so an open session outlives the
+    disable until it expires. Disabling the account here as well closes it at
+    once, because `deactivate` deletes the sessions.
+    """
+    client, mainmod = service
+    _local_admin(mainmod)
+    _enable_ldap(mainmod.db)
+    boris = TestClient(mainmod.app)
+    _sign_in(boris, "boris")
+
+    monkeypatch.delitem(PEOPLE, "boris")        # gone from the directory
+    r = client.post("/api/auth/login",
+                    json={"login": "boris", "password": "another-secret"})
+    assert r.status_code == 401, "no new sign-in"
+    assert boris.get("/api/auth/me").status_code == 200, "the open session lives on"
+
+    _as_root(client)
+    assert client.patch("/api/users/boris", json={"active": False}).status_code == 200
+    assert boris.get("/api/auth/me").status_code == 401, "disabled here: cut off now"
+    assert not mainmod.db.one(
+        "SELECT s.token FROM session s JOIN user u ON u.id=s.user_id"
+        " WHERE u.login='boris'")
 
 
 def test_a_disabled_local_account_is_not_switched_back_on_by_the_directory(
@@ -658,3 +758,20 @@ def test_a_directory_account_disabled_here_stays_disabled(
     assert r.status_code == 401, r.text
     row = _account(mainmod.db, "boris")
     assert (row["active"], row["status"], row["source"]) == (0, "disabled", "ldap")
+
+
+def test_security_md_quotes_the_numbers_the_code_uses():
+    """SECURITY.md names the throttle and session limits; they must be the real ones."""
+    from pathlib import Path
+
+    from vistest.api import auth as authmod
+
+    text = " ".join((Path(__file__).resolve().parents[2] / "SECURITY.md")
+                    .read_text(encoding="utf-8").split())
+    for phrase in (
+            f"over a {authmod.LOGIN_WINDOW_MINUTES}-minute window",
+            f"{authmod.LOGIN_MAX_FAILURES_PAIR} failures for one login from one address",
+            f"{authmod.LOGIN_MAX_FAILURES} for one login from all addresses",
+            f"{authmod.LOGIN_MAX_FAILURES_IP} from one address across all logins",
+            f"which is {authmod.SESSION_DAYS} days after it was opened"):
+        assert phrase in text, phrase

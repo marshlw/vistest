@@ -761,18 +761,10 @@ def _try_external(db, login_name: str, password: str, row):
     if provider is None:
         return None
     if row is not None and (row["source"] or "local") == "local":
-        # A login the directory knows is not a claim on the account of the
-        # same name here. A local account is opened by its own password and
-        # nothing else: taking it over on a directory match would let whoever
-        # controls an entry called "admin" in the directory become the local
-        # administrator, and would switch back on an account somebody here
-        # switched off. Refused and written down; the row is not touched.
-        #
-        # The provider is not even asked. What was typed here was meant for a
-        # local account, and a password that failed locally has no business
-        # travelling to another system.
-        audit(db, login_name, "auth.external_refused",
-              f"{provider.name}: a local account has this login")
+        # The sign-in handler does not call this for a local row (see
+        # `_local_row`); the check stays here as the second lock on the same
+        # door, and says nothing of its own — the handler's `login.failed`
+        # already carries the reason.
         return None
     try:
         person = _runtime.authenticate(provider, login_name, password)
@@ -862,6 +854,19 @@ def _follow_directory_role(db, provider: str, row, role: str) -> None:
     else:
         db.execute("UPDATE user SET role=? WHERE id=?", (role, row["id"]))
     audit(db, provider, "user.role", row["login"], **{"from": current, "to": role})
+
+
+def _local_row(row) -> bool:
+    """A row created here, as opposed to one a directory created."""
+    return row is not None and (row["source"] or "local") == "local"
+
+
+def _provider_installed() -> bool:
+    try:
+        from ..plugins.loader import active_registry
+        return active_registry().auth_provider() is not None
+    except Exception:                                        # pragma: no cover
+        return False
 
 
 def _check_user_limit(db) -> None:
@@ -1079,8 +1084,26 @@ def build_router(db):
         # паролем всё ещё войдёт и выключит интеграцию. Инсталляция, в которую
         # можно попасть только через лежащий сервис, — это инсталляция,
         # которую некому чинить.
+        #
+        # And never for a local row. A login the directory knows is not a
+        # claim on the account of the same name here: a local account is
+        # opened by its own password and nothing else. Taking it over on a
+        # directory match would let whoever controls an entry called "admin"
+        # in the directory become the local administrator, and would switch
+        # back on an account somebody here switched off. What was typed was
+        # meant for a local account, and a password that failed locally has no
+        # business travelling to another system — so the directory is not
+        # asked, and the failure is the ordinary one, with the reason in its
+        # details. It used to be a second row, `auth.external_refused`, on
+        # every mistyped local password: an administrator's typo read in the
+        # audit as an attack on the directory that nobody had asked.
+        failure: dict = {}
         if not ok and not (row and row["status"] == "pending"):
-            row, ok = _try_external(db, login_name, password, row) or (row, ok)
+            if _local_row(row):
+                if _provider_installed():
+                    failure = {"reason": "local_account", "directory": "not_asked"}
+            else:
+                row, ok = _try_external(db, login_name, password, row) or (row, ok)
 
         # Заявка, ждущая одобрения, — это не «неверный пароль». Человек только
         # что зарегистрировался и получил бы ответ, из которого следует, что он
@@ -1096,7 +1119,9 @@ def build_router(db):
         if not ok:
             # The source address goes into `target`: without it the per-address
             # counter has nothing to count, and login enumeration stays free.
-            audit(db, login_name or "—", "login.failed", source)
+            # The details are for the person reading the audit; the counters
+            # look only at `action`, `who`, `target` and `at`.
+            audit(db, login_name or "—", "login.failed", source, **failure)
             raise HTTPException(401, "Wrong login or password")
 
         if (row["source"] or "local") == "local" and needs_rehash(row["password"]):

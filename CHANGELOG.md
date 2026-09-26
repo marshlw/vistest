@@ -37,6 +37,24 @@
   is not found: at the next sign-in such a person gets the role their groups
   give, which may be lower. Look through **Settings → Team** after upgrading,
   and set by hand again any role that should not follow the directory.
+- **A mistyped local password is one audit row, not two.** With a provider
+  installed, every failed sign-in to a local account wrote
+  `auth.external_refused` next to `login.failed`, so an administrator's typo
+  read as an attack on a directory that was never asked. Now the sign-in
+  handler does not reach the provider for a local row at all, and the one
+  `login.failed` row carries `reason: local_account, directory: not_asked` in
+  its details. The throttle counts `login.failed` by `who`/`target` only, and a
+  test shows the pair limit trips at the same attempt either way.
+  `auth.external_refused` stays for the rare, useful case: the directory said
+  yes to an account disabled here. Before the change
+  `test_a_mistyped_local_password_is_one_audit_row` and the reworked
+  `test_a_directory_admin_does_not_sign_in_as_the_local_admin` failed on the
+  extra row. `SECURITY.md` now says what this costs in response time (a local
+  login answers without the directory, so timing shows which logins are
+  local), what bounds the guessing, the directory role rules, and that a
+  directory disable ends new sign-ins but not sessions already open — disable
+  the account here too to cut them; a test holds that, and another holds the
+  numbers `SECURITY.md` quotes to the constants in `auth.py`.
 
 ### Pre-publication hygiene (review of 25.09)
 
