@@ -55,6 +55,34 @@
   directory disable ends new sign-ins but not sessions already open — disable
   the account here too to cut them; a test holds that, and another holds the
   numbers `SECURITY.md` quotes to the constants in `auth.py`.
+- **`/api/baselines/export` and `/api/baselines/import` are core routes.**
+  `main` mounted `vistest/api/sync.py` inside `_wire_plugins`, and only when a
+  `BaselineSyncBackend` was registered — and the one that was, the core's own
+  `ArchiveSyncBackend`, came through the bundled extensions. So the command
+  line moved archives with plugins off and the server did not know the paths.
+  Now the router is mounted unconditionally, next to the baselines router and
+  outside the plugin wiring, so a broken plugin cannot take it away; it uses
+  a plugin's `BaselineSyncBackend` when one is registered and
+  `transfer.ArchiveSyncBackend` otherwise, and never answers 404 for want of
+  a backend. `_extensions` no longer registers the archive. Rights (reviewer,
+  per project), `MAX_IMPORT_BYTES` and the `baselines.imported` audit row are
+  unchanged; so are the `BaselineSyncBackend` slot and `API_VERSION`.
+  `capabilities()["baseline_sync"]` keeps meaning «a third-party backend is
+  installed» — the interface does not read it. Orchestration between
+  installations (schedules, promotion, conflict policies) will come as a
+  plugin's own routes.
+- **`/api/health` lists every route again.** FastAPI 0.141 keeps an included
+  router as one `_IncludedRouter` entry without a `path`, so the list held
+  only the routes declared on `app` itself: nothing from the baselines,
+  check, auth or plugin routers. `test_degradation.py` asserted that
+  `/api/ldap` and `/api/baselines/export` were *not* in it — true, and
+  meaningless. The list now walks included routers.
+  `test_server_mode_with_plugins_disabled_is_complete_and_deterministic` and
+  `test_server_mode_with_broken_plugins_behaves_as_without_them` now check,
+  with no plugins and with broken ones, that the ldap routes are absent and
+  that a reviewer exports an archive, a dry-run import answers with a plan, a
+  viewer is refused, and both paths are in `/api/health`; both failed before
+  the change.
 
 ### Pre-publication hygiene (review of 25.09)
 

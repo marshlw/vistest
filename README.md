@@ -692,9 +692,10 @@ one stays in the history and can be rolled back to from the interface;
 `replace` lets the incoming set win, history included.
 
 The command line works in every installation, plugins or not: the archive is
-part of the core. Over the API (`GET /api/baselines/export`,
-`POST /api/baselines/import`, for a reviewer) the same thing is served by the
-server's sync extension, and those routes exist only while it is active.
+part of the core. So does the API — `GET /api/baselines/export` and
+`POST /api/baselines/import` (with `dry_run` for the plan alone), for a
+reviewer of the project, archives up to 500 MB — in every installation of the
+server, with no plugin installed and with a broken one.
 
 Approval history does not travel. A signature under «I looked at this and it is
 correct» belongs to the person who gave it, in the installation where they gave
