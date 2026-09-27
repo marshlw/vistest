@@ -65,6 +65,7 @@ capture:
   stability_shots: 3            # >1 включает авто-детект динамики
   stability_delay_ms: 120
   stability_sticky: true
+  stable_timeout_ms: 5000       # library mode: frames until two match, at most this long
   scroll_through_page: true     # прогрев lazy-load перед full_page
   auto_mask_media: true         # video/canvas/iframe/[data-vistest=ignore]
   auto_mask_animated: true

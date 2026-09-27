@@ -261,6 +261,13 @@ class CaptureConfig:
     # and only for what has already failed.
     retry_on_fail: bool = True
 
+    # The library mode takes frames of a live page until two in a row are
+    # identical, as Playwright's `toHaveScreenshot()` does, for at most this
+    # long. Five seconds is Playwright's default. 0 turns the loop off: one
+    # frame, and nobody claims it held still. `expect_screenshot(...,
+    # stable_timeout_ms=...)` overrides it for one check.
+    stable_timeout_ms: int = 5000
+
     freeze_css: bool = True
     hide_scrollbars: bool = True
     hide_caret: bool = True
@@ -306,6 +313,16 @@ class CaptureConfig:
     mask_color: tuple[int, int, int] = (255, 0, 255)  # magenta: noticeable in artifacts
 
     capture_dom: bool = True
+
+    def __post_init__(self) -> None:
+        #  Checked here, where every way of building one passes — the YAML
+        #  loader, `replace()`, a test — rather than at the first capture,
+        #  which in the library mode is the middle of somebody's run.
+        value = self.stable_timeout_ms
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigError(
+                f"capture.stable_timeout_ms must be a whole number of "
+                f"milliseconds, 0 or more; got {value!r}")
 
 
 # --------------------------------------------------------------------------- #

@@ -101,9 +101,12 @@ def test_bytes_a_path_an_array_and_a_pil_image_are_all_accepted(ctx, tmp_path):
 def test_a_playwright_page_is_recognised_without_importing_playwright(ctx):
     import sys
 
+    #  Only meaningful if nothing in this worker imported it first: the
+    #  browser tests in the same process do, and the order is not ours.
+    already = "playwright" in sys.modules
     page = FakePage(frame())
     accept(ctx, page, "page.png")
-    assert "playwright" not in sys.modules
+    assert already or "playwright" not in sys.modules
     assert page.calls[0]["type"] == "png"
 
 

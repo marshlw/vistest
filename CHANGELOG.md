@@ -18,6 +18,51 @@
   real screenshots useless for tuning is narrowed to what is true: useless
   without labels, not with mutations whose label is known in advance. Same
   change in `README.ru.md`.
+- **The library photographs a live page the way `toHaveScreenshot()` does.**
+  `library/targets.capture` used to take one bare `screenshot(type="png")` of
+  a `Page` or `Locator`: no stopping animations, no hiding the caret, no
+  waiting for fonts, no second look. Now it passes
+  `animations="disabled"`, `caret="hide"` and `scale="css"`, waits for
+  `document.fonts.ready` first (the script is `WAIT_FONTS_JS` in
+  `capture/stabilize.py`, next to the server's `WAIT_MEDIA_JS`; images are not
+  waited for, because a lazy image outside the viewport never completes), and
+  takes frames until two in a row are identical byte for byte — Playwright's
+  schedule of pauses, at least two frames, for at most
+  `capture.stable_timeout_ms` (new key, default 5000; 0 takes one frame and
+  claims nothing), overridden per check by
+  `expect_screenshot(..., stable_timeout_ms=...)`. A page that does not settle
+  is compared on its **last** frame, and says so: in the reason (so in the
+  exception and the CI log), in the result's notes, and in the report row's
+  summary line; accepting such a frame under `--vistest-update` warns. Every
+  report row of a live page carries `capture: {frames, stable, elapsed_ms,
+  timeout_ms, scale, pixel_ratio}`. A bad `stable_timeout_ms` is a
+  `ConfigError` naming the file; a bad argument is refused at the call.
+  **Behaviour change — baselines of moving pages.** A baseline captured
+  mid-animation, or with the caret visible, will not match a frame of the
+  stopped page: accept it again, once.
+  **Behaviour change — HiDPI.** `scale="css"` makes the picture one pixel per
+  CSS pixel on every screen. On a 2x screen that halves the picture. The key
+  follows the picture, not the config: its `Nx` is now the scale of the
+  picture — 1 under `scale="css"`, the page's devicePixelRatio under
+  `expect_screenshot(..., scale="device")`, and `capture.device_scale_factor`
+  only when the ratio cannot be read. So a baseline taken before at device
+  scale on a 2x screen is still found under its `1x` directory and fails as
+  a size change — and that one case is not left as «the picture changed
+  size»: when the baseline is exactly k times the screenshot on both axes, the
+  reason says it was probably taken at device scale and names both ways out
+  (`--vistest-update`, or `scale="device"`, which files 2x pictures under a
+  `2x` key of their own). On 1x screens — every default CI runner — nothing
+  moves. A library user who set `capture.device_scale_factor: 2` in
+  `vistest.yaml` finds the key back at `1x` under the default scale;
+  `BaselineMissing` names the `2x` directory where the old baseline is.
+  New tests: `tests/test_library_capture.py` — the options sent, the font wait
+  and its failure, the loop on a fake clock (schedule, last frame, a slow first
+  frame, zero), the report row, both config errors, scale and key, the HiDPI
+  hint; and against a real Chromium, skipped when there is none: a control
+  proving the page moves under a bare `screenshot()`, a CSS animation plus a
+  focused input giving a stable frame and a pass three times in a row at
+  different moments of the cycle, a page updating its text every 16 ms judged
+  on its last frame with the line about it, and a `Locator`.
 
 ### Stage R0 tails
 

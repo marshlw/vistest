@@ -137,6 +137,13 @@ class LibraryContext:
         one is not comparable on the other; and keeping the same key is what
         makes `vistest baselines export` a way into a server installation
         rather than a re-approval of everything.
+
+        The `1x` in that key is the scale **of the picture**, not of the
+        screen: pixels per CSS pixel. With `scale="css"` — the default — that
+        is 1 on every machine, which is the point of it. With
+        `scale="device"` it is the page's own devicePixelRatio, so a 2x
+        picture never lands next to a 1x one under the same name. Only when the
+        ratio cannot be read does the config's `device_scale_factor` stand in.
         """
         if self.platform_override:
             return self.platform_override
@@ -145,8 +152,9 @@ class LibraryContext:
             return ""
         from ..config import platform_key
 
-        return platform_key(shot.browser or "chromium",
-                            self.config.capture.device_scale_factor,
+        scale = shot.scale if shot.scale is not None \
+            else self.config.capture.device_scale_factor
+        return platform_key(shot.browser or "chromium", scale,
                             viewport=shot.viewport or None)
 
     def key(self, name: str, platform: str) -> SnapshotKey:

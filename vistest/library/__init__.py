@@ -120,6 +120,8 @@ def expect_screenshot(
     mask: Sequence[Any] | None = None,
     full_page: bool | None = None,
     store: SnapshotStore | None = None,
+    scale: str = "css",
+    stable_timeout_ms: int | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -148,6 +150,16 @@ def expect_screenshot(
     but excluded from the comparison. A painted rectangle would end up inside
     the committed baseline, where the decision can no longer be revisited.
 
+    A live page is photographed as `toHaveScreenshot()` photographs it:
+    animations stopped, the caret hidden, web fonts loaded, and frames taken
+    until two in a row are identical — for at most `stable_timeout_ms`
+    (default `capture.stable_timeout_ms`, five seconds; 0 takes one frame).
+    A page that does not settle in that time is compared on its last frame,
+    and the reason says so. `scale` is `"css"` (the default: one picture pixel
+    per CSS pixel on any screen) or `"device"` (the screen's own pixels); the
+    platform directory carries the scale of the picture, so the two never
+    share a baseline.
+
     Returns the `CompareResult` so that a caller can read the metrics. Raises
     `BaselineMissing` when there is nothing to compare against yet, and
     `ScreenshotMismatch` when the difference is beyond the thresholds — both
@@ -156,11 +168,20 @@ def expect_screenshot(
     started = time.perf_counter()
     ctx = _context.current()
     call_patch = _call_thresholds(threshold)
+    wait = (ctx.config.capture.stable_timeout_ms if stable_timeout_ms is None
+            else _targets.check_timeout(stable_timeout_ms))
 
-    shot = _targets.capture(target, mask=mask, full_page=full_page)
+    shot = _targets.capture(target, mask=mask, full_page=full_page,
+                            scale=_targets.check_scale(scale),
+                            stable_timeout_ms=wait)
     platform = platform if platform is not None else ctx.platform_for(shot)
     key = ctx.key(name, platform)
     store = store or ctx.store
+    #  What the capture has to say for itself: a page that would not hold
+    #  still, a font wait that failed. It goes into every reason below, so
+    #  the report and the CI log carry it whatever the verdict.
+    said = [*shot.notes, *filter(None, [shot.stability.unsettled_text()])]
+    captured = _capture_row(shot)
 
     actual_path = atomic.write_bytes(ctx.artifact_path("actual", key), shot.png)
     baseline_path = store.path_of(key)
@@ -170,21 +191,22 @@ def expect_screenshot(
     if baseline is None:
         if not ctx.update:
             _record(ctx, key, verdict="new_baseline", action="missing",
-                    reason="there is no baseline for this snapshot yet",
+                    reason=_with(said, "there is no baseline for this snapshot yet"),
                     images={"actual": str(actual_path)},
-                    duration_ms=_ms(started))
+                    duration_ms=_ms(started), capture=captured)
             raise BaselineMissing.build(
                 name=key.name, platform=platform,
                 baseline=baseline_path, actual=actual_path,
                 elsewhere=platforms_with(store, key))
 
+        _warn_unsettled_accept(shot, key)
         meta = store.put(key, shot.png)
         _record(ctx, key, verdict="new_baseline", action="created",
-                reason="baseline created by --vistest-update",
+                reason=_with(said, "baseline created by --vistest-update"),
                 images={"actual": str(actual_path),
                         "baseline": str(baseline_path)},
-                duration_ms=_ms(started))
-        return _fresh_result(key, meta, Verdict.NEW_BASELINE)
+                duration_ms=_ms(started), capture=captured)
+        return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
 
     # ---- compare ------------------------------------------------------ #
     expected_rgb = pngio.decode(baseline, source=baseline_path)
@@ -212,9 +234,14 @@ def expect_screenshot(
     #  notices.
     strip_internal(result)
 
+    hint = _scale_hint(shot, result)
+    if hint:
+        said.append(hint)
+    result.notes[:0] = said
+
     from ..report.library import describe
 
-    reason = describe(result)
+    reason = _with(said, describe(result))
     limits = {"fail_severity": cfg.fail_severity,
               "max_changed_area_pct": cfg.max_changed_area_pct}
     images = {"baseline": str(baseline_path), "actual": str(actual_path)}
@@ -227,20 +254,23 @@ def expect_screenshot(
 
     # ---- accepting -------------------------------------------------- #
     if ctx.update:
+        if _sha_of(shot.png) != _sha_of(baseline):
+            _warn_unsettled_accept(shot, key)
         meta = store.put(key, shot.png)
         _record(ctx, key, verdict="new_baseline",
                 action="unchanged" if meta.sha256 == _sha_of(baseline)
                 else "updated",
-                reason=("the baseline already matched" if result.verdict
-                        is not Verdict.FAIL else f"accepted: {reason}"),
+                reason=(_with(said, "the baseline already matched")
+                        if result.verdict is not Verdict.FAIL
+                        else f"accepted: {reason}"),
                 result=result, limits=limits, images=images,
-                duration_ms=_ms(started))
-        return _fresh_result(key, meta, Verdict.NEW_BASELINE)
+                duration_ms=_ms(started), capture=captured)
+        return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
 
     _record(ctx, key,
             verdict="fail" if result.verdict is Verdict.FAIL else "pass",
             action="compared", reason=reason, result=result, limits=limits,
-            images=images, duration_ms=_ms(started))
+            images=images, duration_ms=_ms(started), capture=captured)
 
     if result.verdict is Verdict.FAIL:
         raise ScreenshotMismatch.build(
@@ -264,10 +294,68 @@ def _sha_of(png: bytes) -> str:
 
 
 def _fresh_result(key: SnapshotKey, meta: SnapshotMeta,
-                  verdict: Verdict) -> CompareResult:
+                  verdict: Verdict, notes: list[str] | None = None) -> CompareResult:
     result = CompareResult(name=key.name, verdict=verdict)
     result.size_expected = result.size_actual = (meta.width, meta.height)
+    result.notes = list(notes or [])
     return result
+
+
+def _with(said: list[str], reason: str) -> str:
+    """The reason, followed by whatever the capture had to say."""
+    return "; ".join([reason, *said]) if said else reason
+
+
+def _capture_row(shot) -> dict:
+    """How the picture was taken, for the report row."""
+    row = {"source": shot.source, **shot.stability.as_dict()}
+    if shot.scale_mode:
+        row["scale"] = shot.scale_mode
+        if shot.scale is not None:
+            row["pixel_ratio"] = shot.scale
+    return row
+
+
+def _warn_unsettled_accept(shot, key: SnapshotKey) -> None:
+    """Accepting a frame of a page that would not hold still is allowed — and said.
+
+    The next run takes its own frames of the same moving page, and the
+    baseline written now is one arbitrary moment of it. That is a red run
+    waiting to happen, and the person pressing «accept» is the one who can
+    still do something about it.
+    """
+    text = shot.stability.unsettled_text()
+    if not text:
+        return
+    import warnings
+
+    warnings.warn(f"vistest: {key.as_str()}: {text}. It was accepted as the "
+                  "baseline anyway; the next run will likely disagree with it. "
+                  "Stop what moves on the page (or mask it) and accept again.",
+                  VisTestWarning, stacklevel=3)
+
+
+def _scale_hint(shot, result) -> str:
+    """The one size change that has an explanation we can give.
+
+    A baseline exactly two (or three) times the size of the screenshot on both
+    axes, while the screenshot was taken in CSS pixels, is a baseline taken at
+    device scale on a HiDPI screen — which is what the library did before
+    `scale="css"` became the default. Saying so turns «the picture changed
+    size» into something a person can act on.
+    """
+    if shot.scale_mode != "css" or not result.size_changed:
+        return ""
+    (ew, eh), (aw, ah) = result.size_expected, result.size_actual
+    if not (aw and ah) or ew % aw or eh % ah or ew // aw != eh // ah \
+            or ew // aw < 2:
+        return ""
+    k = ew // aw
+    return (f"the baseline is exactly {k}x the size of this screenshot — it was "
+            f"probably taken at device scale on a {k}x screen, before "
+            "screenshots were taken in CSS pixels by default. Accept it again "
+            "with --vistest-update, or pass scale=\"device\" to keep device "
+            "pixels")
 
 
 def _ai_hooks(ctx):
@@ -326,7 +414,7 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
 
 def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
             images: dict, duration_ms: int, result=None,
-            limits: dict | None = None) -> None:
+            limits: dict | None = None, capture: dict | None = None) -> None:
     """One row for the report, written as this process's own file."""
     from ..report.library import write_part
 
@@ -342,6 +430,8 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         "limits": limits or {},
         "nodeid": ctx_nodeid(),
     }
+    if capture:
+        entry["capture"] = capture
     if result is not None:
         entry["metrics"] = {
             "max_severity": round(float(result.max_severity), 2),
