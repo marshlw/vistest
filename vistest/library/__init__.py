@@ -220,9 +220,19 @@ def expect_screenshot(
     boxes = [*(passport.ignore_boxes if passport else ()), *shot.boxes]
     from ..core.comparator import compare, strip_internal
 
+    ignore = _ignore_mask(expected_rgb.shape[:2], boxes)
+    hooks = _ai_hooks(ctx)
     result = compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
-                     ignore_mask=_ignore_mask(expected_rgb.shape[:2], boxes),
-                     ai_hooks=_ai_hooks(ctx))
+                     ignore_mask=ignore, ai_hooks=hooks)
+
+    #  Failed: one more frame, and whatever did not hold still between the two
+    #  is masked for a second comparison of the FIRST frame. The same function
+    #  the server uses — see core/retry.py for why it cannot hide a steady
+    #  regression, and what it says when it turns a check green.
+    if result.failed and shot.retake is not None \
+            and ctx.config.capture.retry_on_fail:
+        result = _second_look(shot, key, result, expected_rgb, actual_rgb,
+                              cfg, ignore, hooks)
     result.duration_ms = _ms(started)
 
     #  Let go of the full-frame maps. `compare` hands back four arrays the size
@@ -299,6 +309,28 @@ def _fresh_result(key: SnapshotKey, meta: SnapshotMeta,
     result.size_expected = result.size_actual = (meta.width, meta.height)
     result.notes = list(notes or [])
     return result
+
+
+def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
+                 cfg, ignore, hooks):
+    from ..core import noise
+    from ..core.comparator import compare
+    from ..core.retry import second_look
+
+    def recapture():
+        return pngio.decode(shot.retake(),
+                            source=f"the second screenshot of {key.name}")
+
+    def recompare(moved):
+        #  The masks are in different frames of reference only when the
+        #  sizes differ; `merge_masks` crops to the common part, and
+        #  `compare` fits the result to the padded frame.
+        wider = noise.merge_masks(ignore, moved, sticky=True) \
+            if ignore is not None else moved
+        return compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
+                       ignore_mask=wider, ai_hooks=hooks)
+
+    return second_look(first, actual_rgb, recapture, recompare).result
 
 
 def _with(said: list[str], reason: str) -> str:

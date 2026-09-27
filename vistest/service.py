@@ -178,7 +178,7 @@ class CheckService:
 
         # ---------- упало? снимем ещё кадр и посмотрим, что не повторяется ----
         if res.failed and recapture is not None and self.cfg.capture.retry_on_fail:
-            extra, ignore, res = self._retry(
+            extra, res = self._retry(
                 name, rgb, baseline, ignore, diff_cfg, ai_hooks, res, recapture)
             unstable = _noise.merge_masks(unstable, extra, sticky=True) \
                 if extra is not None else unstable
@@ -217,71 +217,21 @@ class CheckService:
     # ------------------------------------------------------------------ #
     def _retry(self, name, rgb, baseline, ignore, diff_cfg, ai_hooks, first,
                recapture):
-        """Второй кадр той же страницы — и пересчёт вердикта по нему.
+        """A second frame of the same page, and the verdict recomputed with it.
 
-        Сравнивается при этом **первый** кадр, а не второй. Разница
-        принципиальная: взять второй значило бы выбирать снимок поудачнее, пока
-        не позеленеет. Второй кадр здесь — не замена картинки, а **свидетель**:
-        он говорит, какие пиксели на этой странице не держатся на месте, и
-        ровно они уходят в маску.
-
-        Отсюда главное свойство: подавляется не вердикт, а конкретные области.
-        Дрожал спиннер — уйдёт в маску только спиннер, а съехавшая шапка
-        останется красной, потому что между двумя кадрами она никуда не дрожала.
-        Устойчивый регресс спрятать таким образом нельзя: устойчивый — это
-        ровно тот, который воспроизводится.
-
-        А вот **мерцающий** — можно, и об этом стоит сказать прямо, а не
-        умолчать. Если поломка проявляется через раз, второй кадр может застать
-        страницу целой, область попадёт в маску, и вердикт станет зелёным. Двух
-        кадров, чтобы отличить «мерцающий шум» от «мерцающей поломки», не
-        хватает никому — ни человеку, ни движку.
-
-        Поэтому зелёный здесь никогда не бывает молчаливым. «Упало на первом
-        кадре, прошло на втором» — это не «всё хорошо», это «страница здесь
-        нестабильна», и так и написано в заметке, с долей дрожащей площади и
-        прямым советом чинить в источнике. Для мерцающей поломки это ровно тот
-        текст, который нужен: чинить надо недетерминированный рендер, а не
-        картинку. А снимок, который лечится пересъёмкой из раза в раз, копит
-        маску и всплывает в отчёте о шуме.
+        The logic is `core.retry.second_look`, shared with the library mode;
+        what is here is only how this service compares: the stored baseline,
+        the masks it already had, the thresholds of this snapshot.
         """
-        try:
-            second = recapture()
-        except Exception as e:
-            first.notes.append(
-                f"Could not take a second capture ({type(e).__name__}: {e}) — "
-                "the verdict is from a single frame.")
-            return None, ignore, first
-        if second is None:
-            return None, ignore, first
+        from .core.retry import second_look
 
-        extra = _noise.stability_mask([rgb, second])
-        if not extra.any():
-            # Ни один пиксель не дрогнул между двумя кадрами. Это сильное
-            # утверждение в пользу падения, и сказать его стоит вслух: дальше
-            # разбирать будут уже не «а вдруг моргнуло».
-            first.notes.append(
-                "Confirmed on a second capture: nothing on this page moved "
-                "between the two frames.")
-            return extra, ignore, first
+        def recompare(moved):
+            wider = _noise.merge_masks(ignore, moved, sticky=True)
+            return compare(baseline.image, rgb, cfg=diff_cfg, name=name,
+                           ignore_mask=wider, ai_hooks=ai_hooks)
 
-        wider = _noise.merge_masks(ignore, extra, sticky=True)
-        again = compare(baseline.image, rgb, cfg=diff_cfg, name=name,
-                        ignore_mask=wider, ai_hooks=ai_hooks)
-        share = float(extra.mean()) * 100
-
-        if again.failed:
-            again.notes.append(
-                f"A second capture was taken: {share:.1f}% of the page is "
-                "unstable and was suppressed, but the difference remains.")
-            return extra, wider, again
-
-        again.notes.append(
-            f"Failed on the first capture and passed on the second: "
-            f"{share:.1f}% of the page does not hold still. The difference did "
-            "not reproduce, so it is noise — but this snapshot is unstable, and "
-            "that is worth fixing at the source.")
-        return extra, wider, again
+        look = second_look(first, rgb, recapture, recompare)
+        return look.unstable, look.result
 
     # ------------------------------------------------------------------ #
     def save_baseline(self, name: str, rgb: np.ndarray, **kw) -> None:

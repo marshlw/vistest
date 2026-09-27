@@ -122,6 +122,11 @@ class Capture:
     #  Things that went wrong on the way to the picture without stopping it —
     #  a font wait that raised, say. Said in the result, never swallowed.
     notes: tuple = field(default_factory=tuple)
+    #  Takes one more frame the same way — one, without the stability loop —
+    #  for a second look at a failure. Only a target that can photograph
+    #  itself has one; a picture handed in cannot be taken again.
+    retake: Callable[[], bytes] | None = field(default=None, compare=False,
+                                               repr=False)
 
 
 def split_masks(mask: Sequence[Any] | None) -> tuple[list, list]:
@@ -363,6 +368,7 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         scale_mode=scale,
         stability=stability,
         notes=tuple(notes),
+        retake=shoot,
     )
 
 

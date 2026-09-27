@@ -457,3 +457,93 @@ def test_missing_baseline_still_raises_with_a_live_page(ctx, page):
     page.set_content(ANIMATED_PAGE)
     with pytest.raises(BaselineMissing):
         expect_screenshot(page, "nothing-yet.png")
+
+
+# --------------------------------------------------------------------------- #
+#  A second look at a failure — the server's logic, now here too
+# --------------------------------------------------------------------------- #
+def page_png(*, spinner: int = 10, header_shift: bool = False) -> bytes:
+    """A still header and a corner where a spinner turns (as the server's test)."""
+    img = np.full((80, 120, 3), 240, np.uint8)
+    img[4:14, 4:100] = 40
+    if header_shift:
+        img[4:14, 4:100] = 240
+        img[10:20, 4:100] = 40
+    img[60:76, 96:116] = spinner
+    return pngio.encode(img)
+
+
+def test_a_failure_that_does_not_reproduce_is_suppressed_as_unstable(ctx):
+    accept(ctx, FakePage(page_png(spinner=10)))
+    #  Two identical frames settle the loop; the third is the second look.
+    page = FakePage(page_png(spinner=250), page_png(spinner=250),
+                    page_png(spinner=120))
+    result = expect_screenshot(page, "page.png")
+    assert result.verdict.value == "pass"
+    assert any((r.suppressed_by or "").startswith("unstable:")
+               for r in result.suppressed)
+    assert any("passed on the second" in n for n in result.notes)
+    assert len(page.calls) == 3
+    row = rows(ctx)[-1]
+    assert row["suppressed_by_reason"] == {
+        "suppressed: did not reproduce on a second capture": 1}
+
+
+def test_a_steady_regression_survives_the_second_look(ctx):
+    accept(ctx, FakePage(page_png(spinner=10)))
+    page = FakePage(page_png(spinner=250, header_shift=True),
+                    page_png(spinner=250, header_shift=True),
+                    page_png(spinner=120, header_shift=True))
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(page, "page.png")
+    result = e.value.result
+    assert all(r.y < 40 for r in result.regions)
+    assert any((r.suppressed_by or "").startswith("unstable:")
+               for r in result.suppressed)
+
+
+def test_the_picture_compared_is_the_first_frame(ctx):
+    accept(ctx, FakePage(page_png(spinner=10)))
+    first = page_png(spinner=250)
+    page = FakePage(first, first, page_png(spinner=120))
+    expect_screenshot(page, "page.png")
+    assert Path(rows(ctx)[-1]["images"]["actual"]).read_bytes() == first
+
+
+def test_a_passing_check_takes_no_extra_frame(ctx):
+    accept(ctx, FakePage(page_png()))
+    page = FakePage(page_png())
+    expect_screenshot(page, "page.png")
+    assert len(page.calls) == 2              # the stability pair, nothing more
+
+
+def test_the_second_look_can_be_switched_off(ctx):
+    from dataclasses import replace
+
+    accept(ctx, FakePage(page_png(spinner=10)))
+    ctx.config.capture = replace(ctx.config.capture, retry_on_fail=False)
+    page = FakePage(page_png(spinner=250), page_png(spinner=250),
+                    page_png(spinner=120))
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(page, "page.png")
+    assert len(page.calls) == 2
+
+
+def test_a_picture_handed_in_is_never_retaken(ctx):
+    accept(ctx, page_png(spinner=10))
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(page_png(spinner=250), "page.png")
+    assert not any("second capture" in n for n in e.value.result.notes)
+
+
+def test_the_library_goes_through_the_shared_function(ctx, monkeypatch):
+    import vistest.core.retry as retry
+
+    seen = []
+    real = retry.second_look
+    monkeypatch.setattr(retry, "second_look",
+                        lambda *a, **k: seen.append(1) or real(*a, **k))
+    accept(ctx, FakePage(page_png(spinner=10)))
+    expect_screenshot(FakePage(page_png(spinner=250), page_png(spinner=250),
+                               page_png(spinner=120)), "page.png")
+    assert seen == [1]

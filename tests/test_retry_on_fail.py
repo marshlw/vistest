@@ -364,3 +364,62 @@ def test_a_snapshot_can_be_made_stricter_too(svc):
 
     _with_thresholds(svc, fail_severity=0, max_changed_area_pct=0)
     assert _check(svc, barely).failed
+
+
+# --------------------------------------------------------------------------- #
+#  What did not reproduce is kept, not dropped
+#
+#  The second comparison masks out the pixels that moved, and with them the
+#  regions sitting on those pixels. Those regions used to vanish without a
+#  trace: a green result, and nothing to say anything had been found. Now
+#  they are in `suppressed`, named as unstable, and counted like every other
+#  suppression.
+# --------------------------------------------------------------------------- #
+def test_a_region_that_did_not_reproduce_is_suppressed_as_unstable(svc):
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    assert not res.failed
+    unstable = [r for r in res.suppressed
+                if (r.suppressed_by or "").startswith("unstable:")]
+    assert len(unstable) == 1
+    r = unstable[0]
+    assert (r.x, r.y) >= (90, 55) and r.x + r.w <= W and r.y + r.h <= H
+    assert "second capture" in r.suppressed_by and "%" in r.suppressed_by
+
+
+def test_only_what_moved_is_suppressed_the_rest_stays_red(svc):
+    first = _page(spinner=250, header_shift=True)
+    res = _check(svc, first, recapture=lambda: _page(spinner=120, header_shift=True))
+    assert res.failed
+    assert all(r.y < 40 for r in res.regions), "the header is what fails"
+    assert any((r.suppressed_by or "").startswith("unstable:") and r.y > 40
+               for r in res.suppressed), "the spinner is what is suppressed"
+
+
+def test_the_unstable_suppression_is_counted_under_its_own_name(svc):
+    from vistest.plugins.runtime import count_suppressed
+
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    counts = count_suppressed(res.suppressed)
+    assert counts.get("suppressed: did not reproduce on a second capture") == 1
+
+
+def test_the_accounting_still_adds_up(svc):
+    """The masked pixels are not changed pixels of the second comparison."""
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    assert res.region_pixels + res.suppressed_pixels + res.unassigned_pixels \
+        == res.changed_pixels
+
+
+def test_the_server_goes_through_the_shared_function(svc, monkeypatch):
+    import vistest.core.retry as retry
+
+    seen = []
+    real = retry.second_look
+
+    def spy(*args, **kwargs):
+        seen.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(retry, "second_look", spy)
+    _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    assert seen == [1]
