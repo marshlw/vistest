@@ -187,9 +187,11 @@ def expect_screenshot(
     baseline_path = store.path_of(key)
     baseline = store.get(key)
 
+    mode = ctx.update_mode
+
     # ---- nothing to compare against yet ------------------------------- #
     if baseline is None:
-        if not ctx.update:
+        if mode is None:
             _record(ctx, key, verdict="new_baseline", action="missing",
                     reason=_with(said, "there is no baseline for this snapshot yet"),
                     images={"actual": str(actual_path)},
@@ -202,7 +204,7 @@ def expect_screenshot(
         _warn_unsettled_accept(shot, key)
         meta = store.put(key, shot.png)
         _record(ctx, key, verdict="new_baseline", action="created",
-                reason=_with(said, "baseline created by --vistest-update"),
+                reason=_with(said, f"baseline created by --vistest-update={mode}"),
                 images={"actual": str(actual_path),
                         "baseline": str(baseline_path)},
                 duration_ms=_ms(started), capture=captured)
@@ -263,7 +265,14 @@ def expect_screenshot(
             images["diff"] = str(diff_path)
 
     # ---- accepting -------------------------------------------------- #
-    if ctx.update:
+    #  `missing` never touches a baseline that exists. `changed` rewrites
+    #  one only when its check failed — a passing check whose bytes differ
+    #  (a re-encode, a subpixel shift the engine calls noise) keeps the
+    #  baseline, so accepting two real changes does not produce a pull
+    #  request that touches every PNG in the project. `all` is the old
+    #  behaviour: anything that differs by a byte is written.
+    failed = result.verdict is Verdict.FAIL
+    if mode == "all" or (mode == "changed" and failed):
         if _sha_of(shot.png) != _sha_of(baseline):
             _warn_unsettled_accept(shot, key)
         meta = store.put(key, shot.png)

@@ -368,10 +368,15 @@ git lfs track "tests/__vistest__/**/*.png"
 
 | Флаг | `pyproject.toml` | Что делает |
 | --- | --- | --- |
-| `--vistest-update` | — | принять текущие снимки как эталоны |
+| `--vistest-update[=MODE]` | — | принять снимки как эталоны: `missing` — только отсутствующие; `changed` (по умолчанию, и голый флаг) — отсутствующие и упавшие; `all` — всё, что разошлось байтами |
 | `--vistest-baselines=PATH` | `vistest_baselines` | где лежат эталоны (по умолчанию `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | каталог платформы; без него берётся со страницы |
 | `--vistest-report=PATH` | `vistest_report` | куда положить HTML-отчёт |
+
+Голый `--vistest-update` берёт следующий аргумент как режим, поэтому пути пишутся
+первыми — `pytest tests/ --vistest-update`, — или режим пишется явно:
+`pytest --vistest-update=changed tests/`. Путь на месте режима отвергается с
+этим советом, а не угадывается.
 
 Командная строка сильнее `pyproject.toml`, тот сильнее `vistest.yaml`, тот —
 сильнее умолчаний. Цель, которая не является живой страницей — байты, файл,
