@@ -1650,8 +1650,13 @@ def _run_one_test(job: Job, node: str, project_key: str, update: bool) -> dict:
         return {"kind": "test", "test": node, "project": project.key, **summary}
 
     path = _pytest_path(node)
-    args = ["--vistest-update"] if update else []
-    job.say(f"pytest {path}" + (" --vistest-update" if update else ""))
+    #  `all`, not the flag's default `changed`: this is the Re-capture button,
+    #  and a person who pressed it wants the picture taken now to become the
+    #  baseline — also when the check would have passed. Under `changed` a
+    #  passing snapshot keeps its old baseline, and the job reports success
+    #  for a re-capture that wrote nothing.
+    args = ["--vistest-update=all"] if update else []
+    job.say(f"pytest {path}" + (" --vistest-update=all" if update else ""))
     result = _run_pytest(job, path, args)
     if result.get("exit_code") not in (0, 1):
         raise JobFailure(

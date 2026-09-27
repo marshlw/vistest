@@ -112,6 +112,15 @@
   passing and failing pairs really are, `True` and the environment variable,
   and every command-line spelling in a subprocess project, including the path
   after a bare flag.
+- **Re-capture from the interface asks for `--vistest-update=all`.** The
+  Re-capture button on a snapshot captured by one of our own tests runs that
+  test with the update flag. It passed a bare `--vistest-update`, which now
+  means `changed`: a snapshot whose check passed kept its old baseline, and
+  the job reported success for a re-capture that wrote nothing. The button
+  asks for this picture to become the baseline, so it passes `all`. Projects
+  connected from outside are not affected — they are updated through the
+  adapter (`VISTEST_ADAPTER_UPDATE`), not through this flag. New test:
+  `tests/api/test_recapture_update_mode.py`.
 - **`compare` returns at once on identical pixels, and computes ΔE00 only
   where the RGB differs.** A green run is mostly pixel-identical pairs, and
   the cascade paid full price for them: alignment, two Lab conversions,
