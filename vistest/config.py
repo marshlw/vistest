@@ -193,7 +193,10 @@ class VisTestConfig:
                     raise ValueError(f"vistest.yaml: unknown key {key}.{k}")
                 # tuple fields come from YAML as lists
                 patch[k] = tuple(v) if isinstance(getattr(current, k), tuple) else v
-            setattr(cfg, key, replace(current, **patch))
+            try:
+                setattr(cfg, key, replace(current, **patch))
+            except ConfigError as e:
+                raise ConfigError(f"{path}: {e}") from None
 
         if raw.get("plugins") is not None:
             cfg.plugins = _plugins_section(raw["plugins"], path)

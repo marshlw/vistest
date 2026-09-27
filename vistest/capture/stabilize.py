@@ -168,6 +168,16 @@ FIND_BOXES_JS = """
 }
 """
 
+#  Web fonts only. The library mode waits for this before its first frame, as
+#  `toHaveScreenshot()` does; images are left to the page, because a lazy
+#  image outside the viewport never completes and would hold the wait forever.
+WAIT_FONTS_JS = """
+async () => {
+  if (document.fonts && document.fonts.ready) { await document.fonts.ready; }
+  return true;
+}
+"""
+
 WAIT_MEDIA_JS = """
 async () => {
   const imgs = Array.from(document.images);

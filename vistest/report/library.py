@@ -302,6 +302,7 @@ def _row(entry: dict, budget: list[int]) -> str:
         facts.append(f"SSIM {metrics['ssim_global']:.4f}")
     if entry.get("duration_ms"):
         facts.append(f"{int(entry['duration_ms'])} ms")
+    facts.extend(_capture_facts(entry.get("capture")))
 
     suppressed = int(entry.get("suppressed_count") or 0)
     if suppressed:
@@ -322,6 +323,23 @@ def _row(entry: dict, budget: list[int]) -> str:
         + (f'<p class="nodeid">{_e(entry["nodeid"])}</p>'
            if entry.get("nodeid") else "")
         + body + '</div></details>')
+
+
+def _capture_facts(capture) -> list[str]:
+    """Frames and the time to stability, when the target was a live page.
+
+    A page that did not settle is named in the summary line itself, not only in
+    the reason: it is the one fact about a check that makes its verdict — green
+    or red — less trustworthy, and a person scanning the list has to see it
+    without opening every row.
+    """
+    if not isinstance(capture, dict) or capture.get("stable") is None:
+        return []
+    frames = int(capture.get("frames") or 0)
+    elapsed = int(capture.get("elapsed_ms") or 0)
+    if capture.get("stable"):
+        return [f"stable after {frames} frames, {elapsed} ms"]
+    return [f"did not settle: {frames} frames in {elapsed} ms"]
 
 
 def _annotations_text(region: dict) -> str:
