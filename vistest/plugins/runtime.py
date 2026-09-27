@@ -75,6 +75,8 @@ MAX_SUPPRESSED_AREA_FRAC = 0.20
 PREFIX_NOISE = "noise"
 PREFIX_BELOW = "below-fail-on"
 PREFIX_KIND = "ignored-kind"
+#  Set by `core.retry`: present on the first frame, gone on the second.
+PREFIX_UNSTABLE = "unstable"
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,8 @@ _REASONS = {
         PREFIX_BELOW, "not failing: scored below the fail_on threshold"),
     PREFIX_KIND: SuppressionReason(
         PREFIX_KIND, "suppressed by diff.ignore_kinds"),
+    PREFIX_UNSTABLE: SuppressionReason(
+        PREFIX_UNSTABLE, "suppressed: did not reproduce on a second capture"),
 }
 
 #  Classes the engine itself calls noise. Set aside by `ignore_kinds`, they are

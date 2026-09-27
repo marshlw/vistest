@@ -63,6 +63,32 @@
   focused input giving a stable frame and a pass three times in a row at
   different moments of the cycle, a page updating its text every 16 ms judged
   on its last frame with the line about it, and a `Locator`.
+- **A second frame on failure — in the library too, through the server's
+  function.** The logic of `CheckService._retry` moved to
+  `vistest/core/retry.py` as `second_look(first, frame, recapture,
+  recompare)`; the service's `_retry` is now six lines that say how *it*
+  compares (stored baseline, its masks, the snapshot's thresholds) and call
+  it, and `expect_screenshot` calls the same function. In the library a
+  failed check of a `Page` or `Locator` takes exactly one more frame (one
+  `screenshot()`, no stability loop), masks what moved between the two, and
+  compares the **first** frame again; pictures handed in as bytes, arrays or
+  files are never retaken, and `capture.retry_on_fail: false` turns it off as
+  it does for the server. One change in behaviour for both: a region of the
+  first comparison that is absent from the second — its pixels were among
+  those that moved — used to vanish from the result; it is now kept in
+  `suppressed` with `suppressed_by="unstable: did not reproduce on a second
+  capture (N% of the page moved between the two frames)"`, counted by the
+  report and the pytest summary under the new phrase «suppressed: did not
+  reproduce on a second capture» (`PREFIX_UNSTABLE` in `plugins/runtime.py`).
+  Regions that were already suppressed keep their own reason. Their pixels
+  are not added to `suppressed_pixels` — the second comparison ignored them —
+  so the three-way split of `changed_pixels` still adds up, and a test says
+  so. The notes are unchanged, word for word. New tests in
+  `tests/test_retry_on_fail.py` (the unstable region, the header that stays
+  red beside it, the count, the accounting, the server going through the
+  shared function) and `tests/test_library_capture.py` (the same behaviour
+  from `expect_screenshot`, the first frame as the artifact, no extra frame
+  on a pass, the switch, no retake of a picture handed in).
 
 ### Stage R0 tails
 
