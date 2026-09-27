@@ -21,6 +21,81 @@ on:
     branches: [main, master]
 
 jobs:
+  # The library mode runs on the users' machines, and a good share of those
+  # are Windows: paths with backslashes and drive letters, CRLF checkouts, a
+  # different temp directory, no fork. Everything else in this workflow runs
+  # on Linux and would not notice. The list is the part of the suite that
+  # does not need the server: the core, the library, snapshot naming, the
+  # warp and the frozen corpus.
+  #
+  # Plus test_wheel_ui.py, which needs no [server] here: it builds the wheel
+  # from a copy of the sources and installs it with its `server` extra into a
+  # venv of its own, then starts `vistest serve` from an empty directory and
+  # asks for /ui/. That is the install a Windows user does, and the one place
+  # the wheel's Scripts\vistest.exe and its copy of the UI are exercised.
+  # It downloads the server's dependencies: about a minute.
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    defaults:
+      run:
+        # Git Bash, so the globs below expand the same way they do on Linux.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Core and library on Windows
+        run: >
+          pytest -q
+          tests/test_core_*.py
+          tests/test_library_*.py
+          tests/test_naming.py
+          tests/test_warp.py
+          tests/test_corpus_frozen.py
+          tests/test_wheel_ui.py
+
+  # The job the comment above `dependencies` in pyproject.toml describes.
+  # The base dependencies carry upper bounds by major version; this job
+  # installs the newest release of each IGNORING those bounds, so the next
+  # numpy or OpenCV major breaks a build we own before it breaks a user's run.
+  # Red here means "look before raising a ceiling", not "the code is broken":
+  # keep it out of the required checks in branch protection.
+  latest-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install, then the newest of each base dependency
+        run: |
+          pip install -e ".[dev]"
+          # No version specifiers on purpose: pip warns that vistest's
+          # ceilings are violated and installs the newest anyway.
+          pip install --upgrade numpy opencv-python-headless pillow pyyaml
+          pip list | grep -Ei "numpy|opencv|pillow|pyyaml"
+
+      - name: Core and library on the newest dependencies
+        run: >
+          pytest -q
+          tests/test_core_*.py
+          tests/test_library_*.py
+          tests/test_naming.py
+          tests/test_warp.py
+          tests/test_corpus_frozen.py
   python:
     runs-on: ubuntu-latest
     strategy:
