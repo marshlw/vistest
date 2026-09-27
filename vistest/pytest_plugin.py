@@ -54,10 +54,40 @@ _INI = {
 }
 
 
+#  Mirrors `library.context.UPDATE_MODES`; not imported from there, because
+#  this module is loaded in every pytest run and imports nothing heavy at the
+#  top. `tests/test_library_update.py` holds the two lists together.
+_UPDATE_MODES = ("missing", "changed", "all")
+
+
+def _update_mode(value: str) -> str:
+    """argparse `type=` for `--vistest-update`: a mode, or a message that helps.
+
+    A bare `--vistest-update` takes an optional value, so a path written right
+    after it — `pytest --vistest-update tests/` — arrives here as the value.
+    That cannot be told apart from a typo after the fact, and guessing would
+    decide what gets written into the repository; so it is refused, with the
+    two spellings that do what was meant.
+    """
+    if value in _UPDATE_MODES:
+        return value
+    import argparse
+
+    raise argparse.ArgumentTypeError(
+        f"{value!r} is not a mode ({', '.join(_UPDATE_MODES)}). A bare "
+        "--vistest-update takes the next argument as its mode: write "
+        "--vistest-update=changed, or put test paths before the flag")
+
+
 def pytest_addoption(parser):
     group = parser.getgroup("vistest", "Visual testing")
-    group.addoption("--vistest-update", action="store_true",
-                    help="Accept the current screenshots as the baselines")
+    group.addoption("--vistest-update", nargs="?", const="changed", default=None,
+                    type=_update_mode, metavar="MODE",
+                    help="Accept the current screenshots as the baselines: "
+                         "'missing' writes only baselines that do not exist, "
+                         "'changed' (the default, also a bare flag) those and "
+                         "the ones whose check failed, 'all' every baseline "
+                         "that differs by a byte")
     group.addoption("--vistest-baselines", default=None, metavar="PATH",
                     help="Directory with the committed baselines "
                          "(default: tests/__vistest__)")
@@ -158,7 +188,7 @@ def pytest_configure(config):
         report=(root / report) if report else None,
         platform_override=_setting(config, "vistest_platform",
                                    "vistest_platform"),
-        update=bool(config.getoption("--vistest-update")),
+        update=config.getoption("--vistest-update"),
         config_path=config.getoption("--vistest-config"),
         preset=config.getoption("--vistest-preset"),
         fail_on=config.getoption("--vistest-fail-on"),
@@ -294,8 +324,9 @@ def _summary(terminalreporter, exitstatus, config) -> None:
             terminalreporter.write_line(f"Report: {parts.report}")
         if ctx is not None and ctx.update:
             terminalreporter.write_line(
-                f"Baselines written to {ctx.baselines} — commit them, or CI "
-                "has nothing to compare against.")
+                f"--vistest-update={ctx.update_mode}: baselines written to "
+                f"{ctx.baselines} — commit them, or CI has nothing to compare "
+                "against.")
 
     if runs:
         terminalreporter.write_line(f"Run artifacts: {runs[-1].parent}")

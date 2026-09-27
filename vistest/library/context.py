@@ -50,6 +50,30 @@ ENV_PLATFORM = "VISTEST_PLATFORM"
 ENV_REPORT = "VISTEST_REPORT"
 ENV_UPDATE = "VISTEST_UPDATE_BASELINES"
 
+#: What `--vistest-update` rewrites. `missing` — only baselines that do not
+#: exist yet; `changed` — those, and the ones whose check failed; `all` —
+#: every baseline whose bytes differ from the new picture, passing or not.
+UPDATE_MODES = ("missing", "changed", "all")
+#: A bare `--vistest-update`, and `VISTEST_UPDATE_BASELINES=1`.
+DEFAULT_UPDATE_MODE = "changed"
+
+
+def update_mode(value: Any) -> str | None:
+    """`update=` in any of the forms it arrives in -> a mode, or None.
+
+    `True` is what the flag used to be and what the environment variable still
+    is: it means the default mode. Anything that is not a mode is refused by
+    name — a typo here decides what is written into somebody's repository.
+    """
+    if value is None or value is False or value == "":
+        return None
+    if value is True:
+        return DEFAULT_UPDATE_MODE
+    if isinstance(value, str) and value in UPDATE_MODES:
+        return value
+    raise ValueError(f"--vistest-update: {value!r} is not one of "
+                     f"{', '.join(UPDATE_MODES)}")
+
 
 @dataclass
 class LibraryContext:
@@ -60,7 +84,9 @@ class LibraryContext:
     artifacts_root: Path | None = None
     report: Path | None = None
     platform_override: str = ""
-    update: bool = False
+    #  None/False — compare only; True — the default mode; or one of
+    #  UPDATE_MODES. Read through `update_mode`, which validates it.
+    update: bool | str | None = False
     config_path: str | None = None
     preset: str | None = None
     #  `--vistest-fail-on`, folded over `plugins.fail_on` from the config.
@@ -82,6 +108,10 @@ class LibraryContext:
         self.report = Path(self.report)
 
     # ------------------------------------------------------------------ #
+    @property
+    def update_mode(self) -> str | None:
+        return update_mode(self.update)
+
     @property
     def config(self) -> VisTestConfig:
         if self._config is None:

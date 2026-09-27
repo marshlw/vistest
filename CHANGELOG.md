@@ -89,6 +89,29 @@
   shared function) and `tests/test_library_capture.py` (the same behaviour
   from `expect_screenshot`, the first frame as the artifact, no extra frame
   on a pass, the switch, no retake of a picture handed in).
+- **`--vistest-update=missing|changed|all`; the default is `changed`.**
+  **Behaviour change.** The flag used to rewrite every baseline whose bytes
+  differed from the new picture — including checks that *passed* on a
+  re-encoded or subpixel-shifted frame — so accepting two real changes gave a
+  pull request touching every PNG in the project. Now: `missing` writes only
+  baselines that do not exist; `changed` writes those and the ones whose
+  check failed (after the second look, so a failure that did not reproduce is
+  not accepted); `all` is the old behaviour. A bare `--vistest-update` means
+  `changed`, as does `VISTEST_UPDATE_BASELINES=1` and `LibraryContext(update=
+  True)`. One more consequence of the flag taking a value: a bare flag
+  followed by a path — `pytest --vistest-update tests/` — now reads the path
+  as the mode and stops with a message that says so and gives the two
+  spellings that work (`pytest tests/ --vistest-update`,
+  `--vistest-update=changed`); guessing would decide what is written into the
+  repository. The report row of a new baseline and the run summary name the
+  mode. `LibraryContext.update_mode` validates whatever `update` holds; the
+  plugin keeps its own copy of the mode list so that it still imports nothing
+  heavy, and a test holds the two lists together. New tests:
+  `tests/test_library_update.py` — the three modes on four snapshots (new,
+  byte-identical, byte-different but passing, failing) with a control that the
+  passing and failing pairs really are, `True` and the environment variable,
+  and every command-line spelling in a subprocess project, including the path
+  after a bare flag.
 
 ### Stage R0 tails
 

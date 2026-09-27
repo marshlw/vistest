@@ -259,10 +259,15 @@ git lfs track "tests/__vistest__/**/*.png"
 
 | Flag | `pyproject.toml` | What it does |
 | --- | --- | --- |
-| `--vistest-update` | — | accept the current screenshots as the baselines |
+| `--vistest-update[=MODE]` | — | accept screenshots as baselines: `missing` — only absent ones; `changed` (default, also the bare flag) — absent and failed; `all` — everything that differs by a byte |
 | `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | the platform directory; taken from the page when not set |
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
+
+A bare `--vistest-update` takes the next argument as its mode, so write paths
+first — `pytest tests/ --vistest-update` — or spell the mode out:
+`pytest --vistest-update=changed tests/`. A path in the mode's place is
+refused with that advice rather than guessed at.
 
 Command line beats `pyproject.toml`, which beats `vistest.yaml`, which beats
 the defaults. A target that is not a live page — `bytes`, a file, an array —
