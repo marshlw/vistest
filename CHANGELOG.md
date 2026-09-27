@@ -112,6 +112,45 @@
   passing and failing pairs really are, `True` and the environment variable,
   and every command-line spelling in a subprocess project, including the path
   after a bare flag.
+- **`compare` returns at once on identical pixels, and computes ΔE00 only
+  where the RGB differs.** A green run is mostly pixel-identical pairs, and
+  the cascade paid full price for them: alignment, two Lab conversions,
+  CIEDE2000 and SSIM over the whole frame, about a quarter of a second for a
+  900×1200 page. Identical arrays now return a PASS with no regions and the
+  metrics of a perfect match (SSIM 1, ΔE 0, no changed pixels, no shift),
+  a zero ΔE map and an empty mask for any renderer, and one note, «Identical
+  to the baseline, pixel for pixel.» — the only field that differs from what
+  the cascade used to say about such a pair (it said «Alignment: no shift»,
+  or on a flat frame an alignment of low confidence). For every other pair,
+  `color.delta_e_ciede2000_where` computes CIEDE2000 on the pixels whose RGB
+  differs and leaves 0 elsewhere — which is what the formula gives a colour
+  against itself, so the map is the same float for float (tested bit for
+  bit, on the corpus and on random frames). Past 80% of pixels selected
+  (`DENSE_SHARE`; sensor noise and JPEG touch nearly all of them) picking
+  pixels out costs more than it saves, so the full map is computed and the
+  rest zeroed. The «RGB differs» map is three channel comparisons OR-ed
+  (2 ms) rather than `np.any(..., axis=2)` (15 ms).
+  Nothing the engine reports moved: `tests/benchmark.py --no-timing`, with
+  and without `--compare` and `--no-ai`, prints byte-identical output before
+  and after, under OpenCV 5.0 and 4.14 alike, and `--record-metrics`
+  rewrites `metrics.json` to the same bytes. Timing, `compare()` alone after a
+  warm-up, median of three, preset balanced, same machine: an identical
+  900×1200 pair **277 ms → 0.7 ms**; the 54 corpus pairs, mean **289 → 171
+  ms**, median 276 → 154; pairs where most pixels differ (sensor noise,
+  JPEG, dither) unchanged within measurement noise. A green library run of
+  100 snapshots, sum of `compare()`: **26.96 s → 0.08 s** when the pictures
+  are pixel-identical (wall time of the 100 checks 28.8 s → 1.5 s), 30.4 s →
+  19.1 s when they are the corpus's passing-but-noisy pairs.
+  New tests: `tests/test_compare_fast.py` — the identical result field by
+  field and against the full cascade's metrics, its maps, one changed pixel
+  and a size change taking the long way, a 900×1200 identical pair under a
+  generous 50 ms (best of five), the selective map bit for bit on random
+  frames, empty, chunked and dense selections, and the whole result on every
+  third corpus pair against the engine with both shortcuts patched out.
+  `tests/test_margins.py` caught its ΔE map by spying on
+  `color.delta_e_ciede2000`, which the comparator no longer calls for every
+  pair; it now reads the map the comparator returns in `maps["de_map"]` —
+  the same array the consensus read — and its gaps are unchanged.
 
 ### Stage R0 tails
 

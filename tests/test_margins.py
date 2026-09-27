@@ -36,7 +36,6 @@ import numpy as np
 import pytest
 
 from vistest.config import VisTestConfig
-from vistest.core import color as _color
 from vistest.core import explain as _explain
 from vistest.core import refit as _refit
 from vistest.core.comparator import compare
@@ -73,16 +72,16 @@ def probed(cases):
 
     Taken from inside the run rather than recomputed: the ΔE map is the one
     after global alignment, and the residuals are the ones that decided.
+
+    The map is the one the comparator hands out in `maps["de_map"]` — the
+    array the consensus read. It used to be caught by spying on
+    `color.delta_e_ciede2000`, which the comparator no longer calls for every
+    pair: ΔE00 is computed only where the RGB differs, and a pixel-identical
+    pair returns before any of it (see tests/test_compare_fast.py).
     """
     cfg = VisTestConfig.preset_of(cp.METRICS_PRESET)
-    de_maps: list[np.ndarray] = []
     residuals: list[float] = []
-    real_de, real_fit = _color.delta_e_ciede2000, _refit.fit
-
-    def de_spy(*a, **kw):
-        m = real_de(*a, **kw)
-        de_maps.append(m)
-        return m
+    real_fit = _refit.fit
 
     def fit_spy(*a, **kw):
         f = real_fit(*a, **kw)
@@ -91,15 +90,14 @@ def probed(cases):
 
     out = {}
     mp = pytest.MonkeyPatch()
-    mp.setattr(_color, "delta_e_ciede2000", de_spy)
     mp.setattr(_explain._refit, "fit", fit_spy)
     try:
         for c in cases:
-            de_maps.clear()
             residuals.clear()
-            compare(c.expected, c.actual, cfg=cfg.diff, name=c.name)
-            assert de_maps, "the comparator no longer computes ΔE00 through core.color"
-            out[c.name] = (c, de_maps[0], list(residuals))
+            res = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name)
+            de_map = res.maps.get("de_map")
+            assert de_map is not None, "the comparator no longer returns its ΔE map"
+            out[c.name] = (c, de_map, list(residuals))
     finally:
         mp.undo()
     return out

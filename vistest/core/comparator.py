@@ -77,6 +77,14 @@ def compare(
     res.size_expected = (int(expected_rgb.shape[1]), int(expected_rgb.shape[0]))
     res.size_actual = (int(actual_rgb.shape[1]), int(actual_rgb.shape[0]))
 
+    # ---------- Identical: nothing to find ----------
+    #  The most common pair in a green run, and the one the cascade has least
+    #  to say about: no pixel differs, so every stage would conclude nothing,
+    #  at the full price of alignment, two colour conversions, CIEDE2000 and
+    #  SSIM over the whole frame. The answer is known before any of that.
+    if _same_pixels(expected_rgb, actual_rgb):
+        return _identical(res, expected_rgb, actual_rgb, t0)
+
     # ---------- 0. Sizes ----------
     exp, act, padded = _align.reconcile_sizes(expected_rgb, actual_rgb)
     if padded:
@@ -111,7 +119,11 @@ def compare(
     gray_act = _warp.to_uint8(lab_act[:, :, 0] * 2.55)
 
     # ---------- 3. Perceptual and structural maps ----------
-    de_map = _color.delta_e_ciede2000(lab_exp, lab_act)
+    #  ΔE00 only where the RGB differs; exactly 0 elsewhere, which is what
+    #  the full formula gives a colour against itself. Same map, bit for bit,
+    #  at the cost of the pixels that changed rather than all of them.
+    de_map = _color.delta_e_ciede2000_where(
+        lab_exp, lab_act, _differs(exp, act_aligned))
     smap, ssim_global = _struct.ssim_map(gray_exp, gray_act)
     res.ssim_global = ssim_global
 
@@ -271,6 +283,46 @@ def compare(
     res.maps["mask"] = cleaned
     res.maps["aligned_actual"] = act_aligned
     res.maps["expected"] = exp
+    return res
+
+
+def _differs(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Where the RGB differs, as a bool map.
+
+    Three channel comparisons OR-ed together rather than
+    `np.any(a != b, axis=2)`: the same map, but a reduction over an axis of
+    length three is the slow way to write it — 15 ms against 2 on a 900×1200
+    frame, which on a noisy pair is more than the selective ΔE00 saves.
+    """
+    d = a != b
+    return d[..., 0] | d[..., 1] | d[..., 2]
+
+
+def _same_pixels(a: np.ndarray, b: np.ndarray) -> bool:
+    return a.shape == b.shape and np.array_equal(a, b)
+
+
+def _identical(res: CompareResult, expected: np.ndarray, actual: np.ndarray,
+               t0: float) -> CompareResult:
+    """The result of a pixel-identical pair, as the full cascade would give it.
+
+    PASS, no regions, nothing suppressed, and the metrics of a perfect match:
+    SSIM 1, ΔE 0, no changed pixels, no shift. The maps are there too — a
+    zero ΔE map and an empty mask — so that a renderer drawing a heatmap for
+    a passing pair gets what it always got. The one visible difference is the
+    note, which says why nothing else was computed.
+    """
+    h, w = expected.shape[:2]
+    res.total_pixels = h * w
+    res.ssim_global = 1.0
+    res.align_dx, res.align_dy, res.aligned = 0.0, 0.0, False
+    res.notes.append("Identical to the baseline, pixel for pixel.")
+    res.verdict = Verdict.PASS
+    res.duration_ms = int((time.perf_counter() - t0) * 1000)
+    res.maps["de_map"] = np.zeros((h, w), dtype=np.float32)
+    res.maps["mask"] = np.zeros((h, w), dtype=bool)
+    res.maps["aligned_actual"] = actual
+    res.maps["expected"] = expected
     return res
 
 
