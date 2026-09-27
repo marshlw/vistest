@@ -537,8 +537,11 @@ marked as a port, and never the published figure.
 
 The synthetic benchmark is the main tool for tuning thresholds: after any
 configuration change you immediately see whether the engine started catching
-noise. Real screenshots are useless for this — in a real screenshot you do not
-know the ground truth.
+noise. Unlabelled real screenshots are useless for this — in a screenshot
+nobody has labelled you do not know the ground truth. Real screenshots with
+mutations are not: take a real render, apply a change whose label is known in
+advance (a recoloured button, a shifted block, a re-encoded frame), and the
+ground truth is known by construction.
 
 The primary metric is **false-fail rate**: the share of pages that did not
 meaningfully change but produced a red test.
@@ -557,6 +560,12 @@ x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
 | absdiff | 24/54 | 30/32 | 0/22 |
 | pixelmatch 7.2.0 | 34/54 | 18/32 | 2/22 |
 | Playwright 1.63.0 `toHaveScreenshot()` | 38/54 | 14/32 | 2/22 |
+
+The corpus is synthetic: every page in it is drawn by OpenCV, not rendered by
+a browser. A first probe on real Chromium renders did not confirm the
+advantage in either direction — neither for VisTest nor against it — and a
+corpus captured from a browser is in progress. Read the table as a measurement
+on synthetic pages, not as a claim about real ones.
 
 Every tool runs with its defaults, nothing set:
 

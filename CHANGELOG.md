@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+### R3: capture parity with `toHaveScreenshot`, and speed
+
+- **Two loose ends of the public repository.** `SECURITY.md` asked readers to
+  write to «<security contact — fill this in>»; it now sends them to a private
+  advisory, https://github.com/marshlw/vistest/security/advisories/new, and the
+  Russian editing note above it is gone (one line less in the i18n debt). The
+  README's *Current figures* now say under the table what the table is
+  measured on: a synthetic corpus drawn by OpenCV, where a first probe on real
+  Chromium renders did not confirm the advantage in either direction, and a
+  corpus captured from a browser is in progress. And the sentence that called
+  real screenshots useless for tuning is narrowed to what is true: useless
+  without labels, not with mutations whose label is known in advance. Same
+  change in `README.ru.md`.
+
 ### Stage R0 tails
 
 - **A directory role follows the groups down as well as up.** `_try_external`

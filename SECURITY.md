@@ -7,10 +7,10 @@ it. This file says plainly which is which.
 
 ## Reporting a vulnerability
 
-<!-- Впишите сюда свой адрес или ссылку на приватный advisory GitHub. -->
-Write to **<security contact — fill this in>** with a description and, if you
-have one, a way to reproduce it. Please do not open a public issue for
-something exploitable.
+Open a private security advisory at
+**https://github.com/marshlw/vistest/security/advisories/new** with a
+description and, if you have one, a way to reproduce it. Please do not open a
+public issue for something exploitable.
 
 You will get a first answer within 5 working days. If the report is confirmed,
 we will agree a disclosure date with you — normally after a fix is released. We
