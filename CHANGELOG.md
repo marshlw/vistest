@@ -32,6 +32,41 @@
   carry every target, ship their fonts; drawn only with those fonts; the
   control; the environment record). The Chromium checks are skipped, not red,
   where Chromium cannot start. `*.ttf` is marked binary in `.gitattributes`.
+- **Mutations and noise.** `scripts/browser_corpus.py` now makes the pairs.
+  SIGNAL: 22 families of one-element changes (`FAMILIES`) — fill, text,
+  link and icon colour at ΔE00 2/4/8/15 (icons 4/8/15), a border appearing or
+  disappearing, underline, radius +2/+4/+8px, padding −2…+2px, content moved
+  down 1/2/4px, font size ±1px, bold, letter spacing +0.2/+0.5/+1px, line
+  height +1/+2/+4px, an icon swapped, one character, one word, an element
+  removed, two neighbours swapped, opacity 0.98/0.9/0.8/0.6, a shadow removed
+  or made heavier, a focus ring — 50 steps per template, each labelled by the
+  step itself. The colour steps are computed by a CIEDE2000 written out in
+  the script (checked against Sharma's published pairs), not by the engine's
+  own ΔE: the ruler must not be the thing it measures; the manifest gets the
+  ΔE00 each step actually has after rounding to 8 bits. Four judgement calls
+  were put to the maintainer and answered before anything was frozen: ΔE00 ≈
+  2 is DISPUTED (kept, printed, never counted), a 1px shift is SIGNAL,
+  opacity 0.98 is NOISE, letter spacing +0.2px is SIGNAL; the answer and its
+  reason sit next to the magnitude. NOISE: the same DOM under eight rendering
+  configurations (`NOISE_CONFIGS`: hinting none/full, no LCD text with no
+  subpixel positioning, `text-rendering: geometricPrecision`, the page moved
+  by 0.25 and 0.5px, the full Chromium instead of the headless shell, GPU
+  rasterisation). A configuration that draws the baseline's pixels gets no
+  pair and is recorded as such. Every frame is drawn twice, in two browsers
+  started the same way, and must agree to the pixel, or the capture stops.
+  Getting there took three fixes, each found by that control: a mutation is
+  applied at DOMContentLoaded, before the first paint (the page checks
+  `performance` for a paint entry) — applied after `load`, a change landed
+  before or after the first raster depending on timing, and the same fill came
+  out 7 pixels different in a second browser; a rendering stylesheet is
+  present from the first paint for the same reason (a 0.25px shift of the
+  dark template differed by 23 pixels about one run in six); and the focus
+  ring is drawn on buttons, not on text inputs — an outline on an `<input>`
+  moved one corner pixel in about one frame in eight, a Chromium behaviour
+  worth knowing, not a mutation worth measuring. A stress run drew every
+  frame four times across two browsers: no frame came out two ways. `offset`
+  grows `padding-top`, not `margin-top`, which collapsed with the margin
+  above it and moved nothing on the article.
 
 ### R3: capture parity with `toHaveScreenshot`, and speed
 

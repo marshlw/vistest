@@ -65,6 +65,16 @@ def test_a_template_carries_every_mutation_target(key):
     assert not missing, f"{key}.html has no data-m target for {missing}"
 
 
+@pytest.mark.parametrize("key", [t.key for t in bc.TEMPLATES])
+def test_every_target_is_one_element(key):
+    """A mutation changes exactly one element: its label is about that element."""
+    counts: dict[str, int] = {}
+    for value in re.findall(r'data-m="([^"]+)"', _template(key)):
+        for token in value.split():
+            counts[token] = counts.get(token, 0) + 1
+    assert {k: n for k, n in counts.items() if n != 1} == {}
+
+
 def test_the_fonts_are_shipped_with_their_licence():
     fonts = sorted(p.name for p in (bc.TEMPLATE_DIR / "fonts").glob("*.ttf"))
     assert fonts, "no fonts next to the templates"
@@ -96,8 +106,7 @@ def test_every_template_is_drawn_with_the_shipped_fonts_only(pw):
     s = bc.Session(pw)
     try:
         for t in bc.TEMPLATES:
-            s.open(t.key)
-            fonts = bc.fonts_used(s.page)
+            _, fonts = s.frame(t.key, fonts=True)
             assert fonts, t.key
             system = [f for f in fonts if not f["custom"]]
             assert not system, f"{t.key}: drawn partly with {system}"
@@ -110,12 +119,37 @@ def test_two_fresh_browsers_draw_the_same_pixels(pw):
     a, b = bc.Session(pw), bc.Session(pw)
     try:
         for t in bc.TEMPLATES:
-            a.open(t.key)
-            b.open(t.key)
-            assert bc.differing_pixels(a.shoot(), b.shoot()) == 0, t.key
+            assert bc.differing_pixels(a.frame(t.key), b.frame(t.key)) == 0, t.key
     finally:
         a.close()
         b.close()
+
+
+def test_every_family_changes_the_page_the_same_way_twice(pw):
+    """One magnitude of every family, on one template, in two browsers."""
+    a, b = bc.Session(pw), bc.Session(pw)
+    try:
+        base = a.frame("table")
+        for fam in bc.FAMILIES:
+            mag = fam.magnitudes[-1]
+            mutation, _ = bc.plan_mutation(a, "table", fam, mag)
+            png = a.frame("table", mutation)
+            assert bc.differing_pixels(base, png), f"{fam.key} changed nothing"
+            assert bc.differing_pixels(png, b.frame("table", mutation)) == 0, fam.key
+    finally:
+        a.close()
+        b.close()
+
+
+def test_a_mutation_that_matches_nothing_is_refused(pw):
+    s = bc.Session(pw)
+    try:
+        with pytest.raises(bc.CorpusError, match="0 elements"):
+            s.frame("table", ('[data-m~="nothing"]', "", None))
+        with pytest.raises(bc.CorpusError, match="did not run"):
+            s.frame("table", ('[data-m~="fill"]', "throw new Error('x')", None))
+    finally:
+        s.close()
 
 
 def test_the_environment_names_the_build_that_drew_the_frame(pw):
@@ -128,3 +162,63 @@ def test_the_environment_names_the_build_that_drew_the_frame(pw):
     other = dict(env, chromium="0.0")
     assert bc.env_mismatch(env, other) == [
         f"chromium: recorded {env['chromium']!r}, here '0.0'"]
+
+
+# --------------------------------------------------------------------------- #
+#  Mutations and noise — the definitions
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("lab1, lab2, expected", [
+    #  Sharma, Wu, Dalal (2005), test pairs 1, 7, 17, 25, 13 and 34.
+    ((50, 2.6772, -79.7751), (50, 0, -82.7485), 2.0425),
+    ((50, 0, 0), (50, -1, 2), 2.3669),
+    ((50, 2.5, 0), (73, 25, -18), 27.1492),
+    ((60.2574, -34.0099, 36.2677), (60.4626, -34.1751, 39.4387), 1.2644),
+    ((50, 2.49, -0.001), (50, -2.49, 0.0009), 7.1792),
+    ((2.0776, 0.0795, -1.135), (0.9033, -0.0636, -0.5514), 0.9082),
+])
+def test_the_colour_ruler_is_ciede2000(lab1, lab2, expected):
+    assert round(bc.delta_e00_lab(lab1, lab2), 4) == expected
+
+
+@pytest.mark.parametrize("rgb", [(37, 99, 235), (31, 41, 55), (229, 231, 235),
+                                 (56, 189, 248), (234, 88, 12), (15, 118, 110)])
+@pytest.mark.parametrize("target", [2, 4, 8, 15])
+def test_a_colour_step_lands_near_its_delta_e(rgb, target):
+    new, de = bc.shift_colour(rgb, target)
+    assert abs(de - target) <= 0.25
+    assert de == pytest.approx(bc.delta_e00(rgb, new))
+
+
+def test_there_are_at_least_twenty_families_each_with_a_reason():
+    assert len(bc.FAMILIES) >= 20
+    assert len({f.key for f in bc.FAMILIES}) == len(bc.FAMILIES)
+    for f in bc.FAMILIES:
+        assert f.target in bc.REQUIRED_TARGETS, f.key
+        assert f.why and f.what and f.magnitudes, f.key
+        assert len({m.key for m in f.magnitudes}) == len(f.magnitudes), f.key
+        for m in f.magnitudes:
+            assert m.label in (bc.SIGNAL, bc.NOISE, bc.DISPUTED), (f.key, m.key)
+            if m.label != bc.SIGNAL:
+                assert m.why, f"{f.key}/{m.key}: a label that is not SIGNAL says why"
+
+
+def test_the_judgement_calls_are_the_maintainers_and_say_so():
+    by = {(f.key, m.key): m for f in bc.FAMILIES for m in f.magnitudes}
+    for fam in ("fill", "text_color", "link_color"):
+        assert by[(fam, "de2")].label == bc.DISPUTED
+        assert by[(fam, "de4")].label == bc.SIGNAL
+    assert by[("opacity", "0.98")].label == bc.NOISE
+    assert by[("letter_spacing", "plus0.2px")].label == bc.SIGNAL
+    for key in (("padding", "plus1px"), ("padding", "minus1px"),
+                ("offset", "plus1px"), ("line_height", "plus1px")):
+        assert by[key].label == bc.SIGNAL
+    decided = [m for m in by.values() if m.why]
+    assert decided and all(bc.DECIDED in m.why for m in decided)
+
+
+def test_the_noise_configurations_are_the_ones_asked_for():
+    keys = {c.key for c in bc.NOISE_CONFIGS}
+    assert len(keys) >= 6
+    assert {"hinting_none", "hinting_full", "no_lcd_no_subpixel",
+            "geometric_precision", "shift_0.25px", "shift_0.5px",
+            "full_chromium", "gpu_raster"} <= keys
