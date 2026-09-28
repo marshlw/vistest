@@ -158,3 +158,34 @@ def test_without_corpus_the_benchmark_is_the_synthetic_one():
     assert "--corpus {synthetic,browser}" in out
     src = (ROOT / "tests" / "benchmark.py").read_text("utf-8")
     assert 'default="synthetic"' in src
+
+
+def test_frames_from_another_machine_are_one_noise_row(manifest):
+    """An imported os_<os> family is a NOISE row of its own, named in the header."""
+    import copy
+
+    fake = copy.deepcopy(manifest)
+    for key in ("table", "dark"):
+        base = fake["templates"][key]["base"]
+        fake["cases"].append({
+            "name": f"{key}/os/windows", "template": key,
+            "split": fake["templates"][key]["split"], "family": "os_windows",
+            "magnitude": "windows", "label": bc.NOISE, "kind": "os", "why": "x",
+            "expected": base, "actual": base, "sha256": "0", "changed": {"pixels": 1}})
+    fake["os_noise"] = {"os_windows": {
+        "tag": "win11", "pixels_vs_baseline": {"table": 1, "dark": 2, "form": 0},
+        "environment": dict(fake["environment"], os="Windows",
+                            os_version="10.0.26100", arch="AMD64")}}
+    table = bb.rows(fake)
+    row = [r for r in table if r.key == "os_windows"]
+    assert len(row) == 1 and row[0].label == bc.NOISE
+    assert row[0].names == ("table/os/windows", "dark/os/windows")
+    assert table.index(row[0]) > max(i for i, r in enumerate(table)
+                                     if r.key.startswith("render:"))
+    red = _tool(fake, "red", lambda c: True)
+    s = bb.score(red, fake["cases"])
+    assert s.noise == bb.score(red, manifest["cases"]).noise + 2
+    text = bb.report(fake, [red], timing=False, notes=[])
+    assert "Also: os_windows: the baselines drawn on Windows 10.0.26100 AMD64" in text
+    assert "table 1, dark 2, form 0" in text
+    assert "Also:" not in bb.report(manifest, [red], timing=False, notes=[])
