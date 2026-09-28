@@ -1,0 +1,21 @@
+/* Local fonts only: the corpus must not depend on the network or on the fonts
+   installed on the machine that draws it. Family names are our own, so a
+   system "DejaVu Sans" can never be picked instead of these files. */
+@font-face {
+  font-family: "Corpus Sans";
+  src: url("fonts/DejaVuSans.subset.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Corpus Sans";
+  src: url("fonts/DejaVuSans-Bold.subset.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Corpus Serif";
+  src: url("fonts/DejaVuSerif.subset.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
