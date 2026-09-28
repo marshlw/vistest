@@ -165,6 +165,9 @@ def test_frames_from_another_machine_are_one_noise_row(manifest):
     import copy
 
     fake = copy.deepcopy(manifest)
+    fake["cases"] = [c for c in fake["cases"] if c["kind"] != "os"]
+    fake.pop("os_noise", None)
+    plain = copy.deepcopy(fake)
     for key in ("table", "dark"):
         base = fake["templates"][key]["base"]
         fake["cases"].append({
@@ -184,8 +187,8 @@ def test_frames_from_another_machine_are_one_noise_row(manifest):
                                      if r.key.startswith("render:"))
     red = _tool(fake, "red", lambda c: True)
     s = bb.score(red, fake["cases"])
-    assert s.noise == bb.score(red, manifest["cases"]).noise + 2
+    assert s.noise == bb.score(red, plain["cases"]).noise + 2
     text = bb.report(fake, [red], timing=False, notes=[])
     assert "Also: os_windows: the baselines drawn on Windows 10.0.26100 AMD64" in text
     assert "table 1, dark 2, form 0" in text
-    assert "Also:" not in bb.report(manifest, [red], timing=False, notes=[])
+    assert "Also:" not in bb.report(plain, [red], timing=False, notes=[])

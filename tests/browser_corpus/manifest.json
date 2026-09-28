@@ -697,6 +697,229 @@
    "control_pixels": 0
   }
  },
+ "os_noise": {
+  "os_windows": {
+   "tag": "win11",
+   "what": "Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194",
+   "environment": {
+    "playwright": "1.56.0",
+    "chromium": "141.0.7390.37",
+    "browser_build": "chromium_headless_shell-1194",
+    "browser_product": "HeadlessChrome/141.0.7390.37",
+    "os": "Windows",
+    "os_version": "10.0.26200",
+    "arch": "AMD64",
+    "distro": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.7",
+    "viewport": {
+     "width": 1280,
+     "height": 800
+    },
+    "device_scale_factor": 1,
+    "container": {
+     "image": null,
+     "in_container": false
+    },
+    "host": {
+     "dpi": 96,
+     "dpi_source": "GetDpiForSystem, per-monitor aware thread",
+     "scale_percent": 100,
+     "font_smoothing": {
+      "enabled": true,
+      "type": 2,
+      "contrast": 1200,
+      "orientation": 1,
+      "cleartype": true
+     },
+     "windows": {
+      "ProductName": "Windows 10 Pro",
+      "DisplayVersion": "25H2",
+      "CurrentBuild": "26200",
+      "UBR": 9457
+     }
+    },
+    "capture": {
+     "via": "vistest.library.targets.capture",
+     "screenshot": {
+      "type": "png",
+      "animations": "disabled",
+      "caret": "hide",
+      "scale": "css"
+     },
+     "before": "document.fonts.ready",
+     "stability": "frames until two in a row are byte-identical, 5000 ms limit"
+    }
+   },
+   "page": {
+    "device_pixel_ratio": 1,
+    "screen": [
+     1280,
+     800
+    ],
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36"
+   },
+   "differs_from_corpus": [
+    {
+     "key": "os",
+     "corpus": "Linux",
+     "here": "Windows"
+    },
+    {
+     "key": "os_version",
+     "corpus": null,
+     "here": "10.0.26200"
+    },
+    {
+     "key": "arch",
+     "corpus": "x86_64",
+     "here": "AMD64"
+    },
+    {
+     "key": "distro",
+     "corpus": "Ubuntu 24.04.4 LTS",
+     "here": "Windows-11-10.0.26200-SP0"
+    },
+    {
+     "key": "python",
+     "corpus": "3.11.15",
+     "here": "3.13.7"
+    },
+    {
+     "key": "host",
+     "corpus": null,
+     "here": {
+      "dpi": 96,
+      "dpi_source": "GetDpiForSystem, per-monitor aware thread",
+      "scale_percent": 100,
+      "font_smoothing": {
+       "enabled": true,
+       "type": 2,
+       "contrast": 1200,
+       "orientation": 1,
+       "cleartype": true
+      },
+      "windows": {
+       "ProductName": "Windows 10 Pro",
+       "DisplayVersion": "25H2",
+       "CurrentBuild": "26200",
+       "UBR": 9457
+      }
+     }
+    }
+   ],
+   "fonts": {
+    "table": [
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans",
+      "custom": true,
+      "glyphs": 882
+     },
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans-Bold",
+      "custom": true,
+      "glyphs": 16
+     }
+    ],
+    "form": [
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans",
+      "custom": true,
+      "glyphs": 606
+     },
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans-Bold",
+      "custom": true,
+      "glyphs": 28
+     }
+    ],
+    "cards": [
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans",
+      "custom": true,
+      "glyphs": 453
+     },
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans-Bold",
+      "custom": true,
+      "glyphs": 101
+     }
+    ],
+    "landing": [
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans",
+      "custom": true,
+      "glyphs": 572
+     },
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans-Bold",
+      "custom": true,
+      "glyphs": 153
+     }
+    ],
+    "article": [
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans",
+      "custom": true,
+      "glyphs": 265
+     },
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans-Bold",
+      "custom": true,
+      "glyphs": 37
+     },
+     {
+      "family": "DejaVu Serif",
+      "postscript": "DejaVuSerif",
+      "custom": true,
+      "glyphs": 1720
+     }
+    ],
+    "dark": [
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans",
+      "custom": true,
+      "glyphs": 538
+     },
+     {
+      "family": "DejaVu Sans",
+      "postscript": "DejaVuSans-Bold",
+      "custom": true,
+      "glyphs": 46
+     }
+    ]
+   },
+   "pixels_vs_baseline": {
+    "table": 51678,
+    "form": 28210,
+    "cards": 26345,
+    "landing": 46348,
+    "article": 113190,
+    "dark": 30473
+   },
+   "in_corpus": true,
+   "control_pixels": 0,
+   "delivered_sha256": {
+    "table": "760d45e52981ae2d704b7473d33eccd320c665e74fb8ea2c3b26a6e4803ee23c",
+    "form": "aa3bc147caf7055e0c145efef1fab25c1256c2097d4c5c775d72b124040e2584",
+    "cards": "40e306a4f10407ab92975e058094759572f2fcea74bade151ffe19a86a661649",
+    "landing": "5713849c02ef7352caedd30b660ce0d4272d88ea78f0cb640edb984fc0afd74b",
+    "article": "aea66d210b30b6fd80777c16c4431c65bb9cbab92b4fb1357f641104d4006179",
+    "dark": "9b3624170e53922822b0103a7f8e759bd3a1042c99401499cf31fbff87e26009"
+   },
+   "redrawn": "only where this environment is found again (same Playwright, Chromium build, OS and its version, architecture, font smoothing); elsewhere the drift test is skipped with the difference named"
+  }
+ },
  "no_pixel_change": [],
  "cases": [
   {
@@ -8629,6 +8852,156 @@
      1218,
      434
     ]
+   }
+  },
+  {
+   "name": "table/os/windows",
+   "template": "table",
+   "split": "calibration",
+   "family": "os_windows",
+   "magnitude": "windows",
+   "label": "NOISE",
+   "kind": "os",
+   "why": "the DOM is the template's, untouched, and so is the capture; only the machine that drew it differs — Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194. Nobody changed the page",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/os--windows.png",
+   "sha256": "2a9bb92db403ba0fdce44f6a850cf83cb4dc9e6325c76211ae63e3c9180c991e",
+   "changed": {
+    "pixels": 51678,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "tag": "win11"
+   }
+  },
+  {
+   "name": "form/os/windows",
+   "template": "form",
+   "split": "calibration",
+   "family": "os_windows",
+   "magnitude": "windows",
+   "label": "NOISE",
+   "kind": "os",
+   "why": "the DOM is the template's, untouched, and so is the capture; only the machine that drew it differs — Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194. Nobody changed the page",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/os--windows.png",
+   "sha256": "700c884bc2b51cbff33d752f9caba07278e37c225b535012db0fbd8eefcd7394",
+   "changed": {
+    "pixels": 28210,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "tag": "win11"
+   }
+  },
+  {
+   "name": "cards/os/windows",
+   "template": "cards",
+   "split": "calibration",
+   "family": "os_windows",
+   "magnitude": "windows",
+   "label": "NOISE",
+   "kind": "os",
+   "why": "the DOM is the template's, untouched, and so is the capture; only the machine that drew it differs — Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194. Nobody changed the page",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/os--windows.png",
+   "sha256": "dbeac22fa6eea9697c1442c3f626d6e78ee46985264929f5744d3b7c3f0b357c",
+   "changed": {
+    "pixels": 26345,
+    "box": [
+     31,
+     19,
+     1218,
+     441
+    ]
+   },
+   "detail": {
+    "tag": "win11"
+   }
+  },
+  {
+   "name": "landing/os/windows",
+   "template": "landing",
+   "split": "held_out",
+   "family": "os_windows",
+   "magnitude": "windows",
+   "label": "NOISE",
+   "kind": "os",
+   "why": "the DOM is the template's, untouched, and so is the capture; only the machine that drew it differs — Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194. Nobody changed the page",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/os--windows.png",
+   "sha256": "d45b7c046585e41bc521bcf5d5af879b8443c4512eab326f797cb88f52e88485",
+   "changed": {
+    "pixels": 46348,
+    "box": [
+     63,
+     22,
+     1154,
+     705
+    ]
+   },
+   "detail": {
+    "tag": "win11"
+   }
+  },
+  {
+   "name": "article/os/windows",
+   "template": "article",
+   "split": "calibration",
+   "family": "os_windows",
+   "magnitude": "windows",
+   "label": "NOISE",
+   "kind": "os",
+   "why": "the DOM is the template's, untouched, and so is the capture; only the machine that drew it differs — Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194. Nobody changed the page",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/os--windows.png",
+   "sha256": "e06634d7d9b4c1fc81597983ce41098cfd6cc5a300427f26ef61f2877961bfc5",
+   "changed": {
+    "pixels": 113190,
+    "box": [
+     39,
+     12,
+     1190,
+     739
+    ]
+   },
+   "detail": {
+    "tag": "win11"
+   }
+  },
+  {
+   "name": "dark/os/windows",
+   "template": "dark",
+   "split": "held_out",
+   "family": "os_windows",
+   "magnitude": "windows",
+   "label": "NOISE",
+   "kind": "os",
+   "why": "the DOM is the template's, untouched, and so is the capture; only the machine that drew it differs — Windows 10.0.26200 (Windows-11-10.0.26200-SP0, AMD64), chromium_headless_shell-1194, instead of Linux (Ubuntu 24.04.4 LTS, x86_64), chromium_headless_shell-1194. Nobody changed the page",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/os--windows.png",
+   "sha256": "db40ddc8a660b880752fc7f2de166c3e2e431c8c2b751b515e50ebc22d4bb9f0",
+   "changed": {
+    "pixels": 30473,
+    "box": [
+     21,
+     20,
+     1220,
+     434
+    ]
+   },
+   "detail": {
+    "tag": "win11"
    }
   }
  ]

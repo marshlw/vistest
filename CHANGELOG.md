@@ -227,6 +227,29 @@ saw one writer. Two defects of the product, not of the test.
   (DPI, font smoothing). New tests in `tests/test_browser_corpus.py` and
   `tests/test_benchmark_browser.py`; a capture on the corpus's own machine
   draws all six baselines with 0 pixels apart from the frozen ones.
+- **The first other machine: Windows (`os_windows`).** Six baselines drawn
+  on Windows 11 25H2 (build 26200, AMD64, 96 DPI, ClearType on, contrast
+  1200, RGB) with Python 3.13.7, Playwright 1.56.0 and the same Chromium
+  build as the corpus, 141.0.7390.37 headless shell 1194 — the difference is
+  the OS, not the browser; every fact that differs is in the manifest's
+  `os_noise.os_windows.differs_from_corpus`. Every frame was drawn twice
+  there, 0 px apart, with the shipped fonts only and the same glyph counts as
+  on Linux. Pixels apart from the Linux baseline: table 51 678, form 28 210,
+  cards 26 345, landing 46 348, article 113 190, dark 30 473 (2.6–11% of the
+  frame; mean channel difference 86–102 where they differ — whole glyphs,
+  not a shade). None of the Linux rendering configurations reproduces it: the
+  nearest (full Chromium, or no LCD text with no subpixel positioning) is
+  still 78–92% of those pixels away. Six NOISE pairs — four calibration,
+  two held out — 0.39 MB, the corpus is 25.9 MB of 40. **What it changes:**
+  every tool at every setting fails all six. NOISE goes from 42 to 48 pairs,
+  SIGNAL, DISPUTED and every old verdict stay as they were (the native grid
+  was recomputed: 336 old results byte for byte the same); VisTest balanced
+  28/42 → 34/48 false failures, strict 32/42 → 38/48, loose 26/42 → 32/48;
+  Playwright's default 36/42 → 42/48, and its best setting on false
+  failures, 0.05/500, 34/42 → 40/48 — the smallest Playwright count on a
+  Windows pair is 7 838 pixels at threshold 0.2, far past maxDiffPixels 500.
+  `docs/benchmark_browser.md` and `docs/benchmark_browser_native.json`
+  regenerated (OpenCV 4.13.0). The engine is not touched.
 
 ### R3: capture parity with `toHaveScreenshot`, and speed
 
