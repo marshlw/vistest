@@ -193,6 +193,12 @@ python tests/benchmark.py --compare --native docs/benchmark_native.json \
 - Applitools и Percy здесь не участвуют: закрытые SaaS, прогнать их на своём корпусе и опубликовать результат нельзя.
 - Пороги VisTest настраивались в том числе по этому корпусу. Это конфликт интересов, и мы о нём говорим прямо — поэтому корпус и код открыты, а не приложены картинкой.
 
+## Browser corpus
+
+The table above is measured on pictures OpenCV drew — the raster the thresholds were tuned on. It can say «not worse», not «better». The other corpus, `tests/browser_corpus/`, is drawn by Chromium from six local templates, through the library's own capture, with labels that come from the change that made each frame (`scripts/browser_corpus.py`). Its table is `docs/benchmark_browser.md`: `python tests/benchmark.py --corpus browser`.
+
+**Its split is by template.** Calibration: table, form, cards, article. Held out: landing, dark. By template, never by pair: held-out templates never take part in choosing a threshold, a preset or any other constant of the engine; they are only measured once a choice has been made on the calibration half. The split is recorded per template and per pair in `tests/browser_corpus/manifest.json` (`split`).
+
 ## Кейсы по инструментам
 
 | Кейс | Ожидание | VisTest (balanced) | absdiff (самопис) | pixelmatch 7.2.0 | Playwright 1.63.0 toHaveScreenshot() |

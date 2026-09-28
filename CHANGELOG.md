@@ -103,6 +103,47 @@
   to this environment (403), so the `mcr.microsoft.com/playwright/python`
   image could not be pulled and no image tag is recorded. A third,
   independent full redraw (`--check --full`) matched all 342 frames.
+- **`tests/benchmark.py --corpus browser`.** Measures the browser corpus
+  (`tests/benchmark_browser.py`): VisTest strict, balanced and loose, with the
+  AI layer as `CheckService` builds it (`--no-ai` without), and the native
+  Playwright comparator — `getComparator('image/png')`, what
+  `toHaveScreenshot()` calls — on a grid, threshold {0.2, 0.1, 0.05} ×
+  maxDiffPixels {0, 25, 100, 500}, from `scripts/bench_playwright_grid.mjs`
+  (@playwright/test 1.63.0 pinned in `scripts/bench`). The grid calls the
+  comparator once per pair and threshold and applies its own rule,
+  `count > maxDiffPixels` (quoted from playwright-core), to the count it
+  reports; twelve pairs spread over the corpus are also compared with every
+  setting for real and must agree. Its JSON, `docs/benchmark_browser_native.json`,
+  carries the corpus digest and is refused on other files; it is committed,
+  so the table needs no Node to be read again. Output: a summary per tool
+  (false failures and misses on the calibration half, on the held-out half
+  and on both; DISPUTED failures printed, never counted), a table by family
+  for each tool, the three worst families of every tool, and the frontier
+  «false failures against misses» of each tool on each half. `--no-timing`
+  output is byte-identical between runs and between OpenCV 4.13 and 4.14;
+  `--markdown` writes `docs/benchmark_browser.md`. Without `--corpus` nothing
+  changed: `--no-timing` and `--compare --no-timing` print the same bytes as
+  before (checked against 235d284). `docs/benchmark.md` gains a «Browser
+  corpus» section — the split, stated from `scripts/browser_corpus.py`'s own
+  constants — which the generator now writes too, so a regenerated file keeps
+  it. **What it says, on this corpus:** VisTest balanced fails 28 of 42 NOISE
+  pairs and misses 132 of 276 SIGNAL; Playwright's defaults, 36 and 103. No
+  setting of either tool gets below 26 false failures: the text-rendering
+  configurations (hinting none, no LCD text with no subpixel positioning,
+  `geometricPrecision`, the full Chromium) fail on every template for every
+  tool and setting. VisTest misses every change of text, link and icon
+  colour — ΔE00 15 included — and every underline, focus ring and removed
+  border. On the misses looked at (text, link and icon colour at ΔE00 15, a
+  focus ring, an underline) the result has zero regions: the change mask is
+  there — 0.39% of the table frame for the text colour — and nothing of it
+  survives to a region. The engine is
+  not touched in this stage; those are R2's inputs. Tests:
+  `tests/test_benchmark_browser.py` (every pair on exactly one row, errors on
+  the right side, halves adding up to the whole, the frontier, the worst
+  rows, a report that is the same twice, the grid's digest and rule,
+  VisTest on one pair of every kind). `browser_probe/README.md` now says the
+  probe is superseded, what grew out of it and what was deliberately not
+  carried over.
 
 ### R3: capture parity with `toHaveScreenshot`, and speed
 
