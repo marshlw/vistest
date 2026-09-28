@@ -348,10 +348,20 @@ def test_another_environment_is_a_skip_with_the_reason(pw, manifest):
 #  Noise from another machine
 # --------------------------------------------------------------------------- #
 def _corpus_copy(tmp_path: Path) -> Path:
+    """A copy of the corpus without frames from other machines, whatever the
+    repository holds: these tests import their own."""
     import shutil
 
     root = tmp_path / "corpus"
     shutil.copytree(bc.CORPUS_DIR, root, ignore=shutil.ignore_patterns("templates"))
+    m = bc.load_manifest(root / "manifest.json")
+    for c in m["cases"]:
+        if c["kind"] == "os":
+            (root / c["actual"]).unlink()
+    m = dict(m, cases=[c for c in m["cases"] if c["kind"] != "os"])
+    m.pop("os_noise", None)
+    bc.write_manifest(m, root / "manifest.json")
+    assert bc.verify_files(m, root) == []
     return root
 
 
@@ -405,6 +415,7 @@ def test_the_family_of_an_os_is_named_after_it():
 
 def test_imported_frames_are_one_noise_pair_per_changed_template(manifest, tmp_path):
     root = _corpus_copy(tmp_path)
+    before = bc.load_manifest(root / "manifest.json")
     src = _fake_capture(tmp_path, manifest, changed=("table", "landing"))
     new = bc.import_os_noise(src, root=root, log=lambda *_: None)
 
@@ -429,7 +440,7 @@ def test_imported_frames_are_one_noise_pair_per_changed_template(manifest, tmp_p
     keys = list(new)
     assert keys.index("os_noise") == keys.index("noise_configs") + 1
     #  Everything that was there is still there, unchanged.
-    assert new["cases"][:len(manifest["cases"])] == manifest["cases"]
+    assert new["cases"][:len(before["cases"])] == before["cases"]
 
 
 def test_a_second_import_of_the_same_os_needs_replace(manifest, tmp_path):
@@ -474,9 +485,10 @@ def test_regenerate_keeps_other_machines_only_while_the_baselines_pair(manifest,
     import copy
 
     root = _corpus_copy(tmp_path)
+    plain = bc.load_manifest(root / "manifest.json")
     old = bc.import_os_noise(_fake_capture(tmp_path, manifest), root=root,
                              log=lambda *_: None)
-    fresh = copy.deepcopy(manifest)             # what a redraw of the same pixels gives
+    fresh = copy.deepcopy(plain)                # what a redraw of the same pixels gives
     staging = tmp_path / "staging"
     staging.mkdir()
     kept, dropped = bc.carry_os_noise(old, root, fresh, staging, log=lambda *_: None)
@@ -487,7 +499,7 @@ def test_regenerate_keeps_other_machines_only_while_the_baselines_pair(manifest,
     assert (staging / "frames/table/os--windows.png").read_bytes() == \
         (root / "frames/table/os--windows.png").read_bytes()
 
-    moved = copy.deepcopy(manifest)
+    moved = copy.deepcopy(plain)
     moved["templates"]["form"]["sha256"] = "f" * 64   # a baseline came out otherwise
     said = []
     kept, dropped = bc.carry_os_noise(old, root, moved, tmp_path / "s2", log=said.append)
