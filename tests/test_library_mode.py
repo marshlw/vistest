@@ -293,6 +293,63 @@ def test_two_tests_writing_one_name_are_reported_as_a_collision(project: Path):
     assert "test_alpha.py::test_alpha" in body and "test_beta.py::test_beta" in body
 
 
+#  The Windows failure behind the rule above, reproduced on any platform:
+#  `os.replace` onto the actual picture is refused, as Windows refuses it while
+#  another worker is replacing the same file — except that here the refusal
+#  never ends, so it outlasts the retry in `atomic` (on Windows, two seconds)
+#  and reaches the test.
+COLLIDING_A_REFUSED = '''
+import os
+import pathlib
+
+import numpy as np
+
+from vistest import expect_screenshot
+from vistest.core import pngio
+from vistest.storage import atomic
+
+REAL_REPLACE = os.replace
+
+
+def test_alpha(monkeypatch):
+    def replace(src, dst):
+        if "actual" in pathlib.Path(dst).parts:
+            raise PermissionError(13, "Access is denied", str(dst))
+        return REAL_REPLACE(src, dst)
+
+    monkeypatch.setattr(atomic.os, "replace", replace)
+    expect_screenshot(pngio.encode(np.full((40, 60, 3), 30, np.uint8)),
+                      "shared.png")
+'''
+
+
+def test_a_writer_that_failed_is_still_part_of_the_collision(project: Path):
+    """The red Windows run this was found in: one of the two writers raised
+    while writing, left no row, and the controller saw a single writer — so the
+    one thing the run existed to say, «name collision», was not said.
+
+    A check that raises now leaves a row saying so, and that row counts as a
+    writer of its name like any other.
+    """
+    pytest.importorskip("xdist")
+    (project / "tests" / "test_visual.py").unlink()
+    (project / "tests" / "test_alpha.py").write_text(COLLIDING_A_REFUSED, "utf-8")
+    (project / "tests" / "test_beta.py").write_text(COLLIDING_B, "utf-8")
+
+    code, output = run(project, "--vistest-update", "-n", "2")
+
+    assert code != 0, output
+    assert "1 failed, 1 passed" in output, output
+    assert "PermissionError" in output and "Access is denied" in output
+    assert "name collision" in output, output
+    line = next(ln for ln in output.splitlines() if "name collision" in ln)
+    assert "test_alpha.py::test_alpha" in line and "test_beta.py::test_beta" in line
+
+    body = (project / ".vistest" / "report" / "index.html").read_text("utf-8")
+    assert "Name collision" in body
+    assert "test_alpha.py::test_alpha" in body and "test_beta.py::test_beta" in body
+
+
 def test_the_same_test_writing_twice_is_a_retry_and_stays_quiet(project: Path):
     """A rerun of one test is not a collision — one name, one owner."""
     (project / "tests" / "test_visual.py").write_text(TEST_FILE + '''

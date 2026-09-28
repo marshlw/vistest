@@ -339,6 +339,88 @@ def test_every_check_leaves_a_row_for_the_report(ctx):
     assert parts.collisions == {} and parts.unreadable == 0
 
 
+def refuse_to_write_actual(monkeypatch) -> PermissionError:
+    """Make writing the actual picture fail the way Windows fails it.
+
+    Only the actual picture: the report's own parts go through the same
+    function, and the row this is about has to be written.
+    """
+    from vistest.storage import atomic
+
+    real = atomic.write_bytes
+    refusal = PermissionError(13, "Access is denied", "actual/page.png")
+
+    def write_bytes(path, data, **kw):
+        if "actual" in Path(path).parts:
+            raise refusal
+        return real(path, data, **kw)
+
+    monkeypatch.setattr(atomic, "write_bytes", write_bytes)
+    return refusal
+
+
+def test_a_check_that_raises_still_leaves_a_row(ctx, monkeypatch):
+    """The row is what the report counts and what the collision check reads.
+
+    A check that died between naming itself and its verdict used to leave
+    nothing: absent from the report, and invisible as the second writer of its
+    name. The exception itself must reach the test untouched.
+    """
+    import os
+
+    from vistest.report.library import read_parts
+
+    refusal = refuse_to_write_actual(monkeypatch)
+
+    with pytest.raises(PermissionError) as raised:
+        expect_screenshot(frame(), "page.png")
+    assert raised.value is refusal
+
+    parts = read_parts(ctx.parts_dir)
+    [row] = parts.entries
+    assert row["verdict"] == "error"
+    assert row["key"] == ctx.key("page.png", None).as_str()
+    assert row["nodeid"] == os.environ["PYTEST_CURRENT_TEST"].split(" (")[0]
+    assert row["nodeid"].endswith("::test_a_check_that_raises_still_leaves_a_row")
+    assert "PermissionError" in row["reason"] and "Access is denied" in row["reason"]
+    assert row["images"] == {}           # nothing was written, nothing is named
+
+
+def test_a_verdict_that_raises_writes_one_row_not_two(ctx):
+    """`BaselineMissing` and `ScreenshotMismatch` carry their own row already."""
+    with pytest.raises(BaselineMissing):
+        expect_screenshot(frame(), "page.png")
+    assert len(list(ctx.parts_dir.glob("*.json"))) == 1
+
+    accept(ctx, frame(), "page.png")
+    assert len(list(ctx.parts_dir.glob("*.json"))) == 2
+
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(frame(box=(10, 10, 60, 40)), "page.png")
+    rows = [p.read_text("utf-8") for p in ctx.parts_dir.glob("*.json")]
+    assert len(rows) == 3
+    assert not any('"verdict": "error"' in row for row in rows)
+
+
+def test_an_error_row_is_counted_and_open_in_the_report(ctx, monkeypatch):
+    from vistest.report.library import build
+
+    accept(ctx, frame(), "fine.png")
+    refuse_to_write_actual(monkeypatch)
+    with pytest.raises(PermissionError):
+        expect_screenshot(frame(), "page.png")
+
+    build(ctx.parts_dir, ctx.report)
+    body = ctx.report.read_text("utf-8")
+
+    assert '<button class="count" data-verdict="error"><b>1</b>error</button>' in body
+    assert '<b>2</b>all</button>' in body
+    assert '<details class="row error" open data-verdict="error">' in body
+    assert "Access is denied" in body
+    #  No pictures were written, so none are promised.
+    assert "The pictures are not in this report" not in body
+
+
 # --------------------------------------------------------------------------- #
 #  Saying which platform, and which platform has one
 # --------------------------------------------------------------------------- #
