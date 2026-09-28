@@ -17,6 +17,8 @@
     python tests/benchmark.py --no-timing           no timing column: the output
                                                     is reproducible byte for byte
     python tests/benchmark.py --regenerate          redraw the frozen corpus (on purpose)
+    python tests/benchmark.py --corpus browser      the corpus Chromium drew:
+                                                    tests/benchmark_browser.py
 
 Главная метрика — **false-fail rate**: доля неизменённых по существу страниц,
 на которых инструмент упал. Она важнее полноты: пропущенный регресс замечает
@@ -440,6 +442,36 @@ def _frozen_answer_paragraph() -> str:
     )
 
 
+def browser_corpus_section() -> list[str]:
+    """The paragraph about the other corpus, and its split, from its own constants.
+
+    Generated so that a regenerated docs/benchmark.md keeps it, and so that
+    the split it states is the one `scripts/browser_corpus.py` enforces.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import browser_corpus as bc
+
+    cal = ", ".join(t.key for t in bc.TEMPLATES if t.split == bc.CALIBRATION)
+    held = ", ".join(t.key for t in bc.TEMPLATES if t.split == bc.HELD_OUT)
+    return [
+        "## Browser corpus",
+        "",
+        "The table above is measured on pictures OpenCV drew — the raster the "
+        "thresholds were tuned on. It can say «not worse», not «better». The "
+        "other corpus, `tests/browser_corpus/`, is drawn by Chromium from six "
+        "local templates, through the library's own capture, with labels that "
+        "come from the change that made each frame (`scripts/browser_corpus.py`). "
+        "Its table is `docs/benchmark_browser.md`: "
+        "`python tests/benchmark.py --corpus browser`.",
+        "",
+        f"**Its split is by template.** Calibration: {cal}. Held out: {held}. "
+        f"{bc.SPLIT_RULE[0].upper()}{bc.SPLIT_RULE[1:]}. The split is recorded per "
+        "template and per pair in `tests/browser_corpus/manifest.json` "
+        "(`split`).",
+        "",
+    ]
+
+
 def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              native_used: bool, *, native: dict | None = None,
              ai: AIPipeline | None = None, timing: bool = True) -> str:
@@ -672,6 +704,8 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "корпус и код открыты, а не приложены картинкой.")
     L.append("")
 
+    L += browser_corpus_section()
+
     L.append("## Кейсы по инструментам")
     L.append("")
     head = "| Кейс | Ожидание | " + " | ".join(s.title for s in scores) + " |"
@@ -727,7 +761,18 @@ def main() -> int:
                          "re-published after it")
     ap.add_argument("--markdown", metavar="FILE",
                     help="записать таблицу в markdown")
+    ap.add_argument("--corpus", choices=["synthetic", "browser"], default="synthetic",
+                    help="synthetic (default): tests/benchmark_corpus, drawn by "
+                         "OpenCV. browser: tests/browser_corpus, drawn by "
+                         "Chromium — VisTest's three presets and the native "
+                         "Playwright comparator on a threshold × maxDiffPixels "
+                         "grid, by family and by half (tests/benchmark_browser.py)")
     args = ap.parse_args()
+
+    if args.corpus == "browser":
+        from tests import benchmark_browser
+
+        return benchmark_browser.main(args, python_env=environment_line())
 
     cfg = VisTestConfig.preset_of(args.preset)
     timing = not args.no_timing
