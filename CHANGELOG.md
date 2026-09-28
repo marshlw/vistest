@@ -67,6 +67,42 @@
   frame four times across two browsers: no frame came out two ways. `offset`
   grows `padding-top`, not `margin-top`, which collapsed with the margin
   above it and moved nothing on the article.
+- **Frozen, like the synthetic corpus.** `tests/browser_corpus/` now holds
+  the corpus itself: `frames/<template>/base.png` once per template (every
+  pair points at it rather than copying it), 336 changed frames, and
+  `manifest.json` with, per pair, the template, family, magnitude, label,
+  reason, split, the changed pixels and their box, the ΔE00 of a colour step,
+  and the sha256 of every PNG; per template, its baseline's sha256 and the
+  fonts it was drawn with; per rendering configuration, how many pixels it
+  moved on each template and whether it made the corpus at all. 25.6 MB of
+  PNG against a 40 MB budget, re-encoded losslessly at the highest
+  compression. Of the eight configurations six are noise (hinting none, no
+  LCD text with no subpixel positioning, `geometricPrecision`, the 0.25 and
+  0.5px shifts, and the full Chromium, which draws text differently from
+  the headless shell here — 26 to 117 thousand pixels per template, where
+  `browser_probe/`, with the system's DejaVu and no web font, saw none) and two draw the baseline's pixels
+  exactly and have no pair: `--font-render-hinting=full` and GPU
+  rasterisation (there is no GPU here; the flags change nothing). The pairs: 276 SIGNAL, 42 NOISE (36 rendering + opacity 0.98 on
+  six templates), 18 DISPUTED. `python scripts/browser_corpus.py
+  --regenerate` is the only thing that writes there; `--check [--full]`
+  redraws and compares without writing. **Calibration and held-out halves,
+  by template:** table, form, cards and article calibrate; landing and dark
+  are held out and never take part in choosing a threshold, a preset or any
+  other constant of the engine — in the script's docstring and in the
+  manifest (`split`, per template and per pair). New tests
+  in `tests/test_browser_corpus.py`: files against the manifest, the budget,
+  one baseline per template, labels on disk equal to the code's (relabelling
+  without regenerating is red), the split, configurations without pairs, the
+  environment record, the digest; and the drift check, which redraws every
+  baseline, every configuration and one magnitude of every family on every
+  template (`VISTEST_BROWSER_CORPUS_FULL=1`: all 336) — only in the
+  environment the manifest records; anywhere else it is skipped with the
+  difference named, not red. Drawn here: Playwright 1.56.0, Chromium
+  141.0.7390.37 headless shell (build 1194), Ubuntu 24.04 x86-64, 1280×800 at
+  1x, no container — Docker was available but `mcr.microsoft.com` is closed
+  to this environment (403), so the `mcr.microsoft.com/playwright/python`
+  image could not be pulled and no image tag is recorded. A third,
+  independent full redraw (`--check --full`) matched all 342 frames.
 
 ### R3: capture parity with `toHaveScreenshot`, and speed
 

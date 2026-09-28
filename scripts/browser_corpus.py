@@ -56,6 +56,37 @@ Every frame is drawn twice, in two browsers started the same way, and must
 come out the same to the pixel — or the capture stops. Mutations are applied
 at DOMContentLoaded, before the first paint (the page checks), so a changed
 page is drawn the way a fresh load of changed code is.
+
+Calibration and held-out halves — by template, never by pair
+------------------------------------------------------------
+
+Four templates are for **calibration**: table, form, cards, article. Two are
+**held out**: landing, dark. The split is by template, not by pair, because a
+pair shares its baseline, its fonts and its layout with every other pair of
+its template — split by pair, the held-out half would be the calibration
+half with other magnitudes. **Held-out templates never take part in choosing
+a threshold**, a preset or any other constant of the engine: their only use
+is to be measured once a choice has been made on the calibration half. The
+split is recorded per template and per case in `manifest.json` (`split`)
+and in `docs/benchmark.md`. The held-out pair was chosen to be unlike the
+rest: a dark theme, and a landing page with large type, a gradient and a
+chart — the half where a threshold fitted on dense light UI would fail
+first if it is going to.
+
+Frozen, like tests/benchmark_corpus
+----------------------------------
+
+    python scripts/browser_corpus.py --regenerate    # on purpose: redraw it all
+    python scripts/browser_corpus.py --check         # redraw, compare, change nothing
+
+`tests/browser_corpus/manifest.json` lists every pair (template, family,
+magnitude, label, why, split) and the sha256 of every PNG. The baseline of a
+template is stored once, `frames/<template>/base.png`, and every pair of
+that template points at it. `--regenerate` is the only thing that writes
+there. `tests/test_browser_corpus.py` checks the files against the manifest
+everywhere, and redraws frames only in the environment the manifest records
+— anywhere else it is skipped with the difference named, because a frame
+drawn by another Chromium is a different frame, not a regression.
 """
 
 from __future__ import annotations
@@ -90,16 +121,33 @@ STABLE_TIMEOUT_MS = 5000
 class Template:
     key: str
     title: str
+    split: str
 
+
+#: The two halves. Held-out templates never take part in choosing a
+#: threshold — see the module docstring.
+CALIBRATION, HELD_OUT = "calibration", "held_out"
 
 TEMPLATES: tuple[Template, ...] = (
-    Template("table", "orders table in an admin panel"),
-    Template("form", "account settings form"),
-    Template("cards", "product cards in a catalogue grid"),
-    Template("landing", "marketing landing page with a hero and a chart"),
-    Template("article", "long serif text with a sidebar"),
-    Template("dark", "dark-theme monitoring dashboard"),
+    Template("table", "orders table in an admin panel", CALIBRATION),
+    Template("form", "account settings form", CALIBRATION),
+    Template("cards", "product cards in a catalogue grid", CALIBRATION),
+    Template("landing", "marketing landing page with a hero and a chart", HELD_OUT),
+    Template("article", "long serif text with a sidebar", CALIBRATION),
+    Template("dark", "dark-theme monitoring dashboard", HELD_OUT),
 )
+
+SPLIT_RULE = (
+    "by template, never by pair: held-out templates never take part in "
+    "choosing a threshold, a preset or any other constant of the engine; they "
+    "are only measured once a choice has been made on the calibration half")
+
+#: The frozen corpus.
+MANIFEST = CORPUS_DIR / "manifest.json"
+FRAMES_DIR = CORPUS_DIR / "frames"
+
+#: What the frozen PNGs may weigh together.
+BUDGET_BYTES = 40 * 1024 * 1024
 
 #: The `data-m` tokens every template must carry: one element per kind of
 #: change the corpus makes. A template without one of them would silently lose
@@ -937,11 +985,285 @@ def capture_all(out: Path, *, log=print) -> dict:
     return doc
 
 
+# --------------------------------------------------------------------------- #
+#  Freezing
+# --------------------------------------------------------------------------- #
+def _split_of(template: str) -> str:
+    return next(t.split for t in TEMPLATES if t.key == template)
+
+
+def _case_why(case: dict) -> str:
+    if case["kind"] == "render":
+        cfg = next(c for c in NOISE_CONFIGS if c.key == case["magnitude"])
+        return f"{WHY_NOISE} ({cfg.what})"
+    fam = next(f for f in FAMILIES if f.key == case["family"])
+    mag = next(m for m in fam.magnitudes if m.key == case["magnitude"])
+    return mag.why or fam.why
+
+
+def families_record() -> dict:
+    """The definitions, as the manifest keeps them next to the frames."""
+    return {f.key: {
+        "target": f.target, "what": f.what, "why": f.why, "unit": f.unit,
+        "magnitudes": {m.key: {"value": m.value, "label": m.label,
+                               **({"why": m.why} if m.why else {})}
+                       for m in f.magnitudes}}
+        for f in FAMILIES}
+
+
+def build_manifest(doc: dict, root: Path) -> dict:
+    """`capture_all`'s record plus the sha256 of every file under `root`."""
+    templates = {}
+    for t in TEMPLATES:
+        rec = doc["templates"][t.key]
+        templates[t.key] = {
+            "title": rec["title"], "split": t.split, "base": rec["base"],
+            "sha256": sha256((root / rec["base"]).read_bytes()), "fonts": rec["fonts"]}
+    cases = []
+    for c in doc["cases"]:
+        cases.append({
+            "name": c["name"], "template": c["template"],
+            "split": _split_of(c["template"]), "family": c["family"],
+            "magnitude": c["magnitude"], "label": c["label"], "kind": c["kind"],
+            "why": _case_why(c),
+            "expected": templates[c["template"]]["base"], "actual": c["actual"],
+            "sha256": sha256((root / c["actual"]).read_bytes()),
+            "changed": c["changed"], **({"detail": c["detail"]} if "detail" in c else {}),
+        })
+    configs = {}
+    for cfg in NOISE_CONFIGS:
+        rec = doc["noise_configs"][cfg.key]
+        zero = not any(rec["pixels"].values())
+        configs[cfg.key] = {
+            "what": cfg.what, "args": list(cfg.launch.args),
+            **({"channel": cfg.launch.channel} if cfg.launch.channel else {}),
+            **({"css": cfg.launch.css} if cfg.launch.css else {}),
+            **({"browser": rec["browser"]} if "browser" in rec else {}),
+            "pixels_vs_baseline": rec["pixels"],
+            "in_corpus": not zero,
+            "control_pixels": rec["control_pixels"],
+        }
+    return {
+        "format": 1,
+        "about": "Browser corpus of VisTest: frames rendered by Chromium from "
+                 "tests/browser_corpus/templates, labels known before the "
+                 "frame exists. Written by `python scripts/browser_corpus.py "
+                 "--regenerate`; do not edit by hand.",
+        "environment": doc["environment"],
+        "control": "every frame drawn in two browsers started the same way; "
+                   "0 pixels apart, or the capture stops",
+        "split": {
+            "rule": SPLIT_RULE,
+            CALIBRATION: [t.key for t in TEMPLATES if t.split == CALIBRATION],
+            HELD_OUT: [t.key for t in TEMPLATES if t.split == HELD_OUT],
+        },
+        "labels": {
+            SIGNAL: "a change a person sees; a tool that stays green missed it",
+            NOISE: "nothing a person sees changed; a tool that fails is wrong",
+            DISPUTED: "judgement call left open: printed, never counted",
+        },
+        "templates": templates,
+        "families": families_record(),
+        "noise_configs": configs,
+        "no_pixel_change": doc["no_pixel_change"],
+        "cases": cases,
+    }
+
+
+def write_manifest(manifest: dict, path: Path = MANIFEST) -> None:
+    path.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n",
+                    encoding="utf-8", newline="\n")
+
+
+def load_manifest(path: Path = MANIFEST) -> dict:
+    if not path.is_file():
+        raise CorpusError(f"{path} does not exist; the browser corpus is kept in "
+                          "the repository. To draw it: "
+                          "`python scripts/browser_corpus.py --regenerate`")
+    return json.loads(path.read_text("utf-8"))
+
+
+def frozen_files(manifest: dict) -> dict[str, str]:
+    """Every PNG the manifest vouches for: relative path -> sha256."""
+    out = {t["base"]: t["sha256"] for t in manifest["templates"].values()}
+    out.update({c["actual"]: c["sha256"] for c in manifest["cases"]})
+    return out
+
+
+def verify_files(manifest: dict, root: Path = CORPUS_DIR) -> list[str]:
+    """What is wrong with the files on disk, against the manifest. Empty: nothing."""
+    problems = []
+    want = frozen_files(manifest)
+    on_disk = {p.relative_to(root).as_posix()
+               for p in (root / "frames").rglob("*.png")}
+    for rel in sorted(set(want) - on_disk):
+        problems.append(f"missing: {rel}")
+    for rel in sorted(on_disk - set(want)):
+        problems.append(f"not in the manifest: {rel}")
+    for rel in sorted(set(want) & on_disk):
+        if sha256((root / rel).read_bytes()) != want[rel]:
+            problems.append(f"sha256 differs: {rel}")
+    total = sum((root / rel).stat().st_size for rel in on_disk)
+    if total > BUDGET_BYTES:
+        problems.append(f"{total} bytes of PNG, over the {BUDGET_BYTES} budget")
+    return problems
+
+
+def corpus_digest(manifest_path: Path = MANIFEST) -> str:
+    """sha256 over the manifest and every PNG, in manifest order.
+
+    The same formula as `tests/benchmark.py::corpus_digest` for the synthetic
+    corpus: sha256 of the lines `"<path> <sha256 of the file>\n"`.
+    """
+    root = manifest_path.parent
+    raw = manifest_path.read_bytes()
+    manifest = json.loads(raw.decode("utf-8"))
+    lines = [f"manifest.json {sha256(raw)}\n"]
+    for t in manifest["templates"].values():
+        lines.append(f"{t['base']} {sha256((root / t['base']).read_bytes())}\n")
+    for c in manifest["cases"]:
+        lines.append(f"{c['actual']} {sha256((root / c['actual']).read_bytes())}\n")
+    return sha256("".join(lines).encode("utf-8"))
+
+
+def regenerate(log=print) -> dict:
+    """Redraw the whole corpus into place. A deliberate act, never a side effect."""
+    import shutil
+    import tempfile
+
+    staging = Path(tempfile.mkdtemp(prefix="vistest-browser-corpus-"))
+    try:
+        doc = capture_all(staging, log=log)
+        manifest = build_manifest(doc, staging)
+        problems = verify_files(manifest, staging)
+        if problems:
+            raise CorpusError("the fresh corpus does not check out: " + "; ".join(problems))
+        if FRAMES_DIR.exists():
+            shutil.rmtree(FRAMES_DIR)
+        shutil.copytree(staging / "frames", FRAMES_DIR)
+        write_manifest(manifest)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return manifest
+
+
+def sample(manifest: dict, *, full: bool = False) -> list[dict]:
+    """The mutation pairs a drift check redraws.
+
+    All of them with `full`. Otherwise one magnitude of every family on every
+    template, rotating with the template's position, so that every magnitude
+    is redrawn on some template: about a third of the pairs, every family on
+    every template, in about a minute.
+    """
+    cases = [c for c in manifest["cases"] if c["kind"] == "mutation"]
+    if full:
+        return cases
+    order = [t.key for t in TEMPLATES]
+    by_family: dict[tuple[str, str], list[dict]] = {}
+    for c in cases:
+        by_family.setdefault((c["template"], c["family"]), []).append(c)
+    out = []
+    for (template, _), group in by_family.items():
+        out.append(group[order.index(template) % len(group)])
+    return out
+
+
+def drift(manifest: dict, *, full: bool = False, pw=None,
+          log=None) -> tuple[list[str], list[str]]:
+    """Redraw frames and compare them with the frozen ones, pixel for pixel.
+
+    Returns `(reasons_not_to, drifted)`. When the environment differs from the
+    recorded one, nothing is drawn: the reasons say what differs, and a frame
+    from another Chromium would be a different frame, not a drift.
+    """
+    if pw is None:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as own:
+            return drift(manifest, full=full, pw=own, log=log)
+
+    root = CORPUS_DIR
+    frozen = lambda rel: (root / rel).read_bytes()  # noqa: E731
+    drifted: list[str] = []
+    reasons = env_mismatch(manifest["environment"], environment(pw))
+    if reasons:
+        return reasons, []
+    s = Session(pw)
+    try:
+        for key, t in manifest["templates"].items():
+            if differing_pixels(frozen(t["base"]), s.frame(key)):
+                drifted.append(f"{key}/base")
+        fams = {f.key: f for f in FAMILIES}
+        for c in sample(manifest, full=full):
+            fam = fams[c["family"]]
+            mag = next(m for m in fam.magnitudes if m.key == c["magnitude"])
+            mutation, _ = plan_mutation(s, c["template"], fam, mag)
+            n = differing_pixels(frozen(c["actual"]), s.frame(c["template"], mutation))
+            if n:
+                drifted.append(f"{c['name']} ({n} px)")
+            if log:
+                log(c["name"])
+    finally:
+        s.close()
+    by_name = {c["name"]: c for c in manifest["cases"]}
+    for cfg in NOISE_CONFIGS:
+        s = Session(pw, cfg.launch)
+        try:
+            for key, t in manifest["templates"].items():
+                case = by_name.get(case_name(key, "render", cfg.key))
+                want = frozen(case["actual"] if case else t["base"])
+                n = differing_pixels(want, s.frame(key))
+                if n:
+                    drifted.append(f"{key}/render/{cfg.key} ({n} px)")
+        finally:
+            s.close()
+    return [], drifted
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    what = ap.add_mutually_exclusive_group()
+    what.add_argument("--regenerate", action="store_true",
+                      help="redraw the frozen corpus in tests/browser_corpus. A "
+                           "deliberate act: the benchmark figures have to be "
+                           "re-run and re-published after it")
+    what.add_argument("--check", action="store_true",
+                      help="redraw frames and compare them with the frozen ones; "
+                           "writes nothing")
+    ap.add_argument("--full", action="store_true",
+                    help="with --check: every pair, not a sample")
     ap.add_argument("--out", default="bench_out/browser_corpus",
-                    help="where to write the frames (not the frozen corpus)")
+                    help="without --regenerate or --check: where to capture a "
+                         "copy to look at (the frozen corpus is not touched)")
     args = ap.parse_args(argv)
+
+    if args.regenerate:
+        manifest = regenerate()
+        env = manifest["environment"]
+        size = sum(p.stat().st_size for p in FRAMES_DIR.rglob("*.png"))
+        print(f"Redrew {len(manifest['cases'])} pairs over "
+              f"{len(manifest['templates'])} baselines ({size / 2**20:.1f} MB) with "
+              f"Playwright {env['playwright']}, {env['browser_build']}, "
+              f"{env['os']} {env['arch']}: {CORPUS_DIR}")
+        print("Next: git diff --stat tests/browser_corpus, then "
+              "python tests/benchmark.py --corpus browser")
+        return 0
+
+    if args.check:
+        manifest = load_manifest()
+        problems = verify_files(manifest)
+        for p in problems:
+            print(p)
+        reasons, drifted = drift(manifest, full=args.full)
+        if reasons:
+            print("Not redrawn — the corpus was drawn elsewhere: " + "; ".join(reasons))
+            return 1 if problems else 0
+        for d in drifted:
+            print(f"drifted: {d}")
+        print(f"{'OK' if not (problems or drifted) else 'DIFFERS'}: "
+              f"{len(problems)} file problem(s), {len(drifted)} drifted frame(s)")
+        return 1 if problems or drifted else 0
+
     out = Path(args.out)
     doc = capture_all(out)
     (out / "capture.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False)
