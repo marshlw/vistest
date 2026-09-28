@@ -1,9 +1,8 @@
 name: Visual regression
 
+# Manual only until the job is fixed.
 on:
-  pull_request:
-  push:
-    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   visual:

@@ -159,9 +159,12 @@ jobs:
       - name: Install
         run: |
           pip install -c constraints-service.txt ".[server]"
+          # vistest itself is not on PyPI, and --strict fails on anything it
+          # cannot look up. Audit what the server pulls in, not the project.
+          pip freeze --exclude vistest > "$RUNNER_TEMP/audit-reqs.txt"
           pip install pip-audit
       - name: Известные уязвимости в зависимостях
-        run: pip-audit --strict --desc
+        run: pip-audit --strict --desc --no-deps --disable-pip -r "$RUNNER_TEMP/audit-reqs.txt"
 
   # Миграции на базе ПРОШЛОЙ версии.
   #
