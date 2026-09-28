@@ -13,6 +13,7 @@
 *.pdf binary
 *.onnx binary
 *.woff  binary
+*.ttf   binary
 *.woff2 binary
 
 # Vendored licence text should not count towards the repository's language

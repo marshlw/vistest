@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Landing</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; color: #0f172a; background: #ffffff; }
+  nav { display: flex; align-items: center; gap: 26px; padding: 18px 64px; font-size: 14px; }
+  nav b { font-size: 19px; margin-right: 18px; }
+  nav a { color: #334155; text-decoration: none; }
+  nav .cta { margin-left: auto; }
+  .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; padding: 44px 64px 36px; background: linear-gradient(180deg, #eef2ff 0%, #ffffff 100%); }
+  .eyebrow { display: inline-block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #4338ca; background: #e0e7ff; padding: 3px 10px; border-radius: 999px; }
+  h1 { font-size: 42px; line-height: 50px; margin: 14px 0 14px; }
+  .sub { font-size: 17px; line-height: 27px; color: #475569; margin: 0 0 24px; }
+  .buttons { display: flex; gap: 12px; align-items: center; }
+  .btn { padding: 12px 22px; border: 0; border-radius: 8px; font: inherit; font-size: 15px; background: #4f46e5; color: #fff; }
+  .btn.alt { background: transparent; color: #312e81; border: 1px solid #c7d2fe; }
+  .small { font-size: 13px; color: #64748b; margin-top: 14px; }
+  .shot { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; box-shadow: 0 20px 40px rgba(30, 41, 59, .14); }
+  .shot .bar { height: 10px; width: 60%; background: #e2e8f0; border-radius: 5px; margin-bottom: 10px; }
+  .shot .chart { display: flex; align-items: flex-end; gap: 10px; height: 160px; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+  .shot .chart i { flex: 1; background: #818cf8; border-radius: 4px 4px 0 0; }
+  .shot .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; font-size: 12px; color: #64748b; }
+  .shot .kpis b { display: block; font-size: 18px; color: #0f172a; }
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; padding: 30px 64px; }
+  .feature h3 { margin: 10px 0 6px; font-size: 16px; }
+  .feature p { margin: 0; font-size: 14px; line-height: 21px; color: #475569; }
+  .ico { width: 38px; height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #eef2ff; }
+  .logos { display: flex; gap: 44px; justify-content: center; align-items: center; padding: 10px 64px 0; color: #94a3b8; font-weight: 700; font-size: 15px; letter-spacing: .06em; }
+  a.inline { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+<nav><b>Acme Metrics</b><a>Product</a><a>Pricing</a><a>Customers</a><a>Docs</a><span class="cta" data-m="order" style="display:flex;gap:14px;align-items:center"><a>Sign in</a><a>Contact sales</a></span></nav>
+<section class="hero">
+  <div>
+    <span class="eyebrow" data-m="remove">New: scheduled reports</span>
+    <h1 data-m="fsize">Know what changed in your numbers before Monday</h1>
+    <p class="sub" data-m="lh text">Acme Metrics watches your dashboards overnight and writes a short, plain summary of every change that matters, with the chart that shows it.</p>
+    <div class="buttons"><button class="btn" data-m="fill radius pad opacity">Start free trial</button><button class="btn alt" data-m="border focus">Book a demo</button></div>
+    <p class="small" data-m="word" data-word="No card required. Cancel anytime.">No card required. Cancel any day.</p>
+  </div>
+  <div class="shot" data-m="shadow">
+    <div class="bar"></div>
+    <div class="chart"><i style="height:40%"></i><i style="height:55%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:62%"></i><i style="height:84%"></i><i style="height:78%"></i></div>
+    <div class="kpis"><div>Revenue<b data-m="char" data-char="$48.2k">$48.7k</b></div><div>Orders<b>1,284</b></div><div data-m="noborder" style="border-radius:6px">Churn<b>2.1%</b></div></div>
+  </div>
+</section>
+<section class="features" data-m="offset">
+  <div class="feature"><div class="ico"><svg data-m="icon" data-icon="M4 12h16M12 4v16" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><path d="M4 17l6-6 4 4 6-7"/></svg></div><h3 data-m="spacing">Change detection</h3><p>Every metric is compared with its own history, so a quiet Tuesday is not reported as a crisis.</p></div>
+  <div class="feature"><div class="ico"><svg data-m="iconcolor" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#4f46e5"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16"/></svg></div><h3 data-m="weight" style="font-weight:400">Scheduled summaries</h3><p>Pick a day and a channel; the summary arrives with links back to the charts it mentions.</p></div>
+  <div class="feature"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></div><h3>Plain language</h3><p>Read more in the <a class="inline" data-m="link underline">guide to summaries</a>, or ask the team for a walkthrough.</p></div>
+</section>
+<div class="logos"><span>LUMEN</span><span>OAKFIELD</span><span>BRIGHTWAY</span><span>NORTHPEAK</span><span>HELIX</span></div>
+</body>
+</html>

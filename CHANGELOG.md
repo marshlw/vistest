@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+### R1: a corpus drawn by the browser, with labels known in advance
+
+- **Templates and capture.** Six local pages in
+  `tests/browser_corpus/templates/` — an orders table, a settings form,
+  product cards, a landing page, a long serif article and a dark-theme
+  dashboard — and `scripts/browser_corpus.py`, which renders them in Chromium
+  through `vistest.library.targets.capture`, the path `expect_screenshot(page)`
+  takes since R3: animations disabled, caret hidden, `scale="css"`,
+  `document.fonts.ready`, frames until two in a row are identical. The
+  templates load nothing from the network. Their fonts are subsets of DejaVu
+  Sans, Sans Bold and Serif (Latin-1 plus a few marks, hinting kept, ~130 KB
+  together) shipped next to them with the Bitstream Vera licence, under
+  family names of our own, so a font installed on the machine is never picked
+  instead. Every element the corpus will change carries a `data-m` token; a
+  template without one of the 22 tokens fails a test instead of silently
+  losing a family. The environment is written down, not assumed: Playwright,
+  the Chromium version, the build that drew the frame (the headless shell and
+  the full Chromium of one release report the same `browser.version`; the
+  product string over CDP tells them apart), OS, architecture, distribution,
+  window, device scale factor, and the fonts Chromium actually drew each
+  template with, read back over CDP (`CSS.getPlatformFontsForNode`) — which
+  is how the first draft was caught drawing a `›` in Liberation Sans. Two
+  fresh browsers in the same configuration must draw the same pixels, or the
+  capture stops. New: `tests/test_browser_corpus.py` (templates are local,
+  carry every target, ship their fonts; drawn only with those fonts; the
+  control; the environment record). The Chromium checks are skipped, not red,
+  where Chromium cannot start. `*.ttf` is marked binary in `.gitattributes`.
+
 ### R3: capture parity with `toHaveScreenshot`, and speed
 
 - **Two loose ends of the public repository.** `SECURITY.md` asked readers to

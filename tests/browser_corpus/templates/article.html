@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Article</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Serif", serif; color: #1f2328; background: #fffdf8; }
+  .top { display: flex; align-items: center; gap: 18px; padding: 12px 40px; font-family: "Corpus Sans", sans-serif; font-size: 13px; border-bottom: 1px solid #ece6d9; }
+  .top b { font-size: 16px; }
+  .top a { color: #6b5f4b; text-decoration: none; }
+  .top .sub { margin-left: auto; padding: 6px 12px; border: 0; border-radius: 4px; background: #9a3412; color: #fff; font: inherit; }
+  .wrap { display: grid; grid-template-columns: 1fr 250px; gap: 44px; width: 1060px; margin: 0 auto; padding: 22px 0; }
+  .kicker { font-family: "Corpus Sans", sans-serif; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #9a3412; }
+  h1 { font-size: 30px; line-height: 37px; margin: 6px 0 8px; font-weight: 400; }
+  .meta { font-family: "Corpus Sans", sans-serif; font-size: 13px; color: #6b7280; margin-bottom: 14px; display: flex; gap: 12px; align-items: center; }
+  p { font-size: 16px; line-height: 26px; margin: 0 0 12px; text-align: justify; hyphens: none; }
+  a { color: #1d4ed8; text-decoration: none; }
+  blockquote { margin: 10px 0 12px; padding: 4px 0 4px 16px; border-left: 3px solid #d6cbb3; color: #4b4336; font-style: normal; }
+  aside { font-family: "Corpus Sans", sans-serif; font-size: 13px; }
+  .box { background: #f7f2e7; border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; }
+  .box h4 { margin: 0 0 8px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #6b5f4b; }
+  .box ol { margin: 0; padding-left: 18px; line-height: 20px; }
+  .toc a { display: block; color: #374151; padding: 3px 0; }
+</style>
+</head>
+<body>
+<div class="top"><b>The Field Notes</b><a>Latest</a><a>Essays</a><a>Interviews</a><a>Archive</a><button class="sub" data-m="fill radius pad opacity">Subscribe</button></div>
+<div class="wrap">
+  <article>
+    <div class="kicker" data-m="spacing">Essay</div>
+    <h1 data-m="fsize">On keeping a record of small repairs</h1>
+    <div class="meta"><span data-m="weight">By R. Alder</span><span data-m="char" data-char="8 min read">9 min read</span><svg data-m="iconcolor" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#6b7280"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span data-m="remove">Updated</span></div>
+    <p data-m="text">Most things in a house fail slowly and then all at once. A hinge begins to squeak in October, a tap starts to drip after the first frost, and by spring the list of small faults is long enough that nobody remembers which came first. Writing them down changes that. A notebook by the door, with the date, the fault and what was done about it, turns a vague sense that everything is breaking into a short list of things that actually are.</p>
+    <p data-m="lh">The habit pays for itself the second time a fault comes back. The note says that the washer was replaced in March, that the new one was a size too small, and that the drip returned within a month. Without the note, the same wrong washer goes in again. With it, the repair takes ten minutes and a trip to the right shelf of the hardware shop, not a morning of guessing and two trips to the wrong one.</p>
+    <blockquote data-m="border offset">A record of repairs is not a diary. It is a list of promises the house has broken, and of the ones you have kept.</blockquote>
+    <p>There is a temptation to make the record complete: every screw, every coat of paint, every light bulb. That version of the notebook lasts about three weeks. The useful version is shorter and more honest. It records what failed, what it cost to fix, and whether the fix held. Anything else can be <a data-m="link underline">looked up in the manual</a>, and anything that cannot be looked up was probably not worth writing down.</p>
+    <p>Over a few years the record starts to show patterns. The north windows need attention every second winter; the kitchen drain every autumn, when the leaves come down; the garden tap only when somebody forgets to drain it. None of this is surprising once it is written down, and all of it was surprising every single time it happened before.</p>
+  </article>
+  <aside>
+    <div class="box" data-m="shadow noborder" style="box-shadow:0 2px 6px rgba(107,95,75,.18)"><h4>In this essay</h4><div class="toc"><a>Why write it down</a><a>The second failure</a><a data-m="word" data-word="What to leave in">What to leave out</a><a>Patterns</a></div></div>
+    <div class="box"><h4 style="display:flex;align-items:center;justify-content:space-between">Most read <svg data-m="icon" data-icon="M5 12h14M13 6l6 6-6 6" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b5f4b" stroke-width="2"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></h4><ol><li>The case for slower bread</li><li>A year of cold showers, measured</li><li>Maps that lie on purpose</li><li>Repairing a sash window</li></ol></div>
+    <div class="box" data-m="order" style="display:flex;gap:10px;align-items:center;background:none;padding:0"><button class="sub" style="background:#fff;color:#374151;border:1px solid #d6cbb3;padding:6px 12px;border-radius:4px;font:inherit">Share</button><button style="background:#fff;color:#374151;border:1px solid #d6cbb3;padding:6px 12px;border-radius:4px;font:inherit" data-m="focus">Save for later</button></div>
+  </aside>
+</div>
+</body>
+</html>

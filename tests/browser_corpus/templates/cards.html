@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Catalogue</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; font-size: 14px; color: #1c1917; background: #fafaf9; }
+  header { display: flex; align-items: center; gap: 22px; padding: 16px 32px; background: #1c1917; color: #fafaf9; }
+  header b { font-size: 18px; }
+  header a { color: #d6d3d1; text-decoration: none; }
+  header .cart { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .bar { display: flex; align-items: baseline; gap: 14px; padding: 18px 32px 6px; }
+  .bar h1 { margin: 0; font-size: 22px; }
+  .bar .count { color: #78716c; }
+  .bar .sort { margin-left: auto; color: #57534e; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding: 12px 32px; }
+  .card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; overflow: hidden; }
+  .img { height: 150px; display: flex; align-items: center; justify-content: center; }
+  .img svg { width: 72px; height: 72px; }
+  .body { padding: 12px 14px 14px; }
+  .name { font-weight: 700; margin: 0 0 4px; }
+  .desc { color: #57534e; font-size: 13px; line-height: 18px; margin: 0 0 10px; height: 36px; overflow: hidden; }
+  .row { display: flex; align-items: center; justify-content: space-between; }
+  .price { font-size: 17px; font-weight: 700; }
+  .old { color: #a8a29e; text-decoration: line-through; font-size: 13px; margin-left: 6px; font-weight: 400; }
+  .add { border: 0; border-radius: 8px; padding: 7px 12px; font: inherit; background: #ea580c; color: #fff; }
+  .tag { position: absolute; margin: 10px; padding: 2px 8px; font-size: 11px; border-radius: 4px; background: #16a34a; color: #fff; }
+  .stars { color: #d97706; font-size: 12px; margin-bottom: 8px; }
+  .more { color: #c2410c; text-decoration: none; }
+</style>
+</head>
+<body>
+<header><b>Acme Supply</b><a>Kitchen</a><a>Garden</a><a>Tools</a><a>Lighting</a>
+  <span class="cart"><svg data-m="iconcolor" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#fafaf9"><path d="M3 4h2l2 12h11l2-8H6"/><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/></svg>Cart (2)</span></header>
+<div class="bar"><h1 data-m="fsize">Kitchen</h1><span class="count" data-m="weight">48 products</span><span class="sort">Sort: <a class="more" data-m="link underline">Most popular</a></span></div>
+<div class="grid">
+  <div class="card" data-m="shadow" style="box-shadow:0 4px 14px rgba(28,25,23,.12)">
+    <span class="tag" data-m="remove">New</span>
+    <div class="img" style="background:#fde68a"><svg viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="1.5"><path d="M5 10h14v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"/><path d="M19 12h2"/></svg></div>
+    <div class="body"><p class="name">Stoneware Mug</p><div class="stars">4.6 · 214 reviews</div><p class="desc">Glazed stoneware, 350 ml, safe for the dishwasher and microwave.</p>
+      <div class="row"><span class="price" data-m="char" data-char="$18.00">$19.00</span><button class="add" data-m="fill radius pad opacity">Add</button></div></div>
+  </div>
+  <div class="card" data-m="border">
+    <div class="img" style="background:#bfdbfe"><svg data-m="icon" data-icon="M4 20L20 4M6 4h14v14" viewBox="0 0 24 24" fill="none" stroke="#1e3a8a" stroke-width="1.5"><path d="M4 14h16l-2 6H6z"/><path d="M12 14V4l5 5"/></svg></div>
+    <div class="body"><p class="name" data-m="word" data-word="Cast Iron Skillet">Cast Iron Griddle</p><div class="stars">4.9 · 98 reviews</div><p class="desc" data-m="text">Pre-seasoned, 26 cm, works on gas, induction and open fire.</p>
+      <div class="row"><span class="price">$42.00<span class="old">$55.00</span></span><button class="add">Add</button></div></div>
+  </div>
+  <div class="card">
+    <div class="img" style="background:#bbf7d0"><svg viewBox="0 0 24 24" fill="none" stroke="#14532d" stroke-width="1.5"><path d="M4 18h16"/><path d="M6 18V9l6-5 6 5v9"/></svg></div>
+    <div class="body"><p class="name" data-m="spacing">Bamboo Bread Bin</p><div class="stars">4.3 · 57 reviews</div><p class="desc" data-m="lh">Roll-top lid, keeps a large loaf fresh for three to four days.</p>
+      <div class="row"><span class="price">$34.50</span><button class="add" data-m="focus">Add</button></div></div>
+  </div>
+  <div class="card">
+    <div class="img" style="background:#fecaca"><svg viewBox="0 0 24 24" fill="none" stroke="#7f1d1d" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M12 8v4l3 2"/></svg></div>
+    <div class="body"><p class="name">Kitchen Timer</p><div class="stars">3.8 · 31 reviews</div><p class="desc">Mechanical, 60 minutes, loud bell and a magnetic back.</p>
+      <div class="row"><span class="price">$12.99</span><span data-m="order" style="display:flex;gap:6px"><button class="add" style="background:#78716c">Save</button><button class="add">Add</button></span></div></div>
+  </div>
+</div>
+<div class="bar" data-m="offset"><span class="count">Free delivery on orders over $60.</span><span data-m="noborder" style="margin-left:auto;padding:4px 10px;border-radius:6px;color:#57534e">Showing 4 of 48</span></div>
+</body>
+</html>
