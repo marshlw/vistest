@@ -243,6 +243,10 @@ def _viewer(entry: dict, images: dict[str, str]) -> str:
                               images.get("diff", ""))
     if not (baseline or actual):
         missing = entry.get("images", {}) or {}
+        if not any(missing.values()):
+            #  A check that raised before anything was written: no pictures
+            #  exist anywhere, and the reason above already says why.
+            return ""
         return ('<p class="none">The pictures are not in this report. '
                 'They are on disk at:</p><ul class="paths">'
                 + "".join(f"<li>{_e(v)}</li>" for v in missing.values() if v)

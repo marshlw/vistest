@@ -5,6 +5,49 @@
 
 ## [Unreleased]
 
+### Windows: a refused replace is retried, and a check that raises is still reported
+
+Found on the Windows job (3.13), where
+`test_library_mode.py::test_two_tests_writing_one_name_are_reported_as_a_collision`
+went red under `-n 2`: `test_alpha` died with WinError 5 in `atomic.py` while
+the other worker wrote the same file, left no report row, and the controller
+saw one writer. Two defects of the product, not of the test.
+
+- **`storage.atomic.write_bytes` retries a refused replace on Windows.** There
+  `os.replace` fails with `PermissionError` (WinError 5) while another process
+  holds the target or is replacing it at the same moment — two tests with one
+  snapshot name writing `.vistest/actual/<name>.png` from two workers, or an
+  antivirus or the indexer opening a PNG that has just appeared. On Windows
+  only, and only for `PermissionError`, the replace is now retried with a
+  pause that starts at 5 ms and doubles up to 200 ms, for at most
+  `REPLACE_RETRY_SECONDS` (2 s); after that the error is raised as it came. On
+  POSIX nothing changes: a `PermissionError` there is about permissions and is
+  raised on the first attempt. The temporary file is removed whatever the
+  outcome, as before. The platform switch is a module variable,
+  `atomic.RETRY_REPLACE`, so the Windows behaviour is tested on every
+  platform. The module docstring no longer claims that the replace always
+  succeeds on Windows without a lock.
+- **A check that raises before its verdict still leaves a report row.**
+  `expect_screenshot` wrote its row only at the end, so an exception between
+  naming the check and deciding it — writing the actual picture, reading the
+  baseline, comparing — left nothing: the check was missing from the report,
+  and the collision check saw one writer where there were two. That is how
+  the Windows run above failed without saying «name collision». Such a check
+  now writes a row with `verdict="error"`, its key, its test's nodeid and the
+  exception's text, and the exception reaches the test unchanged.
+  `BaselineMissing` and `ScreenshotMismatch` write their own row as before —
+  one check, one row. In the report an error row is counted under its own chip
+  and open by default, and a row with no pictures at all no longer shows an
+  empty «the pictures are on disk at:» list.
+- New: `tests/test_library_atomic.py` (refused twice then written; refused
+  for good: the original error at the limit, no temporary left; off Windows
+  the first refusal is raised at once; only a refusal is retried), in
+  `tests/test_library_api.py` the error row (key, nodeid, the exception
+  untouched; one row for `BaselineMissing` and `ScreenshotMismatch`; counted
+  and open in the report), and in `tests/test_library_mode.py` two tests with
+  one name under `-n 2` where one writer fails: the run still prints «name
+  collision» with both nodeids.
+
 ### R1: a corpus drawn by the browser, with labels known in advance
 
 - **Templates and capture.** Six local pages in

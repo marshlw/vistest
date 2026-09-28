@@ -176,127 +176,148 @@ def expect_screenshot(
                             stable_timeout_ms=wait)
     platform = platform if platform is not None else ctx.platform_for(shot)
     key = ctx.key(name, platform)
-    store = store or ctx.store
-    #  What the capture has to say for itself: a page that would not hold
-    #  still, a font wait that failed. It goes into every reason below, so
-    #  the report and the CI log carry it whatever the verdict.
-    said = [*shot.notes, *filter(None, [shot.stability.unsettled_text()])]
-    captured = _capture_row(shot)
+    #  From here on the check has a name, and it must leave a row in the
+    #  report whatever happens to it. A row is what the report counts and what
+    #  the collision check reads: a check that died between here and its
+    #  verdict — the actual picture could not be written, the baseline could
+    #  not be read, the comparison raised — used to leave nothing, so it was
+    #  neither in the report nor seen as the second writer of its name.
+    written: list[str] = []
+    actual_path: Path | None = None
+    captured: dict | None = None
 
-    actual_path = atomic.write_bytes(ctx.artifact_path("actual", key), shot.png)
-    baseline_path = store.path_of(key)
-    baseline = store.get(key)
+    def record(**fields) -> None:
+        _record(ctx, key, **fields)
+        written.append(fields["verdict"])
 
-    mode = ctx.update_mode
+    try:
+        store = store or ctx.store
+        #  What the capture has to say for itself: a page that would not hold
+        #  still, a font wait that failed. It goes into every reason below, so
+        #  the report and the CI log carry it whatever the verdict.
+        said = [*shot.notes, *filter(None, [shot.stability.unsettled_text()])]
+        captured = _capture_row(shot)
 
-    # ---- nothing to compare against yet ------------------------------- #
-    if baseline is None:
-        if mode is None:
-            _record(ctx, key, verdict="new_baseline", action="missing",
-                    reason=_with(said, "there is no baseline for this snapshot yet"),
-                    images={"actual": str(actual_path)},
-                    duration_ms=_ms(started), capture=captured)
-            raise BaselineMissing.build(
-                name=key.name, platform=platform,
-                baseline=baseline_path, actual=actual_path,
-                elsewhere=platforms_with(store, key))
+        actual_path = atomic.write_bytes(ctx.artifact_path("actual", key), shot.png)
+        baseline_path = store.path_of(key)
+        baseline = store.get(key)
 
-        _warn_unsettled_accept(shot, key)
-        meta = store.put(key, shot.png)
-        _record(ctx, key, verdict="new_baseline", action="created",
-                reason=_with(said, f"baseline created by --vistest-update={mode}"),
-                images={"actual": str(actual_path),
-                        "baseline": str(baseline_path)},
-                duration_ms=_ms(started), capture=captured)
-        return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
+        mode = ctx.update_mode
 
-    # ---- compare ------------------------------------------------------ #
-    expected_rgb = pngio.decode(baseline, source=baseline_path)
-    actual_rgb = pngio.decode(shot.png, source=f"the screenshot of {key.name}")
+        # ---- nothing to compare against yet ------------------------------- #
+        if baseline is None:
+            if mode is None:
+                record(verdict="new_baseline", action="missing",
+                       reason=_with(said, "there is no baseline for this snapshot yet"),
+                       images={"actual": str(actual_path)},
+                       duration_ms=_ms(started), capture=captured)
+                raise BaselineMissing.build(
+                    name=key.name, platform=platform,
+                    baseline=baseline_path, actual=actual_path,
+                    elsewhere=platforms_with(store, key))
 
-    passport = store.meta(key)
-    cfg = ctx.config.diff.merged(
-        **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
-                    call=call_patch))
-
-    boxes = [*(passport.ignore_boxes if passport else ()), *shot.boxes]
-    from ..core.comparator import compare, strip_internal
-
-    ignore = _ignore_mask(expected_rgb.shape[:2], boxes)
-    hooks = _ai_hooks(ctx)
-    result = compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
-                     ignore_mask=ignore, ai_hooks=hooks)
-
-    #  Failed: one more frame, and whatever did not hold still between the two
-    #  is masked for a second comparison of the FIRST frame. The same function
-    #  the server uses — see core/retry.py for why it cannot hide a steady
-    #  regression, and what it says when it turns a check green.
-    if result.failed and shot.retake is not None \
-            and ctx.config.capture.retry_on_fail:
-        result = _second_look(shot, key, result, expected_rgb, actual_rgb,
-                              cfg, ignore, hooks)
-    result.duration_ms = _ms(started)
-
-    #  Let go of the full-frame maps. `compare` hands back four arrays the size
-    #  of the screenshot for whoever is going to draw pictures from them;
-    #  nothing here does — the diff is drawn from the regions — and this result
-    #  is about to be returned to somebody's test and, on a failure, held
-    #  inside the exception for as long as pytest keeps it. Two hundred
-    #  snapshots' worth of that is an out-of-memory kill, not a leak nobody
-    #  notices.
-    strip_internal(result)
-
-    hint = _scale_hint(shot, result)
-    if hint:
-        said.append(hint)
-    result.notes[:0] = said
-
-    from ..report.library import describe
-
-    reason = _with(said, describe(result))
-    limits = {"fail_severity": cfg.fail_severity,
-              "max_changed_area_pct": cfg.max_changed_area_pct}
-    images = {"baseline": str(baseline_path), "actual": str(actual_path)}
-
-    diff_path = None
-    if result.verdict is Verdict.FAIL:
-        diff_path = _write_diff(ctx, key, actual_rgb, result)
-        if diff_path is not None:
-            images["diff"] = str(diff_path)
-
-    # ---- accepting -------------------------------------------------- #
-    #  `missing` never touches a baseline that exists. `changed` rewrites
-    #  one only when its check failed — a passing check whose bytes differ
-    #  (a re-encode, a subpixel shift the engine calls noise) keeps the
-    #  baseline, so accepting two real changes does not produce a pull
-    #  request that touches every PNG in the project. `all` is the old
-    #  behaviour: anything that differs by a byte is written.
-    failed = result.verdict is Verdict.FAIL
-    if mode == "all" or (mode == "changed" and failed):
-        if _sha_of(shot.png) != _sha_of(baseline):
             _warn_unsettled_accept(shot, key)
-        meta = store.put(key, shot.png)
-        _record(ctx, key, verdict="new_baseline",
-                action="unchanged" if meta.sha256 == _sha_of(baseline)
-                else "updated",
-                reason=(_with(said, "the baseline already matched")
-                        if result.verdict is not Verdict.FAIL
-                        else f"accepted: {reason}"),
-                result=result, limits=limits, images=images,
-                duration_ms=_ms(started), capture=captured)
-        return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
+            meta = store.put(key, shot.png)
+            record(verdict="new_baseline", action="created",
+                   reason=_with(said, f"baseline created by --vistest-update={mode}"),
+                   images={"actual": str(actual_path),
+                           "baseline": str(baseline_path)},
+                   duration_ms=_ms(started), capture=captured)
+            return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
 
-    _record(ctx, key,
-            verdict="fail" if result.verdict is Verdict.FAIL else "pass",
-            action="compared", reason=reason, result=result, limits=limits,
-            images=images, duration_ms=_ms(started), capture=captured)
+        # ---- compare ------------------------------------------------------ #
+        expected_rgb = pngio.decode(baseline, source=baseline_path)
+        actual_rgb = pngio.decode(shot.png, source=f"the screenshot of {key.name}")
 
-    if result.verdict is Verdict.FAIL:
-        raise ScreenshotMismatch.build(
-            name=key.name, platform=platform, result=result, reason=reason,
-            baseline=baseline_path, actual=actual_path, diff=diff_path,
-            report=ctx.report, limits=limits)
-    return result
+        passport = store.meta(key)
+        cfg = ctx.config.diff.merged(
+            **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
+                        call=call_patch))
+
+        boxes = [*(passport.ignore_boxes if passport else ()), *shot.boxes]
+        from ..core.comparator import compare, strip_internal
+
+        ignore = _ignore_mask(expected_rgb.shape[:2], boxes)
+        hooks = _ai_hooks(ctx)
+        result = compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
+                         ignore_mask=ignore, ai_hooks=hooks)
+
+        #  Failed: one more frame, and whatever did not hold still between the two
+        #  is masked for a second comparison of the FIRST frame. The same function
+        #  the server uses — see core/retry.py for why it cannot hide a steady
+        #  regression, and what it says when it turns a check green.
+        if result.failed and shot.retake is not None \
+                and ctx.config.capture.retry_on_fail:
+            result = _second_look(shot, key, result, expected_rgb, actual_rgb,
+                                  cfg, ignore, hooks)
+        result.duration_ms = _ms(started)
+
+        #  Let go of the full-frame maps. `compare` hands back four arrays the size
+        #  of the screenshot for whoever is going to draw pictures from them;
+        #  nothing here does — the diff is drawn from the regions — and this result
+        #  is about to be returned to somebody's test and, on a failure, held
+        #  inside the exception for as long as pytest keeps it. Two hundred
+        #  snapshots' worth of that is an out-of-memory kill, not a leak nobody
+        #  notices.
+        strip_internal(result)
+
+        hint = _scale_hint(shot, result)
+        if hint:
+            said.append(hint)
+        result.notes[:0] = said
+
+        from ..report.library import describe
+
+        reason = _with(said, describe(result))
+        limits = {"fail_severity": cfg.fail_severity,
+                  "max_changed_area_pct": cfg.max_changed_area_pct}
+        images = {"baseline": str(baseline_path), "actual": str(actual_path)}
+
+        diff_path = None
+        if result.verdict is Verdict.FAIL:
+            diff_path = _write_diff(ctx, key, actual_rgb, result)
+            if diff_path is not None:
+                images["diff"] = str(diff_path)
+
+        # ---- accepting -------------------------------------------------- #
+        #  `missing` never touches a baseline that exists. `changed` rewrites
+        #  one only when its check failed — a passing check whose bytes differ
+        #  (a re-encode, a subpixel shift the engine calls noise) keeps the
+        #  baseline, so accepting two real changes does not produce a pull
+        #  request that touches every PNG in the project. `all` is the old
+        #  behaviour: anything that differs by a byte is written.
+        failed = result.verdict is Verdict.FAIL
+        if mode == "all" or (mode == "changed" and failed):
+            if _sha_of(shot.png) != _sha_of(baseline):
+                _warn_unsettled_accept(shot, key)
+            meta = store.put(key, shot.png)
+            record(verdict="new_baseline",
+                   action="unchanged" if meta.sha256 == _sha_of(baseline)
+                   else "updated",
+                   reason=(_with(said, "the baseline already matched")
+                           if result.verdict is not Verdict.FAIL
+                           else f"accepted: {reason}"),
+                   result=result, limits=limits, images=images,
+                   duration_ms=_ms(started), capture=captured)
+            return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
+
+        record(verdict="fail" if result.verdict is Verdict.FAIL else "pass",
+               action="compared", reason=reason, result=result, limits=limits,
+               images=images, duration_ms=_ms(started), capture=captured)
+
+        if result.verdict is Verdict.FAIL:
+            raise ScreenshotMismatch.build(
+                name=key.name, platform=platform, result=result, reason=reason,
+                baseline=baseline_path, actual=actual_path, diff=diff_path,
+                report=ctx.report, limits=limits)
+        return result
+    except Exception as exc:
+        #  `BaselineMissing` and `ScreenshotMismatch` have written their own row
+        #  by the time they are raised; one check, one row.
+        if not written:
+            _record_error(ctx, key, exc, started=started,
+                          actual=actual_path, capture=captured)
+        raise
 
 
 # --------------------------------------------------------------------------- #
@@ -503,6 +524,28 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
 
         warnings.warn(f"vistest: could not write the report entry for "
                       f"{key.name} ({e})", VisTestWarning, stacklevel=3)
+
+
+def _record_error(ctx, key: SnapshotKey, exc: BaseException, *, started: float,
+                  actual: Path | None, capture: dict | None) -> None:
+    """The row of a check that raised before it reached a verdict.
+
+    Written so that the check is counted and its name is seen by the collision
+    check; the exception itself goes on to the test unchanged. Nothing here may
+    raise in its place: a failure to write this row is a warning, and the
+    caller re-raises the original error either way.
+    """
+    try:
+        _record(ctx, key, verdict="error", action="error",
+                reason=f"the check did not finish: {type(exc).__name__}: {exc}",
+                images={"actual": str(actual)} if actual is not None else {},
+                duration_ms=_ms(started), capture=capture)
+    except Exception as e:  # pragma: no cover - the original error matters more
+        import warnings
+
+        warnings.warn(f"vistest: could not write the report entry for "
+                      f"{key.name} ({type(e).__name__}: {e})",
+                      VisTestWarning, stacklevel=3)
 
 
 #  Suppressed regions listed per check in the report. The count is never cut.
