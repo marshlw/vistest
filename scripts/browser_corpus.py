@@ -87,6 +87,32 @@ there. `tests/test_browser_corpus.py` checks the files against the manifest
 everywhere, and redraws frames only in the environment the manifest records
 — anywhere else it is skipped with the difference named, because a frame
 drawn by another Chromium is a different frame, not a regression.
+
+Noise from another machine
+--------------------------
+
+The rendering configurations above are flags of one Chromium on one Linux.
+What users run into is another machine: a developer on Windows, CI on Linux.
+That noise cannot be drawn here, so it is captured there and brought in:
+
+    python scripts/browser_corpus.py --capture-noise-only --tag win11
+        # on the other machine: the six baselines only, no mutations, the
+        # same capture path, into bench_out/os_noise/win11/ (not the corpus),
+        # with environment.json: OS and its version, Playwright, the Chromium
+        # build, the fonts over CDP, the screen's DPI and font smoothing, the
+        # sha256 of each PNG and how it differs from the corpus environment
+    python scripts/browser_corpus.py --import-noise bench_out/os_noise/win11
+        # here: the frames become the NOISE family os_<os> (os_windows), one
+        # pair per template against the corpus baseline, split by template
+        # like everything else
+
+An imported frame is redrawn only where its own environment is found again
+(same Playwright, Chromium build, OS and its version, architecture and font
+smoothing); everywhere else its drift test is skipped with the difference
+named. `--regenerate` keeps imported frames only while the baselines they
+pair with come out byte for byte the same; otherwise it drops them and says
+so — a Windows frame against a baseline from another Chromium is not the
+noise that was measured.
 """
 
 from __future__ import annotations
@@ -97,6 +123,8 @@ import io
 import json
 import os
 import platform
+import re
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -352,6 +380,20 @@ def _distro() -> str:
     return platform.platform()
 
 
+def _os_version() -> str:
+    """`10.0.26100` on Windows, `14.5` on macOS, the distribution on Linux.
+
+    On Linux the kernel is not what draws text, and its build string would
+    make every kernel update look like another machine.
+    """
+    system = platform.system()
+    if system == "Windows":
+        return platform.version()
+    if system == "Darwin":
+        return platform.mac_ver()[0] or platform.release()
+    return _distro()
+
+
 def _revision(executable: str) -> str:
     """`1194` out of `.../chromium-1194/chrome-linux/chrome`."""
     for part in Path(executable).parts:
@@ -395,6 +437,98 @@ def _container() -> dict:
     return {"image": image or None, "in_container": inside}
 
 
+def _windows_display() -> dict:
+    """DPI and font smoothing as Windows reports them to a program asking.
+
+    Headless Chromium draws at the context's device scale factor (1 here),
+    not at the screen's, so the DPI is written down rather than expected to
+    matter. Font smoothing is another matter: Skia on Windows asks the system
+    for ClearType and its contrast, so it is part of the environment.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    out: dict = {}
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    try:
+        #  The thread, not the process, becomes DPI-aware for one call and is
+        #  put back: an unaware thread is told 96 whatever the screen is.
+        user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        before = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+        try:
+            out["dpi"] = int(user32.GetDpiForSystem())
+        finally:
+            if before:
+                user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(before))
+        out["dpi_source"] = "GetDpiForSystem, per-monitor aware thread"
+        out["scale_percent"] = round(out["dpi"] * 100 / 96)
+    except Exception as e:  # pragma: no cover - old Windows
+        out["dpi"] = None
+        out["dpi_source"] = f"unavailable: {e}"
+
+    def spi(action: int) -> int | None:
+        value = wintypes.UINT(0)
+        ok = user32.SystemParametersInfoW(action, 0, ctypes.byref(value), 0)
+        return int(value.value) if ok else None
+
+    smoothing = {
+        "enabled": spi(0x004A),        # SPI_GETFONTSMOOTHING
+        "type": spi(0x200A),           # SPI_GETFONTSMOOTHINGTYPE: 1 standard, 2 ClearType
+        "contrast": spi(0x200C),       # SPI_GETFONTSMOOTHINGCONTRAST, 1000-2200
+        "orientation": spi(0x2012),    # SPI_GETFONTSMOOTHINGORIENTATION: 0 BGR, 1 RGB
+    }
+    if smoothing["enabled"] is not None:
+        smoothing["enabled"] = bool(smoothing["enabled"])
+    smoothing["cleartype"] = smoothing["type"] == 2
+    out["font_smoothing"] = smoothing
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as k:
+            for name in ("ProductName", "DisplayVersion", "CurrentBuild", "UBR"):
+                try:
+                    out.setdefault("windows", {})[name] = winreg.QueryValueEx(k, name)[0]
+                except OSError:
+                    pass
+    except Exception:  # pragma: no cover - registry closed
+        pass
+    return out
+
+
+def host_display() -> dict:
+    """The screen and font settings of the machine that drew the frames.
+
+    Recorded, not assumed. On Linux without a display there is none to
+    read, and that is what is written.
+    """
+    system = platform.system()
+    if system == "Windows":
+        try:
+            return _windows_display()
+        except Exception as e:  # pragma: no cover - depends on the machine
+            return {"dpi": None, "dpi_source": f"unavailable: {e}",
+                    "font_smoothing": None}
+    display = os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    if not display:
+        return {"dpi": None, "dpi_source": "no display: headless",
+                "font_smoothing": None}
+    dpi = None
+    try:
+        import subprocess
+
+        res = subprocess.run(["xrdb", "-query"], capture_output=True, text=True,
+                             timeout=5)
+        for line in res.stdout.splitlines():
+            if line.startswith("Xft.dpi:"):
+                dpi = int(float(line.split(":", 1)[1]))
+    except Exception:
+        pass
+    return {"dpi": dpi, "dpi_source": f"xrdb Xft.dpi on {display}" if dpi
+            else f"display {display}, Xft.dpi not set", "font_smoothing": None}
+
+
 def environment(pw) -> dict:
     from importlib import metadata
 
@@ -410,12 +544,14 @@ def environment(pw) -> dict:
         "browser_build": who["build"],
         "browser_product": who["product"],
         "os": platform.system(),
+        "os_version": _os_version(),
         "arch": platform.machine(),
         "distro": _distro(),
         "python": platform.python_version(),
         "viewport": dict(VIEWPORT),
         "device_scale_factor": DEVICE_SCALE_FACTOR,
         "container": _container(),
+        "host": host_display(),
         "capture": {
             "via": "vistest.library.targets.capture",
             "screenshot": {"type": "png", "animations": "disabled",
@@ -1131,10 +1267,12 @@ def regenerate(log=print) -> dict:
     import shutil
     import tempfile
 
+    old = load_manifest() if MANIFEST.is_file() else None
     staging = Path(tempfile.mkdtemp(prefix="vistest-browser-corpus-"))
     try:
         doc = capture_all(staging, log=log)
         manifest = build_manifest(doc, staging)
+        manifest, _ = carry_os_noise(old, CORPUS_DIR, manifest, staging, log=log)
         problems = verify_files(manifest, staging)
         if problems:
             raise CorpusError("the fresh corpus does not check out: " + "; ".join(problems))
@@ -1220,6 +1358,400 @@ def drift(manifest: dict, *, full: bool = False, pw=None,
     return [], drifted
 
 
+# --------------------------------------------------------------------------- #
+#  Noise from another machine
+# --------------------------------------------------------------------------- #
+#: What `--capture-noise-only` writes next to the frames.
+OS_ENV_FILE = "environment.json"
+OS_NOISE_KIND = "vistest-browser-corpus-os-noise"
+OS_NOISE_FORMAT = 1
+OS_NOISE_OUT = Path("bench_out") / "os_noise"
+
+_TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+#: How the frame was taken. It has to be the corpus's, or the pair would
+#: measure a different capture, not a different machine.
+CAPTURE_KEYS = ("viewport", "device_scale_factor", "capture")
+
+#: What the record of another machine is compared on, against the corpus,
+#: to say how the two environments differ. Written down in full, hidden
+#: nowhere: a different Chromium build on the other machine is part of what
+#: the pair measures, and the manifest says so.
+DIFF_KEYS = ("playwright", "chromium", "browser_build", "browser_product", "os",
+             "os_version", "arch", "distro", "python", "host", *CAPTURE_KEYS)
+
+WHY_OS = ("the DOM is the template's, untouched, and so is the capture; only "
+          "the machine that drew it differs — {what}. Nobody changed the page")
+
+
+def os_family(os_name: str) -> str:
+    """`os_windows` for Windows: the NOISE family of frames from that OS."""
+    slug = re.sub(r"[^a-z0-9]+", "_", os_name.lower()).strip("_")
+    if not slug:
+        raise CorpusError(f"no OS name to make a family of: {os_name!r}")
+    return f"os_{slug}"
+
+
+def os_frame_file(template: str, family: str) -> str:
+    return frame_file(template, f"os--{family[len('os_'):]}")
+
+
+def env_differences(corpus: dict, here: dict, keys=DIFF_KEYS) -> list[dict]:
+    """Every recorded fact that differs between two environments."""
+    return [{"key": k, "corpus": corpus.get(k), "here": here.get(k)}
+            for k in keys if corpus.get(k) != here.get(k)]
+
+
+def os_env_mismatch(recorded: dict, here: dict) -> list[str]:
+    """What differs between the machine a frame came from and this one.
+
+    The corpus's own keys, and the OS version and font smoothing on top:
+    DirectWrite and ClearType settings belong to the OS, not to Chromium.
+    The DPI is recorded but not compared — the context draws at a device
+    scale factor of 1 whatever the screen is, and the page checks it.
+    """
+    out = env_mismatch(recorded, here)
+    if recorded.get("os_version") != here.get("os_version"):
+        out.append(f"os_version: recorded {recorded.get('os_version')!r}, "
+                   f"here {here.get('os_version')!r}")
+    rs = (recorded.get("host") or {}).get("font_smoothing")
+    hs = (here.get("host") or {}).get("font_smoothing")
+    if rs != hs:
+        out.append(f"font smoothing: recorded {rs!r}, here {hs!r}")
+    return out
+
+
+_PAGE_FACTS = """() => ({device_pixel_ratio: window.devicePixelRatio,
+  screen: [screen.width, screen.height], user_agent: navigator.userAgent})"""
+
+
+def capture_noise_only(out: Path, tag: str, *, log=print, pw=None,
+                       manifest_path: Path = MANIFEST) -> dict:
+    """The six baselines, drawn here, for the corpus of another machine.
+
+    No mutations and no rendering configurations: only `base` of every
+    template, through the same `Session.frame` and the library's capture as
+    the corpus, each drawn in two fresh browsers that must agree to the
+    pixel. Nothing is written until every frame is in hand, and nothing is
+    ever written into the corpus: this is the half that runs on the other
+    machine, `--import-noise` is the half that runs where the corpus lives.
+    """
+    if not _TAG.match(tag or ""):
+        raise CorpusError(f"--tag {tag!r}: letters, digits, '.', '_' and '-', "
+                          "64 at most, e.g. win11")
+    out = Path(out).resolve()
+    corpus_dir = CORPUS_DIR.resolve()
+    if out == corpus_dir or corpus_dir in out.parents:
+        raise CorpusError(f"{out} is inside the corpus; frames from another "
+                          "machine go elsewhere and come in by --import-noise")
+    if out.exists():
+        stale = sorted(p.name for p in out.iterdir()
+                       if p.suffix == ".png" or p.name == OS_ENV_FILE)
+        if stale:
+            raise CorpusError(f"{out} already holds {', '.join(stale)}: a capture "
+                              "is never mixed with an older one — another --out "
+                              "or --tag, or remove it")
+    corpus = None
+    corpus_raw = b""
+    if manifest_path.is_file():
+        corpus_raw = manifest_path.read_bytes()
+        corpus = json.loads(corpus_raw.decode("utf-8"))
+
+    if pw is None:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as own:
+            return capture_noise_only(out, tag, log=log, pw=own,
+                                      manifest_path=manifest_path)
+
+    frames: dict[str, bytes] = {}
+    templates: dict[str, dict] = {}
+    env = environment(pw)
+    a, b = Session(pw), Session(pw)
+    try:
+        page = a.read(TEMPLATES[0].key, _PAGE_FACTS)
+        if page.get("device_pixel_ratio") != DEVICE_SCALE_FACTOR:
+            raise CorpusError(f"the page reports devicePixelRatio "
+                              f"{page.get('device_pixel_ratio')}, the corpus "
+                              f"is drawn at {DEVICE_SCALE_FACTOR}")
+        for t in TEMPLATES:
+            png, fonts = a.frame(t.key, fonts=True)
+            n = differing_pixels(png, b.frame(t.key))
+            if n:
+                raise CorpusError(f"{t.key}: a second browser started the same "
+                                  f"way drew {n} different pixels — stop")
+            system = [f for f in fonts if not f["custom"]]
+            if system:
+                raise CorpusError(f"{t.key}: drawn partly with a font of this "
+                                  f"machine, {system}: the shipped fonts did "
+                                  "not load, and such a frame measures the "
+                                  "fonts, not the rasteriser")
+            data = pack(png)
+            frames[t.key] = data
+            entry = {"file": f"{t.key}.png", "sha256": sha256(data),
+                     "split": t.split, "fonts": fonts}
+            if corpus and t.key in corpus.get("templates", {}):
+                base = (manifest_path.parent
+                        / corpus["templates"][t.key]["base"]).read_bytes()
+                entry["vs_corpus_base"] = _changed_box(base, data)
+            templates[t.key] = entry
+            vs = entry.get("vs_corpus_base")
+            log(f"{t.key}: drawn twice, 0 px apart"
+                + (f"; {vs['pixels']} px differ from the corpus baseline"
+                   if vs else ""))
+    finally:
+        a.close()
+        b.close()
+
+    record = {
+        "format": OS_NOISE_FORMAT,
+        "kind": OS_NOISE_KIND,
+        "tag": tag,
+        "generator": f"python scripts/browser_corpus.py --capture-noise-only --tag {tag}",
+        "environment": env,
+        "page": page,
+        "control": "every frame drawn in two browsers started the same way; "
+                   "0 pixels apart, or the capture stops",
+        "templates": templates,
+        "corpus": None if corpus is None else {
+            "manifest_sha256": sha256(corpus_raw),
+            "environment": {k: corpus["environment"].get(k) for k in DIFF_KEYS},
+            "differences": env_differences(corpus["environment"], env),
+        },
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    for key, data in frames.items():
+        (out / f"{key}.png").write_bytes(data)
+    (out / OS_ENV_FILE).write_text(json.dumps(record, indent=1, ensure_ascii=False)
+                                   + "\n", encoding="utf-8", newline="\n")
+    return record
+
+
+def check_os_capture(record: dict, src: Path, manifest: dict) -> list[str]:
+    """Why a capture from another machine cannot go into the corpus. Empty: it can."""
+    problems: list[str] = []
+    if record.get("kind") != OS_NOISE_KIND or record.get("format") != OS_NOISE_FORMAT:
+        return [f"{src / OS_ENV_FILE}: not a --capture-noise-only record "
+                f"(kind {record.get('kind')!r}, format {record.get('format')!r})"]
+    if not _TAG.match(str(record.get("tag", ""))):
+        problems.append(f"tag {record.get('tag')!r} is not a tag")
+    env = record.get("environment") or {}
+    if not env.get("os"):
+        problems.append("the environment names no OS")
+    corpus_env = manifest["environment"]
+    for k in CAPTURE_KEYS:
+        if env.get(k) != corpus_env.get(k):
+            problems.append(f"{k}: the corpus has {corpus_env.get(k)!r}, the "
+                            f"capture {env.get(k)!r} — not the same way of taking "
+                            "the frame")
+    dpr = (record.get("page") or {}).get("device_pixel_ratio")
+    if dpr != DEVICE_SCALE_FACTOR:
+        problems.append(f"devicePixelRatio {dpr!r}, the corpus is drawn at "
+                        f"{DEVICE_SCALE_FACTOR}")
+    got = set(record.get("templates") or {})
+    want = set(manifest["templates"])
+    if got != want:
+        problems.append(f"templates: the corpus has {sorted(want)}, the capture "
+                        f"{sorted(got)}")
+    for key in sorted(got & want):
+        entry = record["templates"][key]
+        path = src / entry.get("file", "")
+        if not path.is_file():
+            problems.append(f"{key}: {path.name} is missing")
+            continue
+        data = path.read_bytes()
+        if sha256(data) != entry.get("sha256"):
+            problems.append(f"{key}: sha256 of {path.name} is not the recorded one")
+            continue
+        h, w = pixels(data).shape[:2]
+        if (w, h) != (VIEWPORT["width"], VIEWPORT["height"]):
+            problems.append(f"{key}: {w}x{h}, the corpus is "
+                            f"{VIEWPORT['width']}x{VIEWPORT['height']}")
+        system = [f for f in entry.get("fonts") or [] if not f.get("custom")]
+        if not entry.get("fonts") or system:
+            problems.append(f"{key}: not drawn with the shipped fonts only: "
+                            f"{entry.get('fonts')}")
+        if entry.get("split") != manifest["templates"][key]["split"]:
+            problems.append(f"{key}: split {entry.get('split')!r}, the corpus says "
+                            f"{manifest['templates'][key]['split']!r}")
+    return problems
+
+
+def _with_os_noise(manifest: dict, sections: dict) -> dict:
+    """The manifest with its `os_noise` section, placed after `noise_configs`."""
+    out: dict = {}
+    for k, v in manifest.items():
+        if k == "os_noise":
+            continue
+        out[k] = v
+        if k == "noise_configs" and sections:
+            out["os_noise"] = sections
+    if sections and "os_noise" not in out:
+        out["os_noise"] = sections
+    return out
+
+
+def import_os_noise(src: Path, *, replace: bool = False, root: Path = CORPUS_DIR,
+                    log=print) -> dict:
+    """Frames from `--capture-noise-only` into the corpus, as the NOISE family os_<os>.
+
+    One pair per template: the corpus baseline against the frame the other
+    machine drew. A template drawn to the same pixels gets no pair and is
+    recorded as such, like a rendering configuration that changed nothing.
+    The split is the template's. Returns the new manifest.
+    """
+    src = Path(src)
+    manifest_path = root / "manifest.json"
+    manifest = load_manifest(manifest_path)
+    env_file = src / OS_ENV_FILE
+    if not env_file.is_file():
+        raise CorpusError(f"{env_file} does not exist: --import-noise takes the "
+                          "directory --capture-noise-only wrote")
+    record = json.loads(env_file.read_text("utf-8"))
+    problems = check_os_capture(record, src, manifest)
+    if problems:
+        raise CorpusError("the capture cannot go into the corpus: " + "; ".join(problems))
+    env = record["environment"]
+    family = os_family(env["os"])
+    sections = dict(manifest.get("os_noise") or {})
+    if family in sections and not replace:
+        raise CorpusError(f"{family} is already in the corpus (tag "
+                          f"{sections[family].get('tag')!r}); --replace to replace it")
+    corpus_env = manifest["environment"]
+    what = (f"{env['os']} {env.get('os_version', '')} ({env.get('distro', '')}, "
+            f"{env.get('arch', '')}), {env.get('browser_build')}, instead of "
+            f"{corpus_env['os']} ({corpus_env.get('distro', '')}, "
+            f"{corpus_env.get('arch', '')}), {corpus_env.get('browser_build')}")
+
+    kept = [c for c in manifest["cases"] if c["family"] != family]
+    old_files = {c["actual"]: (root / c["actual"]).read_bytes()
+                 for c in manifest["cases"] if c["family"] == family}
+    pixel_counts: dict[str, int] = {}
+    new_cases: list[dict] = []
+    writes: dict[str, bytes] = {}
+    for t in TEMPLATES:
+        tpl = manifest["templates"][t.key]
+        stored = pack((src / record["templates"][t.key]["file"]).read_bytes())
+        changed = _changed_box((root / tpl["base"]).read_bytes(), stored)
+        pixel_counts[t.key] = changed["pixels"]
+        if not changed["pixels"]:
+            log(f"{t.key}: {env['os']} draws the corpus baseline's pixels — no pair")
+            continue
+        rel = os_frame_file(t.key, family)
+        writes[rel] = stored
+        new_cases.append({
+            "name": case_name(t.key, "os", family[len("os_"):]),
+            "template": t.key, "split": tpl["split"], "family": family,
+            "magnitude": family[len("os_"):], "label": NOISE, "kind": "os",
+            "why": WHY_OS.format(what=what),
+            "expected": tpl["base"], "actual": rel, "sha256": sha256(stored),
+            "changed": changed, "detail": {"tag": record["tag"]},
+        })
+        log(f"{t.key}: {changed['pixels']} px differ from the corpus baseline "
+            f"({t.split})")
+    sections[family] = {
+        "tag": record["tag"],
+        "what": what,
+        "environment": env,
+        "page": record.get("page"),
+        "differs_from_corpus": env_differences(corpus_env, env),
+        "fonts": {k: v["fonts"] for k, v in record["templates"].items()},
+        "pixels_vs_baseline": pixel_counts,
+        "in_corpus": any(pixel_counts.values()),
+        "control_pixels": 0,
+        "delivered_sha256": {k: v["sha256"] for k, v in record["templates"].items()},
+        "redrawn": "only where this environment is found again (same Playwright, "
+                   "Chromium build, OS and its version, architecture, font "
+                   "smoothing); elsewhere the drift test is skipped with the "
+                   "difference named",
+    }
+    new_manifest = _with_os_noise(dict(manifest, cases=kept + new_cases), sections)
+
+    manifest_raw = manifest_path.read_bytes()
+    for rel in old_files:
+        (root / rel).unlink()
+    for rel, data in writes.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(data)
+    write_manifest(new_manifest, manifest_path)
+    problems = verify_files(new_manifest, root)
+    if problems:
+        for rel in writes:
+            (root / rel).unlink(missing_ok=True)
+        for rel, data in old_files.items():
+            (root / rel).write_bytes(data)
+        manifest_path.write_bytes(manifest_raw)
+        raise CorpusError("the corpus with these frames does not check out, "
+                          "nothing changed: " + "; ".join(problems))
+    return new_manifest
+
+
+def carry_os_noise(old: dict | None, old_root: Path, new: dict, new_root: Path,
+                   *, log=print) -> tuple[dict, list[str]]:
+    """Keep imported frames across `--regenerate` — only while they still pair.
+
+    A frame from another machine is paired with the corpus baseline. If a
+    regenerated baseline comes out other pixels, the pair would no longer be
+    the noise that was measured; the family is dropped and named. Returns the
+    new manifest and the dropped families.
+    """
+    sections = (old or {}).get("os_noise") or {}
+    if not sections:
+        return new, []
+    same = (set(old["templates"]) == set(new["templates"]) and all(
+        old["templates"][k]["sha256"] == new["templates"][k]["sha256"]
+        for k in new["templates"]))
+    if not same:
+        dropped = sorted(sections)
+        log(f"the baselines changed: {', '.join(dropped)} dropped — capture them "
+            "again on their machine (--capture-noise-only) and --import-noise")
+        return new, dropped
+    carried = [c for c in old["cases"] if c["kind"] == "os"]
+    for c in carried:
+        dst = new_root / c["actual"]
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(old_root / c["actual"], dst)
+    return _with_os_noise(dict(new, cases=new["cases"] + carried), sections), []
+
+
+def drift_os(manifest: dict, *, pw=None, root: Path = CORPUS_DIR
+             ) -> tuple[dict[str, list[str]], list[str]]:
+    """Redraw the baselines where a machine's frames came from, and compare.
+
+    Returns `(skipped, drifted)`: per family, what differs from here when
+    this is not that machine (nothing drawn then), and the frames that no
+    longer come out as frozen when it is.
+    """
+    sections = manifest.get("os_noise") or {}
+    if not sections:
+        return {}, []
+    if pw is None:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as own:
+            return drift_os(manifest, pw=own, root=root)
+    here = environment(pw)
+    by_name = {c["name"]: c for c in manifest["cases"]}
+    skipped: dict[str, list[str]] = {}
+    drifted: list[str] = []
+    for family, sec in sections.items():
+        reasons = os_env_mismatch(sec["environment"], here)
+        if reasons:
+            skipped[family] = reasons
+            continue
+        s = Session(pw)
+        try:
+            for key, t in manifest["templates"].items():
+                case = by_name.get(case_name(key, "os", family[len("os_"):]))
+                want = (root / (case["actual"] if case else t["base"])).read_bytes()
+                n = differing_pixels(want, s.frame(key))
+                if n:
+                    drifted.append(f"{key}/os/{family} ({n} px)")
+        finally:
+            s.close()
+    return skipped, drifted
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     what = ap.add_mutually_exclusive_group()
@@ -1230,12 +1762,56 @@ def main(argv: list[str] | None = None) -> int:
     what.add_argument("--check", action="store_true",
                       help="redraw frames and compare them with the frozen ones; "
                            "writes nothing")
+    what.add_argument("--capture-noise-only", action="store_true",
+                      help="on another machine: draw only the baseline of each "
+                           "template, no mutations, the same capture, into "
+                           "--out (default bench_out/os_noise/<tag>) with "
+                           "environment.json; the corpus is not touched")
+    what.add_argument("--import-noise", metavar="DIR",
+                      help="bring what --capture-noise-only wrote into the corpus "
+                           "as the NOISE family os_<os>; the benchmark figures "
+                           "have to be re-run after it")
+    ap.add_argument("--tag", help="with --capture-noise-only: a name for the "
+                                  "machine, e.g. win11")
+    ap.add_argument("--replace", action="store_true",
+                    help="with --import-noise: replace the frames of the same OS "
+                         "already in the corpus")
     ap.add_argument("--full", action="store_true",
                     help="with --check: every pair, not a sample")
-    ap.add_argument("--out", default="bench_out/browser_corpus",
+    ap.add_argument("--out", default=None,
                     help="without --regenerate or --check: where to capture a "
-                         "copy to look at (the frozen corpus is not touched)")
+                         "copy to look at (default bench_out/browser_corpus; "
+                         "the frozen corpus is not touched)")
     args = ap.parse_args(argv)
+
+    if args.capture_noise_only:
+        if not args.tag:
+            ap.error("--capture-noise-only needs --tag, e.g. --tag win11")
+        out = Path(args.out) if args.out else OS_NOISE_OUT / args.tag
+        record = capture_noise_only(out, args.tag)
+        env = record["environment"]
+        print(f"\n{len(record['templates'])} baselines into {out.resolve()}: "
+              f"Playwright {env['playwright']}, Chromium {env['chromium']} "
+              f"({env['browser_build']}), {env['os']} {env['os_version']} "
+              f"{env['arch']}, DPI {env['host'].get('dpi')}")
+        corpus = record["corpus"]
+        if corpus:
+            print("Differs from the environment the corpus was drawn in:")
+            for d in corpus["differences"]:
+                print(f"  {d['key']}: corpus {d['corpus']!r}, here {d['here']!r}")
+        print(f"Send the six PNG and {OS_ENV_FILE} from {out.resolve()}")
+        return 0
+
+    if args.import_noise:
+        manifest = import_os_noise(Path(args.import_noise), replace=args.replace)
+        fams = manifest.get("os_noise") or {}
+        for family, sec in fams.items():
+            print(f"{family} (tag {sec['tag']}): " + ", ".join(
+                f"{k} {n} px" for k, n in sec["pixels_vs_baseline"].items()))
+        print("Next: python tests/benchmark.py --corpus browser, and "
+              "node scripts/bench_playwright_grid.mjs > "
+              "docs/benchmark_browser_native.json")
+        return 0
 
     if args.regenerate:
         manifest = regenerate()
@@ -1254,17 +1830,23 @@ def main(argv: list[str] | None = None) -> int:
         problems = verify_files(manifest)
         for p in problems:
             print(p)
+        skipped, os_drifted = drift_os(manifest)
+        for family, why in skipped.items():
+            print(f"{family} not redrawn — drawn on another machine: " + "; ".join(why))
+        for d in os_drifted:
+            print(f"drifted: {d}")
         reasons, drifted = drift(manifest, full=args.full)
+        drifted += os_drifted
         if reasons:
             print("Not redrawn — the corpus was drawn elsewhere: " + "; ".join(reasons))
-            return 1 if problems else 0
+            return 1 if problems or os_drifted else 0
         for d in drifted:
             print(f"drifted: {d}")
         print(f"{'OK' if not (problems or drifted) else 'DIFFERS'}: "
               f"{len(problems)} file problem(s), {len(drifted)} drifted frame(s)")
         return 1 if problems or drifted else 0
 
-    out = Path(args.out)
+    out = Path(args.out or "bench_out/browser_corpus")
     doc = capture_all(out)
     (out / "capture.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False)
                                       + "\n", encoding="utf-8")

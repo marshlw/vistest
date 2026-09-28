@@ -342,3 +342,247 @@ def test_another_environment_is_a_skip_with_the_reason(pw, manifest):
     reasons, drifted = bc.drift(other, pw=pw)
     assert drifted == []
     assert reasons and "browser_build" in reasons[0]
+
+
+# --------------------------------------------------------------------------- #
+#  Noise from another machine
+# --------------------------------------------------------------------------- #
+def _corpus_copy(tmp_path: Path) -> Path:
+    import shutil
+
+    root = tmp_path / "corpus"
+    shutil.copytree(bc.CORPUS_DIR, root, ignore=shutil.ignore_patterns("templates"))
+    return root
+
+
+def _fake_capture(tmp_path: Path, manifest: dict, *, os_name: str = "Windows",
+                  changed: tuple[str, ...] = ("table", "landing"),
+                  env: dict | None = None, name: str = "cap") -> Path:
+    """What --capture-noise-only would write: the corpus bases, some of them
+    with a few pixels changed, and a record of another machine."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    src = tmp_path / name
+    src.mkdir()
+    templates = {}
+    for key, t in manifest["templates"].items():
+        arr = np.array(bc.pixels((bc.CORPUS_DIR / t["base"]).read_bytes()))
+        if key in changed:
+            arr[10:13, 20:30] = 255 - arr[10:13, 20:30]
+        buf = io.BytesIO()
+        Image.fromarray(arr).save(buf, format="PNG")
+        data = bc.pack(buf.getvalue())
+        (src / f"{key}.png").write_bytes(data)
+        templates[key] = {"file": f"{key}.png", "sha256": bc.sha256(data),
+                          "split": t["split"], "fonts": t["fonts"]}
+    base_env = manifest["environment"]
+    record = {
+        "format": bc.OS_NOISE_FORMAT, "kind": bc.OS_NOISE_KIND, "tag": "win11",
+        "environment": env or dict(
+            base_env, os=os_name, os_version="10.0.26100", arch="AMD64",
+            distro="Windows-11-10.0.26100-SP0", python="3.13.7",
+            host={"dpi": 144, "font_smoothing": {"enabled": True, "type": 2,
+                                                 "contrast": 1200,
+                                                 "orientation": 1,
+                                                 "cleartype": True}}),
+        "page": {"device_pixel_ratio": 1, "screen": [1280, 800], "user_agent": "x"},
+        "templates": templates,
+    }
+    (src / bc.OS_ENV_FILE).write_text(json.dumps(record), encoding="utf-8")
+    return src
+
+
+def test_the_family_of_an_os_is_named_after_it():
+    assert bc.os_family("Windows") == "os_windows"
+    assert bc.os_family("Darwin") == "os_darwin"
+    assert bc.os_frame_file("table", "os_windows") == "frames/table/os--windows.png"
+    with pytest.raises(bc.CorpusError):
+        bc.os_family("")
+
+
+def test_imported_frames_are_one_noise_pair_per_changed_template(manifest, tmp_path):
+    root = _corpus_copy(tmp_path)
+    src = _fake_capture(tmp_path, manifest, changed=("table", "landing"))
+    new = bc.import_os_noise(src, root=root, log=lambda *_: None)
+
+    assert bc.verify_files(new, root) == []
+    assert bc.load_manifest(root / "manifest.json") == json.loads(
+        json.dumps(new, ensure_ascii=False))
+    os_cases = [c for c in new["cases"] if c["kind"] == "os"]
+    assert [c["name"] for c in os_cases] == ["table/os/windows", "landing/os/windows"]
+    for c in os_cases:
+        assert c["family"] == "os_windows" and c["label"] == bc.NOISE
+        assert c["split"] == bc._split_of(c["template"])
+        assert c["expected"] == new["templates"][c["template"]]["base"]
+        assert c["changed"]["pixels"] == 30
+        assert "Windows" in c["why"] and "Nobody changed the page" in c["why"]
+    sec = new["os_noise"]["os_windows"]
+    assert sec["tag"] == "win11" and sec["in_corpus"] is True
+    assert sec["pixels_vs_baseline"] == {t.key: (30 if t.key in ("table", "landing")
+                                                 else 0) for t in bc.TEMPLATES}
+    differs = {d["key"] for d in sec["differs_from_corpus"]}
+    assert {"os", "os_version", "arch", "host"} <= differs
+    assert "chromium" not in differs  # the same build: not invented
+    keys = list(new)
+    assert keys.index("os_noise") == keys.index("noise_configs") + 1
+    #  Everything that was there is still there, unchanged.
+    assert new["cases"][:len(manifest["cases"])] == manifest["cases"]
+
+
+def test_a_second_import_of_the_same_os_needs_replace(manifest, tmp_path):
+    root = _corpus_copy(tmp_path)
+    bc.import_os_noise(_fake_capture(tmp_path, manifest), root=root, log=lambda *_: None)
+    again = _fake_capture(tmp_path, manifest, changed=("dark",), name="cap2")
+    with pytest.raises(bc.CorpusError, match="already in the corpus"):
+        bc.import_os_noise(again, root=root, log=lambda *_: None)
+    new = bc.import_os_noise(again, root=root, replace=True, log=lambda *_: None)
+    assert [c["name"] for c in new["cases"] if c["kind"] == "os"] == ["dark/os/windows"]
+    assert not (root / "frames/table/os--windows.png").exists()
+    assert bc.verify_files(new, root) == []
+
+
+@pytest.mark.parametrize("spoil, match", [
+    (lambda r, s: r["environment"].update(viewport={"width": 1920, "height": 1080}),
+     "viewport"),
+    (lambda r, s: r["environment"].update(capture={"via": "page.screenshot"}),
+     "capture"),
+    (lambda r, s: r["templates"]["form"].update(sha256="0" * 64), "sha256"),
+    (lambda r, s: r["templates"]["cards"].update(
+        fonts=[{"family": "Arial", "custom": False, "glyphs": 3}]), "shipped fonts"),
+    (lambda r, s: r["templates"].pop("dark"), "templates"),
+    (lambda r, s: r["page"].update(device_pixel_ratio=1.5), "devicePixelRatio"),
+    (lambda r, s: r.update(kind="something else"), "not a --capture-noise-only"),
+])
+def test_a_capture_that_is_not_the_corpus_capture_is_refused(manifest, tmp_path,
+                                                             spoil, match):
+    root = _corpus_copy(tmp_path)
+    before = (root / "manifest.json").read_bytes()
+    src = _fake_capture(tmp_path, manifest)
+    record = json.loads((src / bc.OS_ENV_FILE).read_text("utf-8"))
+    spoil(record, src)
+    (src / bc.OS_ENV_FILE).write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(bc.CorpusError, match=match):
+        bc.import_os_noise(src, root=root, log=lambda *_: None)
+    assert (root / "manifest.json").read_bytes() == before
+    assert not list(root.rglob("os--*.png"))
+
+
+def test_regenerate_keeps_other_machines_only_while_the_baselines_pair(manifest, tmp_path):
+    import copy
+
+    root = _corpus_copy(tmp_path)
+    old = bc.import_os_noise(_fake_capture(tmp_path, manifest), root=root,
+                             log=lambda *_: None)
+    fresh = copy.deepcopy(manifest)             # what a redraw of the same pixels gives
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    kept, dropped = bc.carry_os_noise(old, root, fresh, staging, log=lambda *_: None)
+    assert dropped == []
+    assert kept["os_noise"] == old["os_noise"]
+    assert [c for c in kept["cases"] if c["kind"] == "os"] == \
+        [c for c in old["cases"] if c["kind"] == "os"]
+    assert (staging / "frames/table/os--windows.png").read_bytes() == \
+        (root / "frames/table/os--windows.png").read_bytes()
+
+    moved = copy.deepcopy(manifest)
+    moved["templates"]["form"]["sha256"] = "f" * 64   # a baseline came out otherwise
+    said = []
+    kept, dropped = bc.carry_os_noise(old, root, moved, tmp_path / "s2", log=said.append)
+    assert dropped == ["os_windows"] and "os_noise" not in kept
+    assert all(c["kind"] != "os" for c in kept["cases"])
+    assert said and "capture them again" in said[0]
+
+
+def test_the_machine_of_a_frame_is_compared_on_more_than_the_corpus_is():
+    env = {"playwright": "1.56.0", "chromium": "141.0.7390.37",
+           "browser_build": "chromium_headless_shell-1194", "os": "Windows",
+           "arch": "AMD64", "os_version": "10.0.26100",
+           "host": {"dpi": 96, "font_smoothing": {"type": 2}}}
+    assert bc.os_env_mismatch(env, env) == []
+    #  The DPI is recorded, not compared: the context draws at scale 1.
+    assert bc.os_env_mismatch(env, dict(env, host={"dpi": 144,
+                                                   "font_smoothing": {"type": 2}})) == []
+    other = dict(env, os_version="10.0.22631",
+                 host={"dpi": 96, "font_smoothing": {"type": 1}})
+    said = bc.os_env_mismatch(env, other)
+    assert any(s.startswith("os_version") for s in said)
+    assert any(s.startswith("font smoothing") for s in said)
+    assert bc.os_env_mismatch(env, dict(env, os="Linux"))[0].startswith("os:")
+
+
+def test_the_os_noise_in_the_manifest_holds_together(manifest):
+    sections = manifest.get("os_noise") or {}
+    os_cases = [c for c in manifest["cases"] if c["kind"] == "os"]
+    assert {c["family"] for c in os_cases} <= set(sections)
+    for family, sec in sections.items():
+        assert family == bc.os_family(sec["environment"]["os"])
+        mine = [c for c in os_cases if c["family"] == family]
+        assert {c["template"] for c in mine} == {
+            k for k, n in sec["pixels_vs_baseline"].items() if n}
+        assert sec["in_corpus"] == bool(mine)
+        assert sec["control_pixels"] == 0
+        for k in bc.CAPTURE_KEYS:
+            assert sec["environment"][k] == manifest["environment"][k], (family, k)
+        for c in mine:
+            assert c["label"] == bc.NOISE
+            assert c["split"] == manifest["templates"][c["template"]]["split"]
+            assert c["changed"]["pixels"] == sec["pixels_vs_baseline"][c["template"]]
+            assert c["actual"] == bc.os_frame_file(c["template"], family)
+        for key, fonts in sec["fonts"].items():
+            assert fonts and all(f["custom"] for f in fonts), (family, key)
+
+
+def test_capture_noise_only_draws_the_six_baselines_and_nothing_else(pw, tmp_path):
+    out = tmp_path / "osn"
+    record = bc.capture_noise_only(out, "selfcheck", pw=pw, log=lambda *_: None)
+    assert sorted(p.name for p in out.iterdir()) == sorted(
+        [f"{t.key}.png" for t in bc.TEMPLATES] + [bc.OS_ENV_FILE])
+    on_disk = json.loads((out / bc.OS_ENV_FILE).read_text("utf-8"))
+    assert on_disk == json.loads(json.dumps(record, ensure_ascii=False))
+    env = record["environment"]
+    for key in (*bc.ENV_KEYS, "os_version", "host", "browser_product", *bc.CAPTURE_KEYS):
+        assert key in env, key
+    assert record["page"]["device_pixel_ratio"] == 1
+    for t in bc.TEMPLATES:
+        entry = record["templates"][t.key]
+        assert bc.sha256((out / entry["file"]).read_bytes()) == entry["sha256"]
+        assert entry["split"] == t.split
+        assert entry["fonts"] and all(f["custom"] for f in entry["fonts"])
+        assert "pixels" in entry["vs_corpus_base"]
+    assert record["corpus"]["differences"] == bc.env_differences(
+        bc.load_manifest()["environment"], env)
+    with pytest.raises(bc.CorpusError, match="never mixed"):
+        bc.capture_noise_only(out, "selfcheck", pw=pw, log=lambda *_: None)
+    with pytest.raises(bc.CorpusError, match="inside the corpus"):
+        bc.capture_noise_only(bc.CORPUS_DIR / "x", "selfcheck", log=lambda *_: None)
+    with pytest.raises(bc.CorpusError, match="--tag"):
+        bc.capture_noise_only(tmp_path / "y", "no spaces", log=lambda *_: None)
+
+
+def test_the_os_frames_are_what_their_machine_draws(pw, manifest):
+    """Redrawn only on the machine they came from; elsewhere skipped, never red."""
+    sections = manifest.get("os_noise") or {}
+    if not sections:
+        pytest.skip("no frames from another machine in the browser corpus")
+    skipped, drifted = bc.drift_os(manifest, pw=pw)
+    assert not drifted, (
+        f"{len(drifted)} frame(s) from another machine no longer come out as "
+        f"frozen here: {', '.join(drifted)}. Capture them again: python "
+        "scripts/browser_corpus.py --capture-noise-only, then --import-noise --replace")
+    if len(skipped) == len(sections):
+        pytest.skip("; ".join(f"{fam} was drawn on another machine: " + "; ".join(why)
+                              for fam, why in skipped.items()))
+
+
+def test_frames_of_another_machine_are_a_skip_here(pw, manifest, tmp_path):
+    """drift_os on a record of another machine draws nothing and names why."""
+    fake = json.loads(json.dumps(manifest))
+    fake["os_noise"] = {"os_windows": {"environment": dict(
+        manifest["environment"], os="Windows", os_version="10.0.26100")}}
+    skipped, drifted = bc.drift_os(fake, pw=pw)
+    assert drifted == []
+    assert list(skipped) == ["os_windows"]
+    assert any(s.startswith("os:") for s in skipped["os_windows"])

@@ -187,6 +187,46 @@ saw one writer. Two defects of the product, not of the test.
   VisTest on one pair of every kind). `browser_probe/README.md` now says the
   probe is superseded, what grew out of it and what was deliberately not
   carried over.
+- **Noise from another machine: `--capture-noise-only` and
+  `--import-noise`.** The eight rendering configurations are flags of one
+  Chromium on one Linux; users break on another machine — a developer on
+  Windows, CI on Linux. `python scripts/browser_corpus.py
+  --capture-noise-only --tag <name>` runs on that machine and draws only the
+  six baselines — no mutations — through the same `Session.frame` and
+  `vistest.library.targets.capture` as the corpus (`scale="css"`, 1280×800 at
+  1x, `document.fonts.ready`, the stability loop), each in two fresh browsers
+  that must agree to the pixel. It writes into `bench_out/os_noise/<tag>/`,
+  never into the corpus (a path inside it is refused, so is a directory that
+  already holds a capture), and next to the PNGs `environment.json`: OS and
+  its version, architecture, Playwright, the Chromium version, build and
+  product string, the fonts drawn with over CDP (a font of the machine stops
+  the capture: such a frame measures fonts, not the rasteriser), the screen's
+  DPI and, on Windows, font smoothing (ClearType, contrast, orientation — Skia
+  asks the OS for them), `devicePixelRatio` as the page reports it, the
+  sha256 of every PNG, how many pixels each baseline differs from the
+  corpus's, and every recorded fact in which that environment differs from
+  the corpus's — a different Chromium build is written there, not hidden.
+  `--import-noise <dir>` brings it into the corpus as the NOISE family
+  `os_<os>` (`os_windows`): one pair per template against the corpus
+  baseline, `frames/<template>/os--<os>.png`, split by template like every
+  other pair, and an `os_noise` section in the manifest (the environment,
+  what differs, the fonts, pixels per template). It refuses a capture that
+  was not taken the corpus's way (viewport, scale, capture settings, device
+  pixel ratio), a sha256 that does not match, a missing template or a
+  system font, and leaves the corpus untouched when it does; a second import
+  of the same OS needs `--replace`. The drift test for those frames redraws
+  them only on a machine with the same Playwright, Chromium build, OS and
+  its version, architecture and font smoothing, and is skipped with the
+  difference named everywhere else; the DPI is recorded but not compared,
+  because the context draws at scale 1 whatever the screen is.
+  `--regenerate` keeps imported frames only while the baselines they pair
+  with come out byte for byte the same, otherwise drops them and says so.
+  `tests/benchmark.py --corpus browser` puts `os_<os>` on a NOISE row of its
+  own and names the machine under the corpus line. The environment record
+  gains `os_version` (the distribution on Linux, not the kernel) and `host`
+  (DPI, font smoothing). New tests in `tests/test_browser_corpus.py` and
+  `tests/test_benchmark_browser.py`; a capture on the corpus's own machine
+  draws all six baselines with 0 pixels apart from the frozen ones.
 
 ### R3: capture parity with `toHaveScreenshot`, and speed
 

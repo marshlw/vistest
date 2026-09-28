@@ -149,7 +149,7 @@ def rows(manifest: dict) -> list[Row]:
     by: dict[tuple[str, str], list[str]] = {}
     order: list[tuple[str, str]] = []
     for c in manifest["cases"]:
-        if c["kind"] == "render" or c["label"] == bc.SIGNAL:
+        if c["kind"] in ("render", "os") or c["label"] == bc.SIGNAL:
             key = c["family"]
         else:
             #  One step of a family that is not SIGNAL: opacity 0.98, fill de2.
@@ -252,6 +252,20 @@ def environment_line(env: dict) -> str:
                if (env.get("container") or {}).get("image") else "no container image"))
 
 
+def other_machines(manifest: dict) -> list[str]:
+    """One line per machine whose frames are in the corpus (`--import-noise`)."""
+    out = []
+    for family, sec in (manifest.get("os_noise") or {}).items():
+        env = sec["environment"]
+        px = ", ".join(f"{k} {n}" for k, n in sec["pixels_vs_baseline"].items())
+        pairs = sum(1 for n in sec["pixels_vs_baseline"].values() if n)
+        out.append(f"{family}: the baselines drawn on {env['os']} {env.get('os_version', '')} "
+                   f"{env['arch']} (tag {sec['tag']}), Playwright {env['playwright']}, "
+                   f"Chromium {env['chromium']} {env['browser_build']}; {pairs} NOISE "
+                   f"pairs, pixels apart from the corpus baseline: {px}")
+    return out
+
+
 def report(manifest: dict, tools: list[Tool], *, timing: bool, notes: list[str]) -> str:
     cases = manifest["cases"]
     table = rows(manifest)
@@ -263,6 +277,8 @@ def report(manifest: dict, tools: list[Tool], *, timing: bool, notes: list[str])
              f"{len(manifest['templates'])} templates: {count[bc.SIGNAL]} SIGNAL, "
              f"{count[bc.NOISE]} NOISE, {count[bc.DISPUTED]} DISPUTED (printed, not counted)")
     L.append(f"Drawn with: {environment_line(manifest['environment'])}")
+    for line in other_machines(manifest):
+        L.append(f"Also: {line}")
     split = manifest["split"]
     L.append(f"Split by template: calibration {', '.join(split[bc.CALIBRATION])}; "
              f"held out {', '.join(split[bc.HELD_OUT])} — never used to choose a threshold")
@@ -350,6 +366,9 @@ def markdown(manifest: dict, tools: list[Tool], native: dict | None,
              f"--markdown docs/benchmark_browser.md`{'' if ai else ' --no-ai'} on "
              f"{date.today().isoformat()}. Corpus drawn with: "
              f"{environment_line(manifest['environment'])}.")
+    for line in other_machines(manifest):
+        L.append("")
+        L.append(f"Also, NOISE from another machine — {line}.")
     L.append("")
     L.append("Frames rendered by Chromium from the templates in "
              "`tests/browser_corpus/templates/`, captured through "
