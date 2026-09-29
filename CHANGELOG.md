@@ -5,6 +5,30 @@
 
 ## [Unreleased]
 
+### E1: a second engine path that catches first and explains after (`engine="v2"`)
+
+- **Where v1 loses the browser corpus, as a script.**
+  `scripts/diagnose_browser.py` replays the v1 cascade (preset balanced) on
+  the calibration templates with every stage instrumented and prints the
+  numbers that say which filter took the signal: `rerender` calls a ΔE00 15
+  ink change noise — every changed pixel of the text sits on an edge with
+  ~200 levels of contrast, and |diff| ≤ 0.3 × contrast lets it through
+  (table/text_color: 3980 of 3981 changed pixels "within tolerance", ink
+  #343649 → #586074, ΔE00 14.2), and the ink colour is never asked about;
+  the underline and the removed border reach the change mask and then no
+  region (table: 57 and 168 unassigned pixels, 0 left after close → open),
+  and unassigned pixels do not vote; a ΔE00 8 fill is 3165 changed pixels
+  and 0 after consensus (no structure change, below `strong_color` 9.2,
+  0.30 % of the frame against the 1.25 % `flat_recolour` asks for); on
+  hinting_none and full_chromium the global alignment compensates a shift of
+  −1.6 px that is not there, raising the ΔE00 > 2.3 count from 54 354 to
+  60 022 and leaving 79 live regions (max severity 94.5). Read-only,
+  deterministic, calibration half by default.
+- **The OpenCV version is in the browser table.** `--corpus browser` prints
+  `VisTest rows computed with: OpenCV …, numpy …, Python …` under its title
+  (and in the markdown), in the output rather than on stderr: a before and an
+  after from two OpenCV builds are not a comparison.
+
 ### Windows: a refused replace is retried, and a check that raises is still reported
 
 Found on the Windows job (3.13), where
