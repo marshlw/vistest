@@ -31,6 +31,7 @@ from ...models import ChangeKind, CompareResult, DiffRegion, Verdict
 from .. import align as _align
 from .. import classify as _cls
 from .. import color as _color
+from .. import explain as _explain
 from .. import renderer as _renderer
 from .. import structure as _struct
 from .. import warp as _warp
@@ -119,6 +120,11 @@ def compare(
                                f"(v2.min_region_px) (was {r.kind.value})")
 
     # ---------- 2. Explanations: named rules, all-or-nothing per region ----
+    #  The environment, not the page: a scroll bar that appeared, a frame
+    #  that went through a JPEG encoder — v1's rules, each decided once for
+    #  the frame and then region by region.
+    environment = _explain_environment(regions, groups, labels, exp, act, lab_act, cand,
+                                       v2, res)
     #  The page moved by a fraction of a pixel: proven on its box edges
     #  first, whatever the renderer, then region by region.
     shifted = _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act,
@@ -165,6 +171,7 @@ def compare(
     res.verdict = _verdict(res, cfg)
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
+    res.maps["v2_environment"] = environment
     res.maps["v2_rerender"] = assessed
     res.maps["v2_page_shift"] = shifted
     res.maps["renderer"] = rend
@@ -178,6 +185,97 @@ def compare(
 
 def _layer_name(hooks) -> str:
     return str(getattr(hooks, "name", None) or type(hooks).__name__)
+
+
+def _explain_environment(regions, groups, labels, exp, act, lab_act, cand,
+                         v2: V2Config, res: CompareResult) -> dict:
+    """v1's scroll-bar and JPEG rules (core/explain.py), on the regions still live.
+
+    **Scroll bar** — v1's rule as it is: a band 4–20 px wide at the right or
+    bottom edge of the frame, featureless along its length in both frames,
+    changed along at least 80 % of it, the page beside it untouched
+    (`explain.scrollbar_bands`); a region inside the band is the scroll bar
+    (`explain.in_band`).
+
+    **JPEG** — v1's detection as it is (`explain.detect_jpeg`): re-encoding
+    the baseline at one of the qualities v1 tries leaves at most half of the
+    error the baseline leaves in the changed areas. Region by region, not
+    v1's test, which would break two things v2 promises:
+
+    * v1 calls a pixel reproduced when it is within 30 % of the local
+      contrast, and on text that lets a new ink colour through
+      (`scripts/diagnose_browser.py`, finding 1). Here a changed pixel is
+      reproduced when the re-encoded baseline is not discernibly different
+      from it — ΔE00 at most `jnd_delta_e`, the test that made it a
+      candidate.
+    * v1 lets 5 % of a region stay unexplained. v2 groups without an
+      opening, and on a JPEG frame the ringing joins a whole page into one
+      region: 5 % of it is a paragraph. Here what the re-encoding leaves is
+      grouped like the base groups (`group_px`), and a region is explained
+      only when no group of `min_region_px` or more is left — the base's
+      own «this is a change».
+
+    Neither runs on a frame whose size changed, as in v1. Returns what was
+    found, for the benchmark and the diagnosis (kept in `res.maps`).
+    """
+    record: dict = {"scrollbar": [], "jpeg": None, "explained": 0}
+    live = [(r, g) for r, g in zip(regions, groups, strict=True) if not r.suppressed_by]
+    if not live or res.size_changed:
+        return record
+    counts: dict[str, int] = {}
+
+    def suppress(r, rule: str, detail: str) -> None:
+        r.suppressed_by = f"{rule}: {detail} (was {r.kind.value})"
+        r.kind = ChangeKind.NOISE
+        r.severity = 0.0
+        counts[rule] = counts.get(rule, 0) + 1
+
+    bands = _explain.scrollbar_bands(exp, act)
+    record["scrollbar"] = [{"edge": b.edge, "width": b.width} for b in bands]
+    for r, _g in live:
+        why = _explain.in_band(r, bands, exp.shape[:2]) if bands else None
+        if why is not None:
+            suppress(r, why.rule, why.detail)
+    live = [(r, g) for r, g in live if not r.suppressed_by]
+
+    codec = _explain.detect_jpeg(exp, act, [r for r, _ in live], cand) if live else None
+    if codec is not None:
+        #  The whole frame, once the quality is known: v1 re-encodes the
+        #  changed boxes on the 16-px grid, and a decoder that upsamples
+        #  chroma reads the neighbouring blocks, so a box differs from the
+        #  frame along its border — invisible under v1's tolerance, not
+        #  under ΔE00 1.
+        quality = codec[0]
+        reencoded = _explain.reencode(exp, quality)
+        record["jpeg"] = quality
+        ys, xs = np.nonzero(cand)
+        lab_re = _color.srgb_to_lab(np.ascontiguousarray(reencoded[ys, xs])[None])
+        left = np.zeros(cand.shape, bool)
+        left[ys, xs] = _color.delta_e_ciede2000(lab_re, lab_act[ys, xs][None])[0] \
+            > v2.jnd_delta_e
+        for r, g in live:
+            box = (slice(g.y, g.y + g.h), slice(g.x, g.x + g.w))
+            mine = left[box] & (labels[box] == g.label)
+            kept = int(mine.sum())
+            _, pieces = _base.group(mine, v2.group_px)
+            largest = max((p.pixels for p in pieces), default=0)
+            done = f"the baseline re-encoded at JPEG quality {quality} reproduces " \
+                   f"{100.0 * (g.pixels - kept) / g.pixels:.0f}% of the changed pixels " \
+                   f"within ΔE00 {v2.jnd_delta_e:g}"
+            if largest < v2.min_region_px:
+                suppress(r, "jpeg", f"{done}; what is left is in groups under "
+                                    f"{v2.min_region_px} px ({kept} of {g.pixels} px)")
+            else:
+                r.annotations.append({
+                    "text": f"not JPEG re-encoding — {done}, and leaves {kept} px, the "
+                            f"largest group {largest} px",
+                    "kind": "jpeg", "value": largest, "source": f"engine {ENGINE}"})
+    record["explained"] = sum(counts.values())
+    if counts:
+        names = {"scrollbar": "a scroll bar band", "jpeg": "JPEG re-encoding"}
+        res.notes.append("Noise explained and suppressed: " + ", ".join(
+            f"{n} region(s) by {names[k]}" for k, n in sorted(counts.items())) + ".")
+    return record
 
 
 def _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act, cand,

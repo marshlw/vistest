@@ -30,10 +30,12 @@ v2 turns the order round:
    frame; the smallest region is a number of pixels.
 2. **Explanations** — each a separate, named test that a region must pass in
    full to be called noise, and each writing its measurements into
-   `suppressed_by`. The base itself explains nothing. So far two:
-   `pageshift.py`, the page moved by a fraction of a pixel — proven on the
-   page's box edges and on most of its changed pixels before any region is
-   looked at, whatever the renderer; and `rerender.py`, text
+   `suppressed_by`. The base itself explains nothing. In this order: the
+   environment — v1's scroll-bar rule, and v1's JPEG detection with a test
+   per region of v2's own (`engine._explain_environment`); `pageshift.py`,
+   the page moved by a fraction of a pixel — proven on the page's box edges
+   and on most of its changed pixels before any region is looked at,
+   whatever the renderer; and `rerender.py`, text
    re-rasterisation, looked for only when the renderer's canary proves the
    renderer changed (`core/renderer.py`) — the ink, the shape to a pixel,
    the paper, and not a block that moved; the page's share of changed text

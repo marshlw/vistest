@@ -186,7 +186,7 @@ def explain_regions(
     bands = scrollbar_bands(exp, act)
     if bands:
         for r in live:
-            why = _in_band(r, bands, exp.shape[:2])
+            why = in_band(r, bands, exp.shape[:2])
             if why is not None:
                 mark(r, why)
         live = [r for r in live if not r.suppressed_by]
@@ -579,7 +579,8 @@ def _rerender(exp, act, raw_mask, r) -> _refit.Fit:
 # --------------------------------------------------------------------------- #
 #  jpeg
 # --------------------------------------------------------------------------- #
-def _reencode(img: np.ndarray, quality: int) -> np.ndarray:
+def reencode(img: np.ndarray, quality: int) -> np.ndarray:
+    """`img` through OpenCV's JPEG encoder at `quality` and back."""
     ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     return cv2.imdecode(buf, cv2.IMREAD_UNCHANGED) if ok else img
 
@@ -631,7 +632,7 @@ def detect_jpeg(exp: np.ndarray, act: np.ndarray, regions: list[DiffRegion],
 
     best = None
     for q in _JPEG_QUALITIES:
-        e = error(lambda x0, y0, x1, y1, q=q: _reencode(
+        e = error(lambda x0, y0, x1, y1, q=q: reencode(
             np.ascontiguousarray(exp[y0:y1, x0:x1]), q))
         if best is None or e < best[0]:
             best = (e, q)
@@ -641,7 +642,7 @@ def detect_jpeg(exp: np.ndarray, act: np.ndarray, regions: list[DiffRegion],
     quality = best[1]
     out = exp.copy()
     for x0, y0, x1, y1 in boxes:
-        out[y0:y1, x0:x1] = _reencode(np.ascontiguousarray(exp[y0:y1, x0:x1]), quality)
+        out[y0:y1, x0:x1] = reencode(np.ascontiguousarray(exp[y0:y1, x0:x1]), quality)
     return quality, out
 
 
@@ -707,7 +708,11 @@ def scrollbar_bands(exp: np.ndarray, act: np.ndarray) -> list[Band]:
     return out
 
 
-def _in_band(r: DiffRegion, bands: list[Band], shape) -> Explanation | None:
+def in_band(r: DiffRegion, bands: list[Band], shape) -> Explanation | None:
+    """The scroll bar that explains a region lying inside one of `bands`, or None.
+
+    Anything with `x`, `y`, `w`, `h` is a region here (engine v2 asks too).
+    """
     h, w = shape
     # Closing can pull a box a couple of pixels past the band's inner edge.
     slack = 2
