@@ -276,8 +276,24 @@ def test_the_labels_on_disk_are_the_codes(manifest):
         elif c["kind"] == "cross_render":
             d = c["detail"]
             assert c["label"] == cross[(d["mutation"], c["magnitude"], d["config"])]
+        elif c["kind"] == "render":
+            cfg = next(x for x in bc.NOISE_CONFIGS if x.key == c["magnitude"])
+            assert c["label"] == cfg.label, c["name"]
+            assert manifest["noise_configs"][cfg.key].get("label", bc.NOISE) == cfg.label
         else:
             assert c["label"] == bc.NOISE
+
+
+def test_geometric_precision_is_disputed_by_decision_and_says_why(manifest):
+    """The page's stylesheet, not the renderer: the canary proved it."""
+    cfg = next(c for c in bc.NOISE_CONFIGS if c.key == "geometric_precision")
+    assert cfg.label == bc.DISPUTED and "maintainer" in cfg.why and "canary" in cfg.why
+    assert manifest["noise_configs"]["geometric_precision"]["why"] == cfg.why
+    for c in manifest["cases"]:
+        if c["family"] == "render:geometric_precision":
+            assert c["label"] == bc.DISPUTED and c["why"] == cfg.why
+    others = [c for c in bc.NOISE_CONFIGS if c.key != "geometric_precision"]
+    assert all(c.label == bc.NOISE and not c.why for c in others)
 
 
 # --------------------------------------------------------------------------- #

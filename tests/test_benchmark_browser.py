@@ -239,7 +239,7 @@ def test_frames_from_another_machine_are_one_noise_row(manifest):
     assert len(row) == 1 and row[0].label == bc.NOISE
     assert row[0].names == ("table/os/windows", "dark/os/windows")
     assert table.index(row[0]) > max(i for i, r in enumerate(table)
-                                     if r.key.startswith("render:"))
+                                     if r.key.startswith("render:") and r.label == bc.NOISE)
     red = _tool(fake, "red", lambda c: True)
     s = bb.score(red, fake["cases"])
     assert s.noise == bb.score(red, plain["cases"]).noise + 2
