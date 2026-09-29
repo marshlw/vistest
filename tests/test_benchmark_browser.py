@@ -104,6 +104,9 @@ def test_the_report_is_the_same_twice_and_has_no_timing(manifest):
     assert "1234" not in one
     assert "never used to choose a threshold" in one
     assert "held out landing, dark" in one
+    #  The engine's environment is in the output, OpenCV first: a before and
+    #  an after from two OpenCV builds are not a comparison.
+    assert "VisTest rows computed with: OpenCV " in one
     assert "1234" in bb.report(manifest, tools, timing=True, notes=[])
 
 
