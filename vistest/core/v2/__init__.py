@@ -30,7 +30,12 @@ v2 turns the order round:
    frame; the smallest region is a number of pixels.
 2. **Explanations** — each a separate, named test that a region must pass in
    full to be called noise, and each writing its measurements into
-   `suppressed_by`. The base itself explains nothing.
+   `suppressed_by`. The base itself explains nothing. So far one:
+   `rerender.py`, text re-rasterisation — four properties, all required
+   (the ink, the shape to a pixel, the paper, a change that reached the
+   page and not one block).
+3. **The AI layer**, when there is one, sees what no rule explained. A region
+   it does not hand back is suppressed under its name, never dropped.
 
 A region that no explanation takes out fails the comparison. There is no
 severity threshold between "found" and "failed": severity orders the report,
