@@ -234,14 +234,6 @@ def expect_screenshot(
         actual_rgb = pngio.decode(shot.png, source=f"the screenshot of {key.name}")
 
         passport = store.meta(key)
-        #  The renderer's canary, of this run and of the baseline: the engine
-        #  explains re-rasterised text only when the two differ, and the
-        #  report says which it was in one line.
-        run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
-        _canary_row(captured, run_canary)
-        base_canary, base_why = _fingerprint.of_baseline(store, passport)
-        rend = _fingerprint.status(base_canary, base_why, run_canary)
-        renderer = (base_canary, run_canary.png)
         cfg = ctx.config.diff.merged(
             **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
                         call=call_patch))
@@ -251,8 +243,32 @@ def expect_screenshot(
 
         ignore = _ignore_mask(expected_rgb.shape[:2], boxes)
         hooks = _ai_hooks(ctx)
-        result = compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
-                         ignore_mask=ignore, ai_hooks=hooks, renderer=renderer)
+
+        #  The renderer's canary is drawn only where it can decide something
+        #  (fingerprint.compare_lazily): a check that passes without it passes
+        #  with it too — the renderer only lets a rule take regions out.
+        def compare_with(renderer):
+            return compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
+                           ignore_mask=ignore, ai_hooks=hooks, renderer=renderer)
+
+        run_canary = _fingerprint.NOT_DRAWN
+        base_canary, base_why = None, ""
+
+        def this_run():
+            nonlocal run_canary
+            run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
+            return run_canary
+
+        def baseline_canary():
+            nonlocal base_canary, base_why
+            base_canary, base_why = _fingerprint.of_baseline(store, passport)
+            return base_canary
+
+        result, renderer = _fingerprint.compare_lazily(compare_with, baseline_canary,
+                                                       this_run)
+        rend = (_fingerprint.not_checked() if renderer is None and not result.failed
+                else _fingerprint.status(base_canary, base_why, run_canary))
+        _canary_row(captured, run_canary)
 
         #  Failed: one more frame, and whatever did not hold still between the two
         #  is masked for a second comparison of the FIRST frame. The same function
@@ -302,6 +318,9 @@ def expect_screenshot(
         if mode == "all" or (mode == "changed" and failed):
             if _sha_of(shot.png) != _sha_of(baseline):
                 _warn_unsettled_accept(shot, key)
+            if run_canary is _fingerprint.NOT_DRAWN:
+                this_run()              # writing a baseline: its sha is kept
+                _canary_row(captured, run_canary)
             meta = store.put(key, shot.png,
                              meta=_passport_with_renderer(store, key, run_canary))
             record(verdict="new_baseline",

@@ -33,9 +33,12 @@ import numpy as np
 
 from . import pngio
 
-__all__ = ["CHANGED", "SAME", "UNKNOWN", "RendererCheck", "check"]
+__all__ = ["CHANGED", "NOT_CHECKED", "SAME", "UNKNOWN", "RendererCheck", "check"]
 
 SAME, CHANGED, UNKNOWN = "same", "changed", "unknown"
+#: Nobody drew the canaries, because nothing depended on them (the library
+#: draws them lazily; see vistest/library/fingerprint.py).
+NOT_CHECKED = "not_checked"
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,8 @@ class RendererCheck:
             return "renderer: same as the baseline's"
         if self.status == CHANGED:
             return f"renderer: different from the baseline's (canary: {self.pixels} px)"
+        if self.status == NOT_CHECKED:
+            return "renderer: not checked" + (f" ({self.why})" if self.why else "")
         return "renderer: unknown" + (f" — {self.why}" if self.why else "")
 
     def as_dict(self) -> dict:

@@ -6,11 +6,12 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""The renderer's canary in the library: drawn once per context, kept by sha.
+"""The renderer's canary in the library: drawn only where it decides something.
 
 The first half runs anywhere: fake pages in fake contexts, and a canary
-that is whatever the test says it is. The second half starts a real
-Chromium, twice started otherwise, and is skipped — not failed — without one.
+that is whatever the test says it is; then the lazy path against the eager
+one on pairs of the browser corpus. The second half starts a real Chromium,
+twice started otherwise, and is skipped — not failed — without one.
 """
 
 from __future__ import annotations
@@ -65,12 +66,17 @@ def rows(ctx) -> list[dict]:
     return sorted(found, key=lambda r: r["written_at"])
 
 
+class FakeBrowser:
+    """What a context belongs to: the canary is kept per browser."""
+
+
 class FakeContext:
     """A browser context whose canary is whatever `drawn` says."""
 
-    def __init__(self, drawn: bytes | Exception):
+    def __init__(self, drawn: bytes | Exception, browser: FakeBrowser | None = None):
         self.drawn = drawn
         self.draws = 0
+        self.browser = browser
 
     def new_page(self):  # pragma: no cover - `draw` is replaced below
         raise AssertionError("the canary is drawn by the patched draw()")
@@ -79,14 +85,15 @@ class FakeContext:
 class FakePage:
     viewport_size = {"width": 320, "height": 240}
 
-    def __init__(self, png: bytes, context: FakeContext):
+    def __init__(self, png: bytes, context: FakeContext, ratio: float = 1.0):
         self.png = png
         self.context = context
+        self.ratio = ratio
 
     def goto(self, *_): ...
 
     def evaluate(self, script, *args):
-        return 1.0 if "devicePixelRatio" in script else True
+        return self.ratio if "devicePixelRatio" in script else True
 
     def screenshot(self, **kwargs):
         return self.png
@@ -145,15 +152,21 @@ def test_the_canaries_are_not_baselines(tmp_path):
 # --------------------------------------------------------------------------- #
 #  Once per context
 # --------------------------------------------------------------------------- #
-def test_the_canary_is_drawn_once_per_context():
-    context = FakeContext(canary_png())
-    page = FakePage(frame(), context)
-    first = fp.of_target(page, stable_timeout_ms=0)
-    again = fp.of_target(page, stable_timeout_ms=0)
-    assert context.draws == 1
+def test_the_canary_is_drawn_once_per_browser_and_scale():
+    """pytest-playwright opens a context per test; the canary is not paid per test."""
+    browser = FakeBrowser()
+    one, two = FakeContext(canary_png(), browser), FakeContext(canary_png(), browser)
+    first = fp.of_target(FakePage(frame(), one), stable_timeout_ms=0)
+    again = fp.of_target(FakePage(frame(), two), stable_timeout_ms=0)
+    assert one.draws + two.draws == 1
     assert first.png == again.png and first.drawn_ms is not None and again.drawn_ms is None
-    other = FakeContext(canary_png(3))
+    hidpi = FakeContext(canary_png(5), browser)
+    assert fp.of_target(FakePage(frame(), hidpi, ratio=2.0),
+                        stable_timeout_ms=0).png == canary_png(5)       # another scale
+    other = FakeContext(canary_png(3), FakeBrowser())
     assert fp.of_target(FakePage(frame(), other), stable_timeout_ms=0).png != first.png
+    alone = FakeContext(canary_png(4))                  # no browser: the context is the key
+    assert fp.of_target(FakePage(frame(), alone), stable_timeout_ms=0).png == canary_png(4)
 
 
 def test_no_page_no_canary_and_the_reason():
@@ -199,13 +212,37 @@ def test_an_accepted_baseline_carries_the_canary_of_its_renderer(ctx):
     assert rows(ctx)[-1]["capture"]["canary_ms"] >= 0
 
 
-def test_the_same_renderer_is_one_line_in_the_report(ctx):
+def test_a_check_that_passes_draws_no_canary_and_says_so(ctx):
+    accept(ctx, FakePage(frame(), FakeContext(canary_png())), "home.png")
     context = FakeContext(canary_png())
-    accept(ctx, FakePage(frame(), context), "home.png")
-    expect_screenshot(FakePage(frame(), FakeContext(canary_png())), "home.png")
+    expect_screenshot(FakePage(frame(), context), "home.png")
     row = rows(ctx)[-1]
-    assert row["renderer"] == {"status": "same", "pixels": None,
-                               "line": "renderer: same as the baseline's"}
+    assert context.draws == 0 and "canary_ms" not in row["capture"]
+    assert row["renderer"] == {"status": "not_checked", "pixels": None,
+                               "why": "the check passed",
+                               "line": "renderer: not checked (the check passed)"}
+
+
+def test_a_failure_against_a_baseline_with_a_canary_draws_this_runs(ctx):
+    accept(ctx, FakePage(frame(), FakeContext(canary_png())), "home.png")
+    context = FakeContext(canary_png())
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(FakePage(frame(90), context), "home.png")
+    assert context.draws == 1
+    row = rows(ctx)[-1]
+    assert row["renderer"]["line"] == "renderer: same as the baseline's"
+    assert row["capture"]["canary_ms"] >= 0
+    assert "\n  renderer: same as the baseline's\n" in str(e.value)
+
+
+def test_a_failure_against_a_baseline_without_a_canary_draws_nothing(ctx):
+    accept(ctx, frame(), "flat.png")                      # bytes: no canary to keep
+    context = FakeContext(canary_png())
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(FakePage(frame(90), context), "flat.png", platform="")
+    assert context.draws == 0
+    assert rows(ctx)[-1]["renderer"]["line"].startswith(
+        "renderer: unknown — the baseline names no canary")
 
 
 def test_another_renderer_is_named_with_its_pixels_in_the_failure(ctx):
@@ -225,8 +262,8 @@ def test_bytes_have_no_renderer_and_the_report_says_so(ctx):
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(frame(90), "flat.png")
     line = rows(ctx)[-1]["renderer"]["line"]
-    assert line.startswith("renderer: unknown — the baseline names no canary")
-    assert "the screenshot was handed in" in line
+    assert line == ("renderer: unknown — the baseline names no canary — accepted "
+                    "before the canary existed, or not from a page")
     assert f"\n  {line}\n" in str(e.value)
 
 
@@ -238,6 +275,94 @@ def test_an_accept_that_changes_nothing_does_not_touch_the_passport(ctx):
     before = (path.read_bytes(), path.stat().st_mtime_ns)
     accept(ctx, page, "home.png")
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+# --------------------------------------------------------------------------- #
+#  Lazy is eager: on pairs of the browser corpus, with engine v2
+# --------------------------------------------------------------------------- #
+def _corpus_sample():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import browser_corpus as bc
+
+    m = bc.load_manifest()
+    picked: dict = {}
+    #  Pairs another renderer drew (where the canary can change something),
+    #  every pair of opacity 0.98 (the ones that pass), and a few that fail
+    #  whatever the renderer: a sample the suite can afford. (Every one of the
+    #  462 pairs was run the same way for the E1 report.)
+    wanted = ("render:hinting_none", "render:full_chromium", "os_windows",
+              "text_color@hinting_none", "one_char@full_chromium", "fill de2",
+              "render:geometric_precision", "padding", "one_char")
+    for c in m["cases"]:
+        family = c["family"] if c["label"] != "DISPUTED" or c["kind"] != "mutation" \
+            else f"{c['family']} {c['magnitude']}"
+        if family in wanted:
+            picked.setdefault((family,), c)
+        elif c["family"] == "opacity" and c["magnitude"] == "0.98":
+            picked.setdefault((c["name"],), c)
+    return bc, m, list(picked.values())
+
+
+class _Result:
+    def __init__(self, failed):
+        self.failed = failed
+
+
+@pytest.mark.parametrize("first, base, run, compares, drawn, used", [
+    (False, canary_png(), canary_png(3), 1, 0, False),   # passed: nothing to decide
+    (True, None, canary_png(3), 1, 0, False),            # the baseline names no canary
+    (True, canary_png(), None, 1, 1, False),             # this run cannot draw one
+    (True, canary_png(), canary_png(), 1, 1, True),      # the same renderer: rule off
+    (True, canary_png(), canary_png(3), 2, 1, True),     # another renderer: again, with it
+])
+def test_the_canary_is_drawn_and_used_only_where_it_decides(first, base, run, compares,
+                                                             drawn, used):
+    calls, draws = [], []
+
+    def compare_with(renderer):
+        calls.append(renderer)
+        return _Result(first if renderer is None else False)
+
+    def this_run():
+        draws.append(1)
+        return fp.RunCanary(png=run, why="" if run else "no page")
+
+    result, renderer = fp.compare_lazily(compare_with, lambda: base, this_run)
+    assert (len(calls), len(draws), renderer is not None) == (compares, drawn, used)
+    assert calls[0] is None
+
+
+def test_the_lazy_path_gives_the_eager_verdicts_on_the_corpus():
+    """The renderer only lets a rule take regions out: what passes without the
+    canary passes with it, and a failure is judged again with it."""
+    from vistest.core import compare
+
+    bc, m, sample = _corpus_sample()
+    fps = {k: (bc.CORPUS_DIR / r["file"]).read_bytes()
+           for k, r in m["renderers"]["fingerprints"].items()}
+    passed_without = 0
+    for c in sample:
+        a = pngio.read(bc.CORPUS_DIR / c["expected"])
+        b = pngio.read(bc.CORPUS_DIR / c["actual"])
+        pair = (fps.get(c["renderer"]["expected"]), fps.get(c["renderer"]["actual"]))
+
+        def compare_with(renderer, a=a, b=b):
+            return compare(a, b, engine="v2", renderer=renderer)
+
+        eager = compare_with(pair)
+        drawn = []
+        lazy, used = fp.compare_lazily(
+            compare_with, lambda pair=pair: pair[0],
+            lambda pair=pair, drawn=drawn: drawn.append(1) or fp.RunCanary(png=pair[1]))
+        assert lazy.verdict == eager.verdict, c["name"]
+        assert [(r.x, r.y, r.w, r.h) for r in lazy.regions] == \
+            [(r.x, r.y, r.w, r.h) for r in eager.regions], c["name"]
+        if not lazy.failed:
+            passed_without += used is None
+            assert not drawn, c["name"]
+    assert len(sample) == 15 and passed_without > 0
 
 
 # --------------------------------------------------------------------------- #
@@ -269,20 +394,25 @@ def _page(browser):
     return context, page
 
 
-def test_a_real_context_draws_its_canary_once_in_a_tab_of_its_own(ctx, playwright):
+def test_a_real_browser_draws_its_canary_once_in_a_tab_of_its_own(ctx, playwright):
     browser = playwright.chromium.launch()
     try:
         context, page = _page(browser)
-        accept(ctx, page, "real.png")
+        accept(ctx, page, "real.png")                      # writing: the canary is drawn
         assert "canary_ms" in rows(ctx)[-1]["capture"]
         assert len(context.pages) == 1                    # the tab is closed again
-        expect_screenshot(page, "real.png")
+        expect_screenshot(page, "real.png")                # passes: nothing drawn
         row = rows(ctx)[-1]
-        assert "canary_ms" not in row["capture"]          # drawn once per context
+        assert "canary_ms" not in row["capture"]
+        assert row["renderer"]["status"] == "not_checked"
+        second, page2 = _page(browser)                     # another context, same browser
+        page2.set_content(PAGE.replace("Hamburgefonstiv 0123", "Quite another line of text"))
+        with pytest.raises(ScreenshotMismatch) as e:
+            expect_screenshot(page2, "real.png")           # fails: the kept canary decides
+        row = rows(ctx)[-1]
+        assert "canary_ms" not in row["capture"]           # not drawn again for this browser
         assert row["renderer"]["line"] == "renderer: same as the baseline's"
-        second, page2 = _page(browser)                     # another context, same renderer
-        expect_screenshot(page2, "real.png")
-        assert rows(ctx)[-1]["renderer"]["status"] == "same"
+        assert "renderer: same as the baseline's" in str(e.value)
         second.close()
         context.close()
     finally:
@@ -296,10 +426,11 @@ def test_a_browser_started_otherwise_is_another_renderer(ctx, playwright):
         _, page = _page(plain)
         accept(ctx, page, "hinting.png")
         _, page2 = _page(other)
-        try:
+        #  A change, drawn otherwise.
+        page2.set_content(PAGE.replace("Hamburgefonstiv 0123", "Quite another line of text"))
+        with pytest.raises(ScreenshotMismatch) as e:
             expect_screenshot(page2, "hinting.png")
-        except ScreenshotMismatch as e:
-            assert "renderer: different from the baseline's (canary: " in str(e)
+        assert "renderer: different from the baseline's (canary: " in str(e.value)
         row = rows(ctx)[-1]
         assert row["renderer"]["status"] == "changed" and row["renderer"]["pixels"] > 0
     finally:
