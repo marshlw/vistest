@@ -2,7 +2,7 @@
  "source": "native",
  "generator": "scripts/bench_playwright_grid.mjs",
  "corpus": {
-  "sha256": "d333ee4b609eeef0676331c559d1e97f314ebec6a33829d006c9bb86d985a3a2",
+  "sha256": "b91cddfc3330a5116d4dcb0a9e0bd08be5e6132b96d2674b5803c64cc6008b7e",
   "cases": 462
  },
  "environment": {
