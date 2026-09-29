@@ -31,6 +31,7 @@ from ...models import ChangeKind, CompareResult, DiffRegion, Verdict
 from .. import align as _align
 from .. import classify as _cls
 from .. import color as _color
+from .. import renderer as _renderer
 from .. import structure as _struct
 from .. import warp as _warp
 from ..settings import DiffConfig
@@ -39,6 +40,15 @@ from . import rerender as _rerender
 from .settings import V2Config
 
 ENGINE = "v2"
+
+#: What the notes say about the renderer, one sentence per answer.
+RENDERER_NOTES = {
+    _renderer.SAME: "renderer: same as the baseline's",
+    _renderer.UNKNOWN: "renderer: unknown — text re-rasterisation is not explained",
+    _renderer.CHANGED: "renderer differs from the baseline's (canary: {pixels} px): "
+                       "typography changes within a pixel cannot be verified here "
+                       "— make baselines on this renderer to check them",
+}
 
 
 def compare(
@@ -50,8 +60,13 @@ def compare(
     name: str = "snapshot",
     ignore_mask: np.ndarray | None = None,
     ai_hooks=None,
+    renderer=None,
 ) -> CompareResult:
-    """Compare two RGB images (uint8, H×W×3) the v2 way. See the module docstring."""
+    """Compare two RGB images (uint8, H×W×3) the v2 way. See the module docstring.
+
+    `renderer` is `None` or the pair of canaries (`core/renderer.py`); text
+    re-rasterisation is explained only when they prove the renderer changed.
+    """
     from ..comparator import _check_size, _fit_mask, _identical, _same_pixels
 
     t0 = time.perf_counter()
@@ -103,7 +118,13 @@ def compare(
                                f"(v2.min_region_px) (was {r.kind.value})")
 
     # ---------- 2. Explanations: named rules, all-or-nothing per region ----
-    assessed = _explain_rerender(regions, groups, labels, exp, act, cand, v2, res)
+    #  Text re-rasterisation is the renderer's doing, so it is looked for only
+    #  where the renderer is proven to have changed. The same renderer, or
+    #  one nobody measured, leaves every region for what it is.
+    rend = _renderer.check(renderer)
+    res.notes.append(RENDERER_NOTES[rend.status].format(pixels=rend.pixels))
+    assessed = (_explain_rerender(regions, groups, labels, exp, act, lab_exp, lab_act,
+                                  cand, v2, res) if rend.changed else [])
 
     # ---------- 3. AI layer (optional), on what nothing explained ----------
     #  Whatever the layer does, every region stays accounted for: one it does
@@ -140,6 +161,7 @@ def compare(
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
     res.maps["v2_rerender"] = assessed
+    res.maps["renderer"] = rend
     res.maps["de_map"] = de
     res.maps["mask"] = cand
     res.maps["labels"] = labels
@@ -152,15 +174,17 @@ def _layer_name(hooks) -> str:
     return str(getattr(hooks, "name", None) or type(hooks).__name__)
 
 
-def _explain_rerender(regions, groups, labels, exp, act, cand, v2: V2Config,
-                      res: CompareResult) -> list[dict]:
+def _explain_rerender(regions, groups, labels, exp, act, lab_exp, lab_act, cand,
+                      v2: V2Config, res: CompareResult) -> list[dict]:
     """Text re-rasterisation (core/v2/rerender.py), on every region still live.
 
-    A region is taken out only when all four properties hold; the sentence in
-    `suppressed_by` carries the numbers of each. A region the rule looked at
-    and refused keeps an annotation saying which properties failed and by how
-    much. Returns one record per region looked at, for the benchmark and the
-    diagnosis script (kept in `res.maps`, not serialised).
+    Called only when the renderer is proven to have changed. A region is
+    taken out only when (a), (b), (c) and (e) all hold; (d) is measured and
+    printed with them. The sentence in `suppressed_by` carries the numbers
+    of each. A region the rule looked at and refused keeps an annotation
+    saying which properties failed and by how much — a block that moved
+    first, in words. Returns one record per region looked at, for the
+    benchmark and the diagnosis script (kept in `res.maps`, not serialised).
     """
     live = [(r, g) for r, g in zip(regions, groups, strict=True) if not r.suppressed_by]
     if not live:
@@ -169,14 +193,22 @@ def _explain_rerender(regions, groups, labels, exp, act, cand, v2: V2Config,
     out = []
     counts = {"explained": 0}
     for r, g in live:
-        c = _rerender.crop(exp, act, labels, g.label, (g.x, g.y, g.w, g.h), v2.group_px)
-        a = _rerender.assess(c, text, ink_limit=v2.ink_delta_e,
-                             share_limit=v2.min_text_share, jnd=v2.jnd_delta_e)
-        out.append({"box": (g.x, g.y, g.w, g.h), "pixels": g.pixels,
+        box = (g.x, g.y, g.w, g.h)
+        c = _rerender.crop(exp, act, labels, g.label, box, v2.group_px)
+        where = np.zeros(cand.shape, bool)
+        where[g.y:g.y + g.h, g.x:g.x + g.w] = labels[g.y:g.y + g.h, g.x:g.x + g.w] == g.label
+        block = _rerender.block_shift(exp, act, lab_exp, lab_act, where & cand,
+                                      jnd=v2.jnd_delta_e, limit=v2.shift_residual)
+        a = _rerender.assess(c, text, block, ink_limit=v2.ink_delta_e,
+                             share_limit=v2.min_text_share, jnd=v2.jnd_delta_e,
+                             drift_px=v2.glyph_drift_px)
+        out.append({"box": box, "pixels": g.pixels,
                     "holds": a.holds, "failed": a.failed,
-                    "ink_delta_e": a.ink.delta_e, "outside": a.shape.outside,
+                    "ink_delta_e": a.ink.delta_e,
+                    "glyph_need_px": a.shape.need_px, "outside": a.shape.outside,
                     "paper_delta_e": a.background.delta_e,
                     "changed_away": a.background.changed_away,
+                    "shift": (block.dx, block.dy), "shift_residual": block.residual,
                     "text_share": a.text.share, "mass_a": a.mass_a, "mass_b": a.mass_b})
         if a.explained:
             r.suppressed_by = f"{_rerender.RULE}: {a.sentence()} (was {r.kind.value})"
@@ -185,13 +217,13 @@ def _explain_rerender(regions, groups, labels, exp, act, cand, v2: V2Config,
             counts["explained"] += 1
         else:
             r.annotations.append({
-                "text": f"not re-rasterised text — fails {a.failed}: {a.sentence()}",
+                "text": f"not re-rasterised text — fails {a.failed}: {a.why_not()}",
                 "kind": _rerender.RULE, "value": a.failed, "source": f"engine {ENGINE}"})
     if counts["explained"]:
         res.notes.append(
             f"Noise explained and suppressed: {counts['explained']} region(s) by text "
-            f"re-rasterisation ({text.text()[4:]}). Each names the four properties "
-            "it passed and their numbers.")
+            f"re-rasterisation ({text.text()[4:]}). Each names the properties it "
+            "passed and their numbers.")
     return out
 
 

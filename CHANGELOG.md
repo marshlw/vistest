@@ -97,6 +97,38 @@
   results unchanged. `scripts/bench_playwright_grid.mjs` now yields to the
   event loop every ten pairs: pngjs keeps each diff frame until it does, and
   462 pairs no longer fitted in 8 GB.
+- **Step 2b, the engine: text re-rasterisation only where the renderer is
+  proven to have changed.** `compare(..., renderer=(baseline canary, run
+  canary))` (`vistest/core/renderer.py`): the same pixels — same; other
+  pixels — changed, with their count; a missing canary — unknown. v1 ignores
+  it. v2 runs `rerender-text` only on «changed», and says which in a note:
+  «renderer: same as the baseline's», «renderer: unknown — text
+  re-rasterisation is not explained», or «renderer differs from the
+  baseline's (canary: N px): typography changes within a pixel cannot be
+  verified here — make baselines on this renderer to check them». The rule:
+  (a), (c) as they were; **(e) not a pure shift** — the closest whole-pixel
+  move (dx, dy) ≠ (0, 0) within 4 px may leave at most 25 % of the region's
+  changed pixels changed, or the region is a block that moved, said in
+  words («the block moved by +1 px along y») — `SHIFT_RESIDUAL`, a `Gap`
+  from the calibration half: the 290 regions step 2 took out in font_size,
+  padding, line_height and element_removed are exact moves (0.000), and so
+  are 78 regions of renderer noise (0.000–0.143: boxes and icons the
+  narrower text moved), against 0.442 for the first re-rasterised text;
+  **(b) with a drift per glyph** — each ink component may shift along the
+  line by up to K px before its shape is compared — K is a `Gap` too
+  (`GLYPH_DRIFT_PX`) and came out 0: a «9» that became an «8» at 9–12 px
+  needs one pixel, the renderer's noise needs up to 8 and more; (d) is
+  measured and printed and decides nothing. The benchmark takes every
+  frame's canary from the manifest (`renderer_pair`), never from a family
+  name. On the browser corpus (OpenCV 4.13.0) the verdicts per pair are
+  those of step 2, byte for byte; by group, held out, against Playwright
+  0.05/0: same renderer — v2 7/8 false (Playwright 6/8), 0/92 misses (7/92);
+  other renderer — v2 8/8 false (8/8), 0/40 misses (0/40). Neither group
+  meets «false ≤ a third of Playwright's». geometric_precision is a
+  stylesheet of the page, its canary is the baseline's, and its six pairs
+  are no longer looked at by the rule. `scripts/diagnose_browser.py --v2`
+  prints, per family, the pairs by renderer answer and the properties the
+  regions failed; `--as-if-changed` runs the rule on every pair.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 

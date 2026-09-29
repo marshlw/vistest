@@ -42,9 +42,9 @@ DIFFCONFIG_READ = (
 )
 
 #: (d) of the re-rasterisation rule: the share of the page's ink clusters that
-#: must hold a changed pixel before a region can be called re-rasterised text
-#: (core/v2/rerender.py, `page_text_change`). Above it, the change reached the
-#: page; below it, it is local.
+#: hold a changed pixel (core/v2/rerender.py, `page_text_change`). Since step
+#: 2b it is measured and printed and decides nothing: the renderer's change
+#: is proven by its canary instead. The number below is step 2's.
 #: Noise (it must be ABOVE): the smallest share among the re-rasterisation
 #: families — hinting_none, no_lcd_no_subpixel, geometric_precision,
 #: full_chromium, os_windows — is 0.549 (39 of 71 clusters, form: the input
@@ -73,6 +73,53 @@ MIN_REGION_PX = Gap(
     sample=CALIBRATION_SAMPLE, measured="2026-09-29")
 
 
+#: (b) of the re-rasterisation rule: how far along the line each glyph may
+#: drift, in whole pixels, before its shape is compared (core/v2/rerender.py,
+#: `glyph_drift`). Measured on the calibration half, the rule forced on.
+#: Noise (it must be AT LEAST this for the region to be explained): the drift
+#: the regions of renderer-change noise need — hinting_none,
+#: no_lcd_no_subpixel, full_chromium, os_windows — among those that pass
+#: (a), (c) and (e): median 1, 90th percentile 4, largest that fits at all 8;
+#: 79 of 1278 fit at no drift up to 8. Signal (it must stay BELOW): the
+#: smallest drift at which the change of a pair of the family «real changes
+#: drawn by another renderer» disappears — 1 px: a «9» that became an «8»,
+#: 9–12 px digits (article/one_char@hinting_none, @full_chromium and
+#: cards/one_char@hinting_none): one pixel of drift, and the other digit lies
+#: within the pixel of tolerance. The two do not separate; the value is the
+#: signal side's: 0. The drift is measured and printed in every sentence; the
+#: rule allows none, which makes (b) what it was in step 2.
+GLYPH_DRIFT_PX = Gap(
+    value=0,
+    noise=8, noise_at="article/render/no_lcd_no_subpixel, cards/os/windows (and "
+                      "79 regions that fit at no drift up to 8)",
+    signal=1, signal_at="article/one_char@hinting_none, article/one_char@full_chromium, "
+                        "cards/one_char@hinting_none (9 → 8)",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+#: (e) of the re-rasterisation rule: a region whose closest whole-pixel move
+#: (dx, dy) ≠ (0, 0), within 4 px, leaves at most this share of its changed
+#: pixels changed is a block that moved (core/v2/rerender.py, `block_shift`).
+#: Measured on the calibration half, the rule forced on, over the regions
+#: that pass (a) and (c). A move (it must stay AT OR BELOW): all 290 regions
+#: that step 2 took out in font_size, padding, line_height and
+#: element_removed are exact moves, 0.000; and 78 regions of renderer-change
+#: noise are moves too, 0.000–0.143 (table, form, cards: the renderer drew
+#: the text narrower and the boxes and icons after it moved by 1–3 px).
+#: Re-rasterised text (it must be ABOVE): the smallest residual of any other
+#: renderer-noise region is 0.442. The geometric middle of 0.143 and 0.442
+#: is 0.25. The 78 renderer-moved blocks are called moves, because they are:
+#: the pairs that hold them fail.
+SHIFT_RESIDUAL = Gap(
+    value=0.25,
+    noise=0.442, noise_at="the smallest residual of re-rasterised text in "
+                          "hinting_none / no_lcd_no_subpixel / full_chromium / "
+                          "os_windows",
+    signal=0.143, signal_at="table/render/*, table/os/windows [505, 77, 7, 30] — "
+                            "a box edge the narrower text moved by 1 px; step 2's "
+                            "290 regions: 0.000",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+
 @dataclass(frozen=True)
 class V2Config:
     #: A pixel is a candidate when ΔE00 between the frames is above this.
@@ -98,5 +145,12 @@ class V2Config:
     #: 1718 of them at 0.0; a colour change of ΔE00 4 reads 3.88–6.19; ΔE00 2
     #: (DISPUTED, not counted) reads 1.74–2.04 — on the line, as it should.
     ink_delta_e: float = 2.0
-    #: (d) of the re-rasterisation rule; see TEXT_SHARE.
+    #: (d) of the re-rasterisation rule; see TEXT_SHARE. Printed, not deciding.
     min_text_share: float = TEXT_SHARE.value
+    #: (b) of the re-rasterisation rule: how far along the line each glyph may
+    #: drift before its shape is compared; see GLYPH_DRIFT_PX.
+    glyph_drift_px: int = int(GLYPH_DRIFT_PX.value)
+    #: (e) of the re-rasterisation rule: a region whose best whole-pixel move
+    #: leaves at most this share of its changed pixels is a block that moved;
+    #: see SHIFT_RESIDUAL.
+    shift_residual: float = SHIFT_RESIDUAL.value
