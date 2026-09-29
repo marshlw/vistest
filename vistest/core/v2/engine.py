@@ -36,6 +36,7 @@ from .. import structure as _struct
 from .. import warp as _warp
 from ..settings import DiffConfig
 from . import base as _base
+from . import pageshift as _pageshift
 from . import rerender as _rerender
 from .settings import V2Config
 
@@ -118,6 +119,10 @@ def compare(
                                f"(v2.min_region_px) (was {r.kind.value})")
 
     # ---------- 2. Explanations: named rules, all-or-nothing per region ----
+    #  The page moved by a fraction of a pixel: proven on its box edges
+    #  first, whatever the renderer, then region by region.
+    shifted = _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act,
+                                  cand, v2, res)
     #  Text re-rasterisation is the renderer's doing, so it is looked for only
     #  where the renderer is proven to have changed. The same renderer, or
     #  one nobody measured, leaves every region for what it is.
@@ -161,6 +166,7 @@ def compare(
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
     res.maps["v2_rerender"] = assessed
+    res.maps["v2_page_shift"] = shifted
     res.maps["renderer"] = rend
     res.maps["de_map"] = de
     res.maps["mask"] = cand
@@ -172,6 +178,52 @@ def compare(
 
 def _layer_name(hooks) -> str:
     return str(getattr(hooks, "name", None) or type(hooks).__name__)
+
+
+def _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act, cand,
+                        v2: V2Config, res: CompareResult) -> dict:
+    """The page moved by a fraction of a pixel (core/v2/pageshift.py).
+
+    The move is fitted on the page's box edges and must prove itself there
+    (`page_shift_moved`) and on the page's changed pixels
+    (`page_shift_cover`) before any region is looked at. Returns what was
+    measured, for the benchmark and the diagnosis (kept in `res.maps`).
+    """
+    live = [(r, g) for r, g in zip(regions, groups, strict=True) if not r.suppressed_by]
+    if not live:
+        return {}
+    ps = _pageshift.fit(exp, lab_exp, lab_act, cand, v2.jnd_delta_e, v2.move_tolerance)
+    if ps is None:
+        return {}
+    record = {"dx": ps.dx, "dy": ps.dy, "moved": ps.moved_share, "cover": ps.cover,
+              "holds": ps.holds(v2.page_shift_moved, v2.page_shift_cover), "regions": []}
+    if not record["holds"]:
+        return record
+    explained = 0
+    for r, g in live:
+        box = (g.x, g.y, g.w, g.h)
+        where = np.zeros(cand.shape, bool)
+        where[g.y:g.y + g.h, g.x:g.x + g.w] = labels[g.y:g.y + g.h, g.x:g.x + g.w] == g.label
+        crop = _rerender.crop(exp, act, labels, g.label, box, v2.group_px)
+        rs = _pageshift.region(ps, where & cand, crop, exp, act, lab_exp, lab_act,
+                               limit=v2.shift_region_miss, ink_limit=v2.ink_delta_e,
+                               jnd=v2.jnd_delta_e)
+        record["regions"].append({"box": box, "pixels": g.pixels, "missed": rs.missed_share,
+                                  "explained": rs.explained})
+        if rs.explained:
+            r.suppressed_by = (f"{_pageshift.RULE}: {ps.text()}; this region: {rs.text()} "
+                               f"(was {r.kind.value})")
+            r.kind = ChangeKind.NOISE
+            r.severity = 0.0
+            explained += 1
+        else:
+            r.annotations.append({
+                "text": f"not the page's move ({ps.dx:+g}, {ps.dy:+g}) px — {rs.text()}",
+                "kind": _pageshift.RULE, "value": round(rs.missed_share, 3),
+                "source": f"engine {ENGINE}"})
+    res.notes.append(f"Noise explained and suppressed: {explained} region(s) by the page's "
+                     f"move — {ps.text()}.")
+    return record
 
 
 def _explain_rerender(regions, groups, labels, exp, act, lab_exp, lab_act, cand,

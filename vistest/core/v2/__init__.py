@@ -30,11 +30,14 @@ v2 turns the order round:
    frame; the smallest region is a number of pixels.
 2. **Explanations** — each a separate, named test that a region must pass in
    full to be called noise, and each writing its measurements into
-   `suppressed_by`. The base itself explains nothing. So far one:
-   `rerender.py`, text re-rasterisation, looked for only when the
-   renderer's canary proves the renderer changed (`core/renderer.py`) —
-   the ink, the shape to a pixel, the paper, and not a block that moved;
-   the page's share of changed text is printed with them.
+   `suppressed_by`. The base itself explains nothing. So far two:
+   `pageshift.py`, the page moved by a fraction of a pixel — proven on the
+   page's box edges and on most of its changed pixels before any region is
+   looked at, whatever the renderer; and `rerender.py`, text
+   re-rasterisation, looked for only when the renderer's canary proves the
+   renderer changed (`core/renderer.py`) — the ink, the shape to a pixel,
+   the paper, and not a block that moved; the page's share of changed text
+   is printed with them.
 3. **The AI layer**, when there is one, sees what no rule explained. A region
    it does not hand back is suppressed under its name, never dropped.
 

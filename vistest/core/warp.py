@@ -88,6 +88,37 @@ def shift(img: np.ndarray, dx: float, dy: float) -> np.ndarray:
     return out
 
 
+def sample(img: np.ndarray, dx: float, dy: float, ys: np.ndarray,
+           xs: np.ndarray) -> np.ndarray:
+    """`shift(img, dx, dy)[ys, xs]`, computed at those pixels only. -> float32.
+
+    The same bilinear arithmetic and edge replication as `shift`, for a
+    stage that needs the moved picture at a few thousand pixels and asks for
+    it under many offsets (v2's page shift fits one against box edges):
+    warping the whole frame for each would cost the frame, not the pixels.
+    `tests/test_warp.py` holds the two equal.
+    """
+    h, w = img.shape[:2]
+    ys = np.asarray(ys, dtype=np.int64)
+    xs = np.asarray(xs, dtype=np.int64)
+    src = img.astype(np.float32, copy=False)
+    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+        return src[ys, xs]
+    ix, fx = int(np.floor(dx)), float(dx - np.floor(dx))
+    iy, fy = int(np.floor(dy)), float(dy - np.floor(dy))
+    bx, by = xs - ix, ys - iy
+    cx, lx = np.clip(bx, 0, w - 1), np.clip(bx - 1, 0, w - 1)
+    cy, ly = np.clip(by, 0, h - 1), np.clip(by - 1, 0, h - 1)
+    out = None
+    for wy, ry in ((1.0 - fy, cy), (fy, ly)):
+        if wy == 0.0:
+            continue
+        here = src[ry, cx]
+        part = (1.0 - fx) * here + fx * src[ry, lx] if fx else here
+        out = wy * part if out is None else out + wy * part
+    return out
+
+
 def to_uint8(arr: np.ndarray) -> np.ndarray:
     """A picture computed in floating point, back to 8-bit levels.
 

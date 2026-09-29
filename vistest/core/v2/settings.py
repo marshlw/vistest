@@ -120,6 +120,67 @@ SHIFT_RESIDUAL = Gap(
     sample=CALIBRATION_SAMPLE, measured="2026-09-29")
 
 
+#: Step 3, the page moved by a fraction of a pixel (core/v2/pageshift.py).
+#: The share of the page's box edges — straight edges at least 40 px long, in
+#: either frame — that the fitted fraction moves and no whole-pixel move
+#: reproduces. Noise (it must be AT LEAST this): the smallest share among the
+#: page-shift pairs, 0.174 (article/render/shift_0.5px; the others 0.186 to
+#: 0.329). Signal and every other noise (it must stay BELOW): the largest
+#: share of any other calibration pair, 0.027 (table/render/no_lcd_no_subpixel;
+#: then geometric_precision 0.025, cards/font_size/minus1px 0.021 — a block
+#: that moved by whole pixels moves no edge by a fraction). The geometric
+#: middle is 0.068, rounded to 0.07; ×6.5 apart.
+PAGE_SHIFT_MOVED = Gap(
+    value=0.07,
+    noise=0.174, noise_at="article/render/shift_0.5px",
+    signal=0.027, signal_at="table/render/no_lcd_no_subpixel",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+#: The share of the page's changed pixels that the move — the fraction and
+#: the whole pixels next to it in its direction — reproduces within
+#: `MOVE_TOLERANCE`. The task's word: «most». Noise (AT LEAST): the smallest
+#: among the page-shift pairs, 0.792 (cards/render/shift_0.25px). Signal: no
+#: other pair passes PAGE_SHIFT_MOVED, so none reaches this test; alone it
+#: would separate nothing — table/offset/plus1px, a block moved by one whole
+#: pixel, is reproduced to 1.000 — which is why the edges are asked first.
+PAGE_SHIFT_COVER = Gap(
+    value=0.5,
+    noise=0.792, noise_at="cards/render/shift_0.25px",
+    signal=0.0, signal_at="none: no other pair passes PAGE_SHIFT_MOVED "
+                          "(alone, table/offset/plus1px reaches 1.000)",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+#: How far (ΔE00) a bilinear move may miss what the rasteriser drew at the
+#: same offset and still reproduce the pixel. Noise: over every changed pixel
+#: of the eight calibration page-shift pairs, the best displacement misses by
+#: at most 0.86 at the 95th percentile (0.63 at the 90th; 96.8% within 1.0).
+#: Signal: 4.0, the smallest SIGNAL colour step of the corpus — a recoloured
+#: pixel must not be «reproduced» by moving its neighbour. The geometric
+#: middle is 1.85; the value is 2.0, the «≈ 2» of (a) — the same notion,
+#: «the same colour», one number for it.
+MOVE_TOLERANCE = Gap(
+    value=2.0,
+    noise=0.86, noise_at="95th percentile over the calibration page-shift pairs",
+    signal=4.0, signal_at="the smallest SIGNAL colour step (ΔE00 4)",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+#: Once the page is proven to have moved, the share of a region's changed
+#: pixels the move may miss and the region still be what the move did (a
+#: region that misses more can still be text redrawn at the new position:
+#: (a), (b), (c), (e')). Noise: of the 52 page-shift regions that fail the
+#: redrawn-text test, 50 miss at most 0.082 (form/render/shift_0.25px, a 16 px
+#: checkbox); two miss 0.321 and 0.387 (a checkbox at a half pixel, a bookmark
+#: icon: strokes a rasteriser draws otherwise than a bilinear move) and stay
+#: red — a move that misses a third of a region does not reproduce it. Signal:
+#: none; no SIGNAL pair of the corpus passes the page's proof, so none reaches
+#: this test. 0.10 is the smallest round share above the noise side.
+SHIFT_REGION_MISS = Gap(
+    value=0.10,
+    noise=0.082, noise_at="form/render/shift_0.25px (288, 498, 16, 16)",
+    signal=1.0, signal_at="none: no SIGNAL pair passes the page's proof",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+
 @dataclass(frozen=True)
 class V2Config:
     #: A pixel is a candidate when ΔE00 between the frames is above this.
@@ -154,3 +215,12 @@ class V2Config:
     #: leaves at most this share of its changed pixels is a block that moved;
     #: see SHIFT_RESIDUAL.
     shift_residual: float = SHIFT_RESIDUAL.value
+    #: Step 3, the page moved by a fraction of a pixel (pageshift.py): the
+    #: share of the page's box edges the fraction must move; see PAGE_SHIFT_MOVED.
+    page_shift_moved: float = PAGE_SHIFT_MOVED.value
+    #: … the share of the changed pixels the move must reproduce; PAGE_SHIFT_COVER.
+    page_shift_cover: float = PAGE_SHIFT_COVER.value
+    #: … how far a moved pixel may miss (ΔE00); MOVE_TOLERANCE.
+    move_tolerance: float = MOVE_TOLERANCE.value
+    #: … the share of a region's changed pixels the move may miss; SHIFT_REGION_MISS.
+    shift_region_miss: float = SHIFT_REGION_MISS.value

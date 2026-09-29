@@ -34,6 +34,13 @@ instrumented, and prints the numbers that say *which* filter took the signal:
      "compensates" a shift of about −1.6 px that does not exist, and what is
      left is dozens of regions of severity 94. A re-rasterised glyph changes
      shape; it does not move.
+  5. render:shift_0.25px and render:shift_0.5px (NOISE). phaseCorrelate on
+     the whole page answers a mix of the box edges (moved by the fraction)
+     and the text (snapped to whole pixels) — dx +0.02…+0.35, dy +0.00…+0.05
+     on the calibration pages moved by a quarter pixel both ways, dx
+     +0.53…+0.97, dy +0.91…+1.00 on those moved by a half — and nothing
+     checks it. What turns such a pair green is the re-drawing of the
+     baseline region by region.
 
 Read-only and deterministic: nothing is written, nothing is tuned. The
 held-out templates are left out unless named with --template — they are for
@@ -331,6 +338,40 @@ def finding_alignment(cases, bases, root, out):
     out("")
 
 
+def finding_page_shift(cases, bases, root, out):
+    """What v1 does with a page drawn a fraction of a pixel over, next to the
+    shift v2 fits on the page's box edges (core/v2/pageshift.py)."""
+    from collections import Counter
+
+    from vistest.core.v2 import V2Config
+    from vistest.core.v2 import base as _v2base
+    from vistest.core.v2 import pageshift as _pageshift
+
+    v2 = V2Config()
+    out("5. render:shift_0.25px / render:shift_0.5px (NOISE) — the page moved by a "
+        "fraction; v1 estimates the shift on the whole page and never checks it")
+    for c in cases:
+        if not c["family"].startswith("render:shift_"):
+            continue
+        exp, act = bases[c["template"]], pngio.read(root / c["actual"])
+        res, t, _ = run_v1(exp, act, c["name"])
+        al = t.alignment
+        la, lb = _color.srgb_to_lab(exp), _color.srgb_to_lab(act)
+        _, cand = _v2base.candidates(la, lb, _v2base.differs(exp, act), v2.jnd_delta_e)
+        fit = _pageshift.fit(exp, la, lb, cand, v2.jnd_delta_e, v2.move_tolerance)
+        by = Counter((r.suppressed_by or "").split(":")[0] for r in res.suppressed)
+        why = ", ".join(f"{k} {n}" for k, n in sorted(by.items())) or "none"
+        out(f"   {c['name']:30s} v1 {res.verdict.value:4s}  phaseCorrelate dx {al.dx:+.2f} "
+            f"dy {al.dy:+.2f} (applied {al.applied});  v2 fits ({fit.dx:+g}, {fit.dy:+g}): "
+            f"{fit.moved_share:.0%} of the box edges moved;  v1 live regions "
+            f"{len(res.regions)}, suppressed by: {why}")
+    out("   the estimate mixes the box edges, moved by the fraction, with the text, "
+        "snapped to whole pixels; what passes is passed region by region by re-drawing "
+        "the baseline (antialias, rerender) — the same tolerance that lets a new ink "
+        "colour through (1)")
+    out("")
+
+
 # --------------------------------------------------------------------------- #
 #  v2: what the re-rasterisation rule did, region by region
 # --------------------------------------------------------------------------- #
@@ -387,8 +428,19 @@ def v2_rerender_table(cases, bases, root, out, manifest, *, as_if_changed=False)
         d = fams.setdefault((_family_key(c), c["label"]), {
             "pairs": 0, "green": 0, "rend": Counter(), "regions": 0, "looked": 0,
             "explained": 0, "a": 0, "b": 0, "c": 0, "e": 0, "only b": 0,
-            "need": [], "moves": Counter(), "share": []})
+            "need": [], "moves": Counter(), "share": [],
+            "ps_holds": 0, "ps_moved": [], "ps_cover": [], "ps_shifts": Counter(),
+            "ps_explained": 0, "ps_refused": 0})
         d["pairs"] += 1
+        ps = res.maps.get("v2_page_shift") or {}
+        if ps:
+            d["ps_moved"].append(ps["moved"])
+            d["ps_cover"].append(ps["cover"])
+            if ps["holds"]:
+                d["ps_holds"] += 1
+                d["ps_shifts"][(ps["dx"], ps["dy"])] += 1
+                d["ps_explained"] += sum(1 for x in ps["regions"] if x["explained"])
+                d["ps_refused"] += sum(1 for x in ps["regions"] if not x["explained"])
         d["green"] += res.verdict.value == "pass"
         d["rend"][res.maps["renderer"].status] += 1
         d["regions"] += sum(1 for r in res.regions + res.suppressed
@@ -429,6 +481,34 @@ def v2_rerender_table(cases, bases, root, out, manifest, *, as_if_changed=False)
             f"{d['b']:6d} {d['c']:6d} {d['e']:6d} {d['only b']:6d} {needs:>8s} "
             f"{share:>10s}  {moves}")
     out("")
+    v2_page_shift_table(fams, v2, out)
+
+
+def v2_page_shift_table(fams: dict, v2, out) -> None:
+    """Per family: the page's move (core/v2/pageshift.py) — how many pairs it
+    was proven on, the shifts fitted there, the share of box edges moved and
+    of changed pixels reproduced (smallest–largest over the pairs where a
+    shift was fitted), and the regions it explained or refused."""
+    out("=== v2: the page moved by a fraction of a pixel ===")
+    out(f"proven when at least {v2.page_shift_moved:.0%} of the page's box edges moved "
+        f"by the fraction and by no whole pixel, and the move reproduces at least "
+        f"{v2.page_shift_cover:.0%} of the changed pixels (ΔE00 ≤ {v2.move_tolerance:g}); "
+        f"then a region is explained when the move misses at most "
+        f"{v2.shift_region_miss:.0%} of it, or it is text redrawn at the new position")
+    head = (f"{'family':28s} {'label':8s} {'proven':>7s} {'edges moved':>12s} "
+            f"{'reproduced':>11s} {'explained':>9s} {'refused':>7s}  shifts")
+    out(head)
+    out("-" * len(head))
+
+    def span(v):
+        return f"{min(v):.3f}–{max(v):.3f}" if v else "—"
+    for (key, label), d in fams.items():
+        shifts = ", ".join(f"({dx:+g}, {dy:+g}) ×{n}"
+                           for (dx, dy), n in sorted(d["ps_shifts"].items()))
+        out(f"{key:28s} {label:8s} {d['ps_holds']:>3d}/{d['pairs']:<3d} "
+            f"{span(d['ps_moved']):>12s} {span(d['ps_cover']):>11s} "
+            f"{d['ps_explained']:9d} {d['ps_refused']:7d}  {shifts}")
+    out("")
 
 
 def main(argv=None) -> int:
@@ -439,7 +519,8 @@ def main(argv=None) -> int:
     ap.add_argument("--v2", action="store_true",
                     help="instead of the v1 findings: what v2's re-rasterisation "
                          "rule did, by family (regions explained, failed per "
-                         "property, the drift glyphs needed, the moves found)")
+                         "property, the drift glyphs needed, the moves found), "
+                         "and where the page was proven to have moved")
     ap.add_argument("--as-if-changed", action="store_true",
                     help="with --v2: run the rule on every pair as if the "
                          "renderer had changed — what each property would do")
@@ -466,6 +547,7 @@ def main(argv=None) -> int:
     finding_unassigned(cases, bases, root, out)
     finding_consensus(cases, bases, root, out)
     finding_alignment(cases, bases, root, out)
+    finding_page_shift(cases, bases, root, out)
     return 0
 
 
