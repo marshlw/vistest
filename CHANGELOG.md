@@ -24,6 +24,23 @@
   −1.6 px that is not there, raising the ΔE00 > 2.3 count from 54 354 to
   60 022 and leaving 79 live regions (max severity 94.5). Read-only,
   deterministic, calibration half by default.
+- **Step 1: the sensitive base of v2.** `compare(..., engine="v2")` goes to
+  `vistest/core/v2/`; v1 stays the default and is not touched (synthetic
+  benchmark output and `metrics.json` byte for byte as before). A candidate is
+  a pixel with ΔE00 above 1.0 — every pixel, no consensus, no anti-aliasing
+  veto, no contrast tolerance. Candidates are grouped by proximity (dilated by
+  2 px, 8-connected components), with no opening; every candidate pixel is in
+  exactly one region (`unassigned_pixels` is 0 by construction), and the
+  smallest region is 4 px — a number of pixels, not a share of the frame
+  (`V2Config.min_region_px`, a `Gap` measured on the calibration half:
+  opacity 0.98 leaves at most 1 px, the smallest signal 13 px). A smaller group
+  is a suppressed region named `min-size`, not a dropped one. No explanation of
+  noise yet: any region left fails. On the browser corpus (OpenCV 4.13.0):
+  calibration 28/32 false, 0/184 misses; held out 15/16 false, 0/92 misses —
+  the base catches every signal and almost every noise pair, as it should
+  before anything is explained. `tests/benchmark.py --engine v1|v2|both`
+  chooses the rows: both by default on the browser corpus, v1 by default on
+  the synthetic one. New: `tests/test_engine_v2.py`.
 - **The OpenCV version is in the browser table.** `--corpus browser` prints
   `VisTest rows computed with: OpenCV …, numpy …, Python …` under its title
   (and in the markdown), in the output rather than on stderr: a before and an
