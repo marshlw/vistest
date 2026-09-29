@@ -235,6 +235,43 @@
   apart, and the rule does not try. Synthetic corpus, v2: 15/16 → 14/16
   false (antialias 0.4px is a whole-frame sub-pixel warp and passes),
   0/11 misses; v1 byte for byte as before.
+- **Step 4: v1's scroll-bar and JPEG rules in v2** (`_explain_environment` in
+  `vistest/core/v2/engine.py`, before the page's move). The scroll bar is
+  v1's rule as it is: a band 4–20 px wide at the right or bottom edge,
+  featureless along its length in both frames, changed along at least 80 %
+  of it, the page beside it untouched (`explain.scrollbar_bands`, and
+  `explain.in_band`, renamed from `_in_band` so that v2 can ask, like
+  `explain.reencode`; v1 unchanged). JPEG detection is v1's as it is
+  (`explain.detect_jpeg`). The
+  test per region is not, because v1's would break two things v2 promises:
+  (1) v1 counts a pixel reproduced when it is within 30 % of the local
+  contrast, and on text that is how a new ink colour passes (finding 1 of
+  `scripts/diagnose_browser.py`) — on a page of thin text through JPEG
+  q=75 with half a line in a new ink (ΔE00 16.6), v1's test leaves 0 of the
+  region's 31 300 px; (2) v1 lets 5 % of a region stay unexplained, and v2
+  groups without an opening — on a JPEG frame the ringing joins the page
+  into one region, 5 % of which is more than the half line that changed.
+  In v2 a changed pixel is reproduced when the baseline re-encoded at the
+  quality found is within ΔE00 1 of it (the base's own test), what is left
+  is grouped as the base groups, and a region is explained only when no
+  group of 4 px or more is left (`MIN_REGION_PX`, the base's «a change»).
+  The baseline is re-encoded whole once the quality is known: v1 re-encodes
+  the changed boxes on the 16-px grid, and the decoder's chroma upsampling
+  makes a box differ from the frame on its outermost pixels — within v1's
+  tolerance, not within ΔE00 1 (jpeg q=75: 4–119 px of a region). No new
+  number. **Caret: there is no rule, in v1 or in v2.** In v1 the synthetic
+  caret (a 2 px line, 27 px tall) passes because its changed pixels end up
+  in no region — the loss that also drops an underline (finding 2); v2 keeps
+  it red, 3×29 px: pixel for pixel it is a line added. The library hides the
+  caret when it captures (`caret="hide"`). Results: on the browser corpus
+  neither detection fires on any of the 462 pairs, and every verdict is
+  that of step 3; synthetic, v2: 14/16 → 12/16 false per raster (scrollbar,
+  jpeg q=75), 0/11 misses; jpeg q=88 stays red — v1 tries 50, 60, 70, 75,
+  80, 85, 90, 95, and at 90 the re-encoded baseline still leaves 0.54–0.58
+  of the error, more than the half detection asks (v1 passes that pair
+  through its anti-aliasing filter, not its jpeg rule). Cost: detection
+  re-encodes the changed area at eight qualities on every comparison with a
+  live region — 6–209 ms on the browser pairs measured.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 
