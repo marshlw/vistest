@@ -184,6 +184,57 @@
   context 382–404 ms → 145–160 ms (149–163 ms before the canary existed); a
   failing check, first in a fresh browser 616 → 635 ms, then in another
   context of that browser 579 → 355 ms.
+- **Step 3: the page moved by a fraction of a pixel** (`vistest/core/v2/pageshift.py`,
+  rule `page-shift`). Chromium draws a page moved by a `transform` of a
+  quarter or half pixel with its box edges anti-aliased at the fraction and
+  its text snapped to the grid — where it was, or a whole pixel over in the
+  direction of the move. So the move is proven on the page before any region
+  is looked at, whatever the renderer: (1) the shift (dx, dy), both under a
+  pixel and not both whole, is fitted on the page's *structure edges* —
+  straight L* edges at least 40 px long, box borders and rules, not text —
+  and must move at least 7 % of them by the fraction and by no whole pixel
+  (`PAGE_SHIFT_MOVED`); (2) the fraction and the whole pixels next to it in
+  its direction must reproduce at least half of the page's changed pixels
+  within ΔE00 2 (`PAGE_SHIFT_COVER`, `MOVE_TOLERANCE`). Then a region is
+  explained when the move misses at most 10 % of its changed pixels
+  (`SHIFT_REGION_MISS`), or when it is text redrawn at the new position —
+  (a) the same ink, (b) the shape within a pixel, (c) the same paper, and a
+  whole-pixel move only in the page's direction (e'). A region the move does
+  not explain says by how much it missed and which property failed. The four
+  numbers are `Gap`s from the calibration half, replayed in
+  `tests/test_engine_v2_pageshift.py`: the moved share is 0.174–0.329 on the
+  eight shift pairs and at most 0.027 on every other one
+  (table/render/no_lcd_no_subpixel; a block moved by whole pixels moves no
+  edge by a fraction, a renderer that draws text otherwise moves no box
+  edge); the cover 0.792–1.000 (table/offset/plus1px reaches 1.000 on its
+  own, which is why the edges are asked first); a moved pixel misses by at
+  most 0.86 at the 95th percentile; the regions that are not redrawn text
+  miss at most 0.082, except two that miss 0.321 and 0.387 and stay red.
+  The moving goes through `core/warp.py`: `warp.sample` is `warp.shift` at
+  the pixels asked for, the same arithmetic, held equal by a test. What is
+  honest in v1 (preset balanced; `scripts/diagnose_browser.py`, finding 5):
+  the idea — estimate the page's move and compensate it with the one warp.
+  What is not: phaseCorrelate on the whole page answers a mix of box edges
+  and snapped text (dx +0.02…+0.35, dy +0.00…+0.05 on the quarter-pixel
+  pages; +0.53…+0.97, +0.91…+1.00 on the half-pixel ones), nothing checks
+  it, and what turns a pair green is re-drawing the baseline region by
+  region with the contrast tolerance that also lets a new ink colour
+  through; its 3/8 false on these families are on the calibration half
+  (held out 1/4). On the browser corpus (OpenCV 4.13.0) the page is proven
+  on the twelve shift pairs and on none of the other 450 (largest share
+  held out: 0.014, dark/padding/plus1px). Same renderer, v2: calibration
+  8/12 → 2/12 false, held out 5/6 → 3/6 (Playwright 0.05/0: 4/6), misses
+  0/184 and 0/92 as before; other renderer unchanged. Eight pairs turned
+  green, all render:shift_*; no other verdict moved. Four shift pairs stay
+  red on one region each, the same thing every time — a thin-stroked icon or
+  a checkbox drawn at the fraction by the rasteriser, not moved: its strokes
+  come out lighter (ink ΔE00 3.2–12.7) and the bilinear move misses 32–86 %
+  of it (calibration: article 10×13 at a quarter, form 17×17 at a half; held
+  out: dark 12×10 at both). A lighter icon is also what a ΔE00 4 icon
+  colour change looks like, so nothing at the region level tells the two
+  apart, and the rule does not try. Synthetic corpus, v2: 15/16 → 14/16
+  false (antialias 0.4px is a whole-frame sub-pixel warp and passes),
+  0/11 misses; v1 byte for byte as before.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 

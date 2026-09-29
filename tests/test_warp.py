@@ -209,3 +209,16 @@ def test_both_paths_go_through_the_same_door():
     assert after_refit > after_align, "refit did not go through warp.shift"
     assert len(calls) > after_refit, "explain's rerender did not go through warp.shift"
     assert all((dx, dy) != (0.0, 0.0) for dx, dy in calls[after_refit:])
+
+
+@pytest.mark.parametrize("dx, dy", [(0.0, 0.0), (0.25, 0.25), (-0.5, 0.75), (1.0, -1.0),
+                                    (0.125, 0.0), (-1.25, 2.5), (3.0, 0.0)])
+def test_a_sample_is_the_shifted_picture_at_those_pixels(dx, dy):
+    """`sample` is `shift` read at a few pixels — the same arithmetic, not a copy
+    of the result: v2's page shift fits one against box edges under dozens
+    of offsets, and must see exactly what the whole moved frame would show."""
+    rng = np.random.default_rng(7)
+    img = rng.integers(0, 256, (29, 41, 3)).astype(np.uint8)
+    ys, xs = np.nonzero(rng.random((29, 41)) < 0.4)
+    want = np.asarray(warp.shift(img, dx, dy), dtype=np.float32)[ys, xs]
+    assert np.array_equal(warp.sample(img, dx, dy, ys, xs), want)
