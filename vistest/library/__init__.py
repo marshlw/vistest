@@ -45,6 +45,7 @@ from ..storage.base import (
     platforms_with,
 )
 from . import context as _context
+from . import fingerprint as _fingerprint
 from . import targets as _targets
 from .errors import (
     BaselineMissing,
@@ -217,7 +218,10 @@ def expect_screenshot(
                     elsewhere=platforms_with(store, key))
 
             _warn_unsettled_accept(shot, key)
-            meta = store.put(key, shot.png)
+            run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
+            _canary_row(captured, run_canary)
+            meta = store.put(key, shot.png,
+                             meta=_passport_with_renderer(store, key, run_canary))
             record(verdict="new_baseline", action="created",
                    reason=_with(said, f"baseline created by --vistest-update={mode}"),
                    images={"actual": str(actual_path),
@@ -230,6 +234,14 @@ def expect_screenshot(
         actual_rgb = pngio.decode(shot.png, source=f"the screenshot of {key.name}")
 
         passport = store.meta(key)
+        #  The renderer's canary, of this run and of the baseline: the engine
+        #  explains re-rasterised text only when the two differ, and the
+        #  report says which it was in one line.
+        run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
+        _canary_row(captured, run_canary)
+        base_canary, base_why = _fingerprint.of_baseline(store, passport)
+        rend = _fingerprint.status(base_canary, base_why, run_canary)
+        renderer = (base_canary, run_canary.png)
         cfg = ctx.config.diff.merged(
             **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
                         call=call_patch))
@@ -240,7 +252,7 @@ def expect_screenshot(
         ignore = _ignore_mask(expected_rgb.shape[:2], boxes)
         hooks = _ai_hooks(ctx)
         result = compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
-                         ignore_mask=ignore, ai_hooks=hooks)
+                         ignore_mask=ignore, ai_hooks=hooks, renderer=renderer)
 
         #  Failed: one more frame, and whatever did not hold still between the two
         #  is masked for a second comparison of the FIRST frame. The same function
@@ -249,7 +261,7 @@ def expect_screenshot(
         if result.failed and shot.retake is not None \
                 and ctx.config.capture.retry_on_fail:
             result = _second_look(shot, key, result, expected_rgb, actual_rgb,
-                                  cfg, ignore, hooks)
+                                  cfg, ignore, hooks, renderer)
         result.duration_ms = _ms(started)
 
         #  Let go of the full-frame maps. `compare` hands back four arrays the size
@@ -290,7 +302,8 @@ def expect_screenshot(
         if mode == "all" or (mode == "changed" and failed):
             if _sha_of(shot.png) != _sha_of(baseline):
                 _warn_unsettled_accept(shot, key)
-            meta = store.put(key, shot.png)
+            meta = store.put(key, shot.png,
+                             meta=_passport_with_renderer(store, key, run_canary))
             record(verdict="new_baseline",
                    action="unchanged" if meta.sha256 == _sha_of(baseline)
                    else "updated",
@@ -298,18 +311,19 @@ def expect_screenshot(
                            if result.verdict is not Verdict.FAIL
                            else f"accepted: {reason}"),
                    result=result, limits=limits, images=images,
-                   duration_ms=_ms(started), capture=captured)
+                   duration_ms=_ms(started), capture=captured, renderer=rend)
             return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
 
         record(verdict="fail" if result.verdict is Verdict.FAIL else "pass",
                action="compared", reason=reason, result=result, limits=limits,
-               images=images, duration_ms=_ms(started), capture=captured)
+               images=images, duration_ms=_ms(started), capture=captured,
+               renderer=rend)
 
         if result.verdict is Verdict.FAIL:
             raise ScreenshotMismatch.build(
                 name=key.name, platform=platform, result=result, reason=reason,
                 baseline=baseline_path, actual=actual_path, diff=diff_path,
-                report=ctx.report, limits=limits)
+                report=ctx.report, limits=limits, renderer=rend.line())
         return result
     except Exception as exc:
         #  `BaselineMissing` and `ScreenshotMismatch` have written their own row
@@ -342,7 +356,7 @@ def _fresh_result(key: SnapshotKey, meta: SnapshotMeta,
 
 
 def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
-                 cfg, ignore, hooks):
+                 cfg, ignore, hooks, renderer=None):
     from ..core import noise
     from ..core.comparator import compare
     from ..core.retry import second_look
@@ -358,9 +372,31 @@ def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
         wider = noise.merge_masks(ignore, moved, sticky=True) \
             if ignore is not None else moved
         return compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
-                       ignore_mask=wider, ai_hooks=hooks)
+                       ignore_mask=wider, ai_hooks=hooks, renderer=renderer)
 
     return second_look(first, actual_rgb, recapture, recompare).result
+
+
+def _canary_row(captured: dict | None, run) -> None:
+    """The cost of the canary, in the capture row of the check that drew it."""
+    if captured is not None and run.drawn_ms is not None:
+        captured["canary_ms"] = run.drawn_ms
+
+
+def _passport_with_renderer(store, key: SnapshotKey, run) -> SnapshotMeta | None:
+    """The passport to write with a new picture: the canary of its renderer.
+
+    `None` — the store writes the passport as it always did — when there is
+    no canary to keep, or the passport already names this one: an accept
+    that changes nothing must not touch the file.
+    """
+    rec = _fingerprint.keep(store, run)
+    if rec is None:
+        return None
+    current = store.meta(key)
+    if current is not None and current.renderer == rec:
+        return None
+    return (current or SnapshotMeta()).with_(renderer=rec)
 
 
 def _with(said: list[str], reason: str) -> str:
@@ -476,7 +512,8 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
 
 def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
             images: dict, duration_ms: int, result=None,
-            limits: dict | None = None, capture: dict | None = None) -> None:
+            limits: dict | None = None, capture: dict | None = None,
+            renderer=None) -> None:
     """One row for the report, written as this process's own file."""
     from ..report.library import write_part
 
@@ -494,6 +531,8 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
     }
     if capture:
         entry["capture"] = capture
+    if renderer is not None:
+        entry["renderer"] = {**renderer.as_dict(), "line": renderer.line()}
     if result is not None:
         entry["metrics"] = {
             "max_severity": round(float(result.max_severity), 2),

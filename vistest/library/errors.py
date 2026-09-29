@@ -115,7 +115,7 @@ class ScreenshotMismatch(VisualCheckError):
     def build(cls, *, name: str, platform: str, result, reason: str,
               baseline: Path, actual: Path, diff: Path | None,
               report: Path | None, limits: dict,
-              update_flag: str = "--vistest-update"):
+              update_flag: str = "--vistest-update", renderer: str = ""):
         head = f"vistest: {name!r} differs from the baseline"
         if platform:
             head += f" ({platform})"
@@ -128,6 +128,9 @@ class ScreenshotMismatch(VisualCheckError):
             f" {len(result.regions)} region"
             f"{'' if len(result.regions) == 1 else 's'}",
             f"  reason: {reason}",
+            #  Whether the browser draws text the way it did for the baseline:
+            #  read before the diff, it changes what the diff means.
+            *([f"  {renderer}"] if renderer else []),
             f"  baseline: {baseline}",
             f"  actual:   {actual}",
         ]

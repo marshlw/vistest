@@ -129,6 +129,24 @@
   are no longer looked at by the rule. `scripts/diagnose_browser.py --v2`
   prints, per family, the pairs by renderer answer and the properties the
   regions failed; `--as-if-changed` runs the rule on every pair.
+- **Step 2b, the library: every check knows whether the renderer changed.**
+  `expect_screenshot` draws the canary once per browser context — in a tab
+  of its own in the same context, through the same capture — and keeps it
+  for the life of the context (`vistest/library/fingerprint.py`). An
+  accepted baseline's passport names it (`renderer`: sha256 and canary
+  version; written only when set, so older passports read as before), and
+  the PNG is stored once per sha in `<baseline root>/.renderers/`, to be
+  committed with the baselines; `FileStore.list` skips directories that
+  start with a dot. On a comparison both canaries go to
+  `compare(renderer=...)`; the report row and `ScreenshotMismatch` carry one
+  line — «renderer: same as the baseline's», «renderer: different from the
+  baseline's (canary: N px)», «renderer: unknown — <why>» (a picture handed
+  in as bytes, a baseline accepted before the canary, a canary file nobody
+  committed). An accept that changes nothing still touches nothing. Cost,
+  measured on the table template at 1280×800, nine fresh contexts: the first
+  check in a context 149–163 ms before, 410–414 ms after (median); every
+  later check unchanged (131–134 ms). The report row says `canary drawn in
+  N ms` on the check that paid for it. New: `tests/test_library_renderer.py`.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 

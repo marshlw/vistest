@@ -27,6 +27,7 @@ part: `SnapshotKey` below is the mapping between them, and the archive that
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
@@ -157,7 +158,7 @@ class SnapshotKey:
 #  hand there.
 _META_KEYS = (
     "version", "width", "height", "sha256", "updated_at", "tool_version",
-    "thresholds", "ignore_boxes",
+    "thresholds", "ignore_boxes", "renderer",
 )
 
 
@@ -185,6 +186,11 @@ class SnapshotMeta:
     tool_version: str = ""
     thresholds: dict[str, float] = field(default_factory=dict)
     ignore_boxes: tuple[dict, ...] = ()
+    #  The canary of the renderer that drew the picture (library/fingerprint.py):
+    #  {"sha256": ..., "canary_version": ...}. Empty when nobody drew one — a
+    #  baseline from before the canary, or one not taken from a page. Written
+    #  only when set, so a passport without it reads as it always did.
+    renderer: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -196,6 +202,7 @@ class SnapshotMeta:
             "tool_version": self.tool_version,
             "thresholds": dict(self.thresholds),
             "ignore_boxes": [dict(b) for b in self.ignore_boxes],
+            **({"renderer": dict(self.renderer)} if self.renderer else {}),
         }
 
     def to_json(self) -> str:
@@ -263,6 +270,17 @@ class SnapshotMeta:
                 raise ConfigError(
                     f"{where}ignore_boxes: {box!r} is not an object")
 
+        renderer = raw.get("renderer") or {}
+        if not isinstance(renderer, dict) or (renderer and (
+                set(renderer) != {"sha256", "canary_version"}
+                or not isinstance(renderer["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", renderer["sha256"])
+                or isinstance(renderer["canary_version"], bool)
+                or not isinstance(renderer["canary_version"], int))):
+            raise ConfigError(
+                f"{where}renderer must be {{\"sha256\": <64 hex digits>, "
+                f"\"canary_version\": <a whole number>}}, got {renderer!r}")
+
         return cls(
             version=int(number("version", int) or 1),
             width=int(number("width", int)),
@@ -272,6 +290,7 @@ class SnapshotMeta:
             tool_version=text("tool_version"),
             thresholds=thresholds,
             ignore_boxes=tuple(dict(b) for b in boxes),
+            renderer=dict(renderer),
         )
 
     @classmethod
