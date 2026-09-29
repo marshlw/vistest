@@ -71,6 +71,32 @@
   `VisTest rows computed with: OpenCV …, numpy …, Python …` under its title
   (and in the markdown), in the output rather than on stderr: a before and an
   after from two OpenCV builds are not a comparison.
+- **Step 2b, the corpus: every frame names the renderer that drew it.**
+  `vistest/library/canary.py` is a fixed page — a subset of DejaVu Sans
+  shipped in the package (`vistest/library/fonts/`) at 13, 21 bold and 15
+  italic px, one line light on dark, and the machine's serif, sans-serif and
+  monospace — drawn in a tab of its own through the library's capture. The
+  corpus keeps one per rendering configuration in
+  `tests/browser_corpus/renderers/` (sha256 in the manifest, `renderers`),
+  and every frame names its own: `templates.<t>.renderer`,
+  `cases[].renderer.expected/actual`. Measured: hinting_none 6495 px from the
+  baseline's, no_lcd_no_subpixel 10 661, full_chromium 6173; hinting_full and
+  gpu_raster — the control — 0; geometric_precision and the two page shifts
+  are the page's stylesheet, which the canary tab never sees: 0.
+  `--capture-noise-only` draws the canary too, and `--import-noise` of the
+  same pixels again takes it without `--replace`; until then os_windows is
+  «unknown». New family **«real changes drawn by another renderer»**
+  (`<mutation>@hinting_none`, `@full_chromium`, all six templates, the same
+  split): 120 SIGNAL pairs. The whole family as asked — 16 SIGNAL and 9
+  DISPUTED magnitudes — is 33 027 156 bytes of PNG against 14 741 739 bytes
+  left in the 40 MiB budget; left out, and named in the manifest
+  (`cross_render.left_out`): the DISPUTED geometry, the ΔE00 15 steps, the
+  strong border, the link colour. Existing frames and labels are byte for
+  byte as they were (`--regenerate` redrew all 342 to the same bytes);
+  `docs/benchmark_browser_native.json` re-run on 462 pairs, its 342 old
+  results unchanged. `scripts/bench_playwright_grid.mjs` now yields to the
+  event loop every ten pairs: pngjs keeps each diff frame until it does, and
+  462 pairs no longer fitted in 8 GB.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 

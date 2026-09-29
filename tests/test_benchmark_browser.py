@@ -48,7 +48,32 @@ def test_every_pair_is_on_exactly_one_row(manifest):
         assert {by_name[n]["label"] for n in r.names} == {r.label}
     keys = {r.key for r in table}
     assert {"opacity 0.98", "fill de2", "render:shift_0.5px"} <= keys
-    assert len([r for r in table if r.label == bc.SIGNAL]) == len(bc.FAMILIES)
+    cross = {c["family"] for c in manifest["cases"]
+             if c["kind"] == "cross_render" and c["label"] == bc.SIGNAL}
+    assert len([r for r in table if r.label == bc.SIGNAL]) == len(bc.FAMILIES) + len(cross)
+
+
+def test_the_renderer_groups_follow_how_the_browser_was_started(manifest):
+    groups = {}
+    for c in manifest["cases"]:
+        key = c["family"] if c["kind"] != "mutation" else "mutation"
+        groups.setdefault(key, set()).add(bb.renderer_group(c, manifest))
+    assert all(len(g) == 1 for g in groups.values())
+    same = {k for k, g in groups.items() if g == {bb.SAME_RENDERER}}
+    assert same == {"mutation", "render:geometric_precision", "render:shift_0.25px",
+                    "render:shift_0.5px"}
+    other = {k for k, g in groups.items() if g == {bb.OTHER_RENDERER}}
+    assert {"render:hinting_none", "render:no_lcd_no_subpixel", "render:full_chromium",
+            "os_windows"} <= other
+    assert all(k in other for k in groups if "@" in k)
+
+
+def test_the_report_has_a_row_per_renderer_group(manifest):
+    red = _tool(manifest, "red", lambda c: True)
+    text = bb.report(manifest, [red], timing=False, notes=[], engine_env="x")
+    assert f"By renderer: {bb.GROUP_RULE}" in text
+    for g in (bb.SAME_RENDERER, bb.OTHER_RENDERER):
+        assert any(line.startswith(f"{g}: ") for line in text.splitlines()), g
 
 
 def test_the_score_counts_errors_on_the_right_side(manifest):

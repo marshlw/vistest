@@ -98,7 +98,12 @@ const SELF_CHECK_PAIRS = 12;
 const selfCheckEvery = Math.ceil(manifest.cases.length / SELF_CHECK_PAIRS);
 let selfChecked = 0;
 const results = {};
-manifest.cases.forEach((c, i) => {
+for (const [i, c] of manifest.cases.entries()) {
+  // The comparator makes a pngjs PNG for its diff, and a PNG holds its
+  // whole frame until the event loop runs once. A loop that never yields
+  // keeps every one of them — about 13 MB a pair; 462 pairs no longer fit
+  // in 8 GB. So it yields, every ten pairs.
+  if (i % 10 === 0) await new Promise((done) => setImmediate(done));
   const actual = readFileSync(join(root, c.actual));
   lines.push(`${c.actual} ${sha(actual)}\n`);
   const expected = bases[c.template];
@@ -128,7 +133,7 @@ manifest.cases.forEach((c, i) => {
   }
   results[c.name] = entry;
   if ((i + 1) % 50 === 0) process.stderr.write(`${i + 1}/${manifest.cases.length}\n`);
-});
+}
 
 process.stdout.write(JSON.stringify({
   source: 'native',
