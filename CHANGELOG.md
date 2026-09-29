@@ -155,6 +155,19 @@
   check in a context 149–163 ms before, 410–414 ms after (median); every
   later check unchanged (131–134 ms). The report row says `canary drawn in
   N ms` on the check that paid for it. New: `tests/test_library_renderer.py`.
+- **After step 2b: geometric_precision is DISPUTED — relabelled, not a change of
+  the engine.** The maintainer's decision: `text-rendering: geometricPrecision`
+  is the page's stylesheet (the canary proved it: drawn without the page's CSS
+  it is the baseline's to the pixel), and in real life it changes only when
+  somebody edits the styles — a change of the page's typography within a
+  pixel, printed and not counted, like ΔE00 ≈ 2. The reason sits next to the
+  configuration (`WHY_GEOMETRIC`, `noise_configs.geometric_precision.why`).
+  **The figures of every tool moved with this label, not with any engine**:
+  NOISE 48 → 42 and DISPUTED 18 → 24; v1 balanced 23/32 → 19/28 false on
+  calibration, 11/16 → 9/14 held out; v2 28/32 → 24/28 and 15/16 → 13/14;
+  Playwright 0.05/0 28/32 → 24/28 and 14/16 → 12/14. In the «same renderer»
+  group, held out: v2 7/8 → 5/6 false, Playwright 0.05/0 6/8 → 4/6. No other
+  label changed; `--regenerate` redrew every frame to the same bytes.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 

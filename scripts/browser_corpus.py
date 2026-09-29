@@ -46,7 +46,9 @@ Three kinds of pair
   rasterisation), plus the one mutation nobody can see (opacity 0.98). A
   configuration that draws the same pixels as the baseline is not noise and
   gets no pair; it is recorded as such, because that is a result too.
-* **DISPUTED** — ΔE00 ≈ 2. In the corpus, printed, never counted.
+* **DISPUTED** — ΔE00 ≈ 2, and `text-rendering: geometricPrecision`, which
+  is the page's stylesheet and not the renderer (`WHY_GEOMETRIC`). In the
+  corpus, printed, never counted.
 
 And a fourth, both at once: **real changes drawn by another renderer**
 (`CROSS_SIGNAL`, family `<mutation>@<config>`) — a SIGNAL mutation drawn
@@ -1003,7 +1005,20 @@ class NoiseConfig:
     key: str
     what: str
     launch: Launch
+    #  NOISE unless somebody decided otherwise; then `why` says who and why.
+    label: str = NOISE
+    why: str = ""
 
+
+#: The one rendering configuration that is not NOISE, and why.
+WHY_GEOMETRIC = (
+    "decided by the maintainer on 2026-09-29: `text-rendering: "
+    "geometricPrecision` is the page's stylesheet, not the renderer — the "
+    "canary proved it (drawn without the page's CSS, it is the baseline's to "
+    "the pixel), and in real life text-rendering changes only when somebody "
+    "edits the styles. A change of the page's typography that stays within a "
+    "pixel: DISPUTED, printed, never counted. It was NOISE until step 2b of "
+    "E1; figures of its group moved with the label, not with the engine")
 
 NOISE_CONFIGS: tuple[NoiseConfig, ...] = (
     NoiseConfig("hinting_none", "--font-render-hinting=none",
@@ -1016,7 +1031,8 @@ NOISE_CONFIGS: tuple[NoiseConfig, ...] = (
                              "--disable-font-subpixel-positioning"))),
     NoiseConfig("geometric_precision", "text-rendering: geometricPrecision",
                 Launch(css="*, *::before, *::after "
-                           "{ text-rendering: geometricPrecision !important; }")),
+                           "{ text-rendering: geometricPrecision !important; }"),
+                label=DISPUTED, why=WHY_GEOMETRIC),
     NoiseConfig("shift_0.25px", "the whole page moved by transform: translate(0.25px, 0.25px)",
                 Launch(css="body { transform: translate(0.25px, 0.25px); }")),
     NoiseConfig("shift_0.5px", "the whole page moved by transform: translate(0.5px, 0.5px)",
@@ -1290,7 +1306,7 @@ def capture_all(out: Path, *, log=print) -> dict:
                     doc["cases"].append({
                         "name": case_name(t.key, "render", cfg.key),
                         "template": t.key, "family": f"render:{cfg.key}",
-                        "magnitude": cfg.key, "label": NOISE, "kind": "render",
+                        "magnitude": cfg.key, "label": cfg.label, "kind": "render",
                         "actual": rel, "changed": changed,
                     })
             finally:
@@ -1402,7 +1418,7 @@ def _split_of(template: str) -> str:
 def _case_why(case: dict) -> str:
     if case["kind"] == "render":
         cfg = next(c for c in NOISE_CONFIGS if c.key == case["magnitude"])
-        return f"{WHY_NOISE} ({cfg.what})"
+        return cfg.why or f"{WHY_NOISE} ({cfg.what})"
     if case["kind"] == "cross_render":
         return cross_why(case["label"], case["detail"]["mutation"],
                          case["detail"]["config"])
@@ -1484,6 +1500,7 @@ def build_manifest(doc: dict, root: Path) -> dict:
             "pixels_vs_baseline": rec["pixels"],
             "in_corpus": not zero,
             "control_pixels": rec["control_pixels"],
+            **({"label": cfg.label, "why": cfg.why} if cfg.label != NOISE else {}),
         }
     return {
         "format": 1,
