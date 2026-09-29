@@ -129,6 +129,14 @@
   are no longer looked at by the rule. `scripts/diagnose_browser.py --v2`
   prints, per family, the pairs by renderer answer and the properties the
   regions failed; `--as-if-changed` runs the rule on every pair.
+- **Step 2b: os_windows has its canary.** Drawn by the maintainer on the
+  machine the os_windows frames came from, with the Playwright they were
+  drawn with (1.56.0, chromium_headless_shell-1194, in a venv of its own:
+  the machine had moved on to 1.58.0 / 1208, which draws form, landing and
+  dark otherwise). The six frames came out as the ones in the corpus, byte
+  for byte as delivered, so `--import-noise` took the canary without
+  `--replace`: 10 426 px from the baseline's. The os_windows pairs are no
+  longer «unknown» but «changed», and the rule runs on them.
 - **Step 2b, the library: every check knows whether the renderer changed.**
   `expect_screenshot` draws the canary once per browser context — in a tab
   of its own in the same context, through the same capture — and keeps it
