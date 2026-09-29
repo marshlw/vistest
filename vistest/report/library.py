@@ -307,6 +307,10 @@ def _row(entry: dict, budget: list[int]) -> str:
     if entry.get("duration_ms"):
         facts.append(f"{int(entry['duration_ms'])} ms")
     facts.extend(_capture_facts(entry.get("capture")))
+    canary_ms = (entry.get("capture") or {}).get("canary_ms")
+    if canary_ms is not None:
+        #  The first check in a browser context pays for the canary once.
+        facts.append(f"canary drawn in {int(canary_ms)} ms")
 
     suppressed = int(entry.get("suppressed_count") or 0)
     if suppressed:
@@ -324,6 +328,8 @@ def _row(entry: dict, budget: list[int]) -> str:
         f'<span class="facts">{_e(" · ".join(facts))}</span></summary>'
         f'<div class="detail">'
         f'<p class="reason">{_e(entry.get("reason", ""))}</p>'
+        + (f'<p class="renderer">{_e(entry["renderer"].get("line", ""))}</p>'
+           if isinstance(entry.get("renderer"), dict) else "")
         + (f'<p class="nodeid">{_e(entry["nodeid"])}</p>'
            if entry.get("nodeid") else "")
         + body + '</div></details>')

@@ -135,10 +135,13 @@ class FileStore:
             return []
         out: list[SnapshotKey] = []
         for path in self.root.rglob("*.png"):
-            if path.name.startswith("."):
-                #  A half-written file from `atomic.write_bytes`. It exists for
+            parts = path.relative_to(self.root).parts
+            if any(part.startswith(".") for part in parts):
+                #  A half-written file from `atomic.write_bytes`: it exists for
                 #  microseconds, but a listing that catches one would report a
-                #  baseline that is about to have a different name.
+                #  baseline that is about to have a different name. Or a file
+                #  in a directory of machinery — `.renderers/`, the canaries
+                #  the baselines were drawn with — which is not a baseline.
                 continue
             rel = path.relative_to(self.root).as_posix()
             key = SnapshotKey.parse(rel)

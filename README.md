@@ -196,6 +196,7 @@ check compares against it, and when it goes red it says where everything is:
 vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
   severity 61.2 (limit 25.0), changed area 3.40% (limit 0.15%)
   reason: text in 2 regions; largest 96x24 at (320, 180), .header .price
+  renderer: same as the baseline's
   baseline: tests/__vistest__/linux-chromium-1x-1440x900/home.png
   actual:   .vistest/actual/linux-chromium-1x-1440x900/home.png
   diff:     .vistest/diff/linux-chromium-1x-1440x900/home.png
@@ -228,14 +229,22 @@ the argument above). A page that does not settle in time is compared on its
 last frame, and the reason and the report say that it did not settle. The
 number of frames and the time to stability are in every report row.
 
+Once per browser context, the first check also draws the renderer's canary —
+a small fixed page of text, in a tab of its own, taken the same way — and
+every check says whether this browser draws text as the one the baseline was
+taken with did: `renderer: same as the baseline's`, `different from the
+baseline's (canary: N px)`, or `unknown` with the reason. It costs the first
+check in a context about a quarter of a second.
+
 ### Where the files go
 
 ```
 tests/__vistest__/                 <- committed, reviewed in pull requests
   linux-chromium-1x-1440x900/
     home.png                       the baseline
-    home.json                      its passport: version, size, thresholds (optional)
+    home.json                      its passport: version, size, thresholds, renderer (optional)
     shop/checkout.png
+  .renderers/<sha256>.png          the canaries the baselines were taken with, once each
 
 .vistest/                          <- ignored
   actual/…  diff/…  report/index.html
