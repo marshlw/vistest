@@ -6,24 +6,35 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""The renderer's fingerprint in the library: once per browser context, kept by sha.
+"""The renderer's fingerprint in the library: drawn only where it decides something.
 
-`expect_screenshot` draws the canary (`canary.py`) once for every browser
-context it sees — in a tab of its own, through the same capture as the
-screenshot — and keeps it for as long as the context lives. A baseline's
-passport names the canary of the renderer that drew it (`renderer`: the
-PNG's sha256 and the canary's version), and the PNG itself is stored once
-per sha in `<baseline root>/.renderers/<sha>.png`, next to the baselines, to
-be committed and reviewed with them.
+The canary (`canary.py`) costs a tab, a page and two frames — about a
+quarter of a second — and pytest-playwright opens a context per test. So it
+is drawn only when it can change an outcome (`compare_lazily`):
 
-On a comparison both canaries go to the engine —
-`compare(..., renderer=(the baseline's, this run's))` — and the verdict on
-them is one line of the report and of the failure message: the same
-renderer, a different one (by so many pixels), or unknown. Anything missing
-makes its side `None` and the answer «unknown», with the reason: a picture
-handed in as bytes has no browser behind it; a store that is not a directory
-has nowhere to keep a canary; a baseline accepted before the canary existed
-names none; a canary file that was never committed cannot be read.
+1. **writing a baseline** — created or updated — so that its passport can
+   name the renderer that drew it (`renderer`: the PNG's sha256 and the
+   canary's version); the PNG is stored once per sha in
+   `<baseline root>/.renderers/<sha>.png`, next to the baselines;
+2. **a comparison that failed without it, against a baseline whose passport
+   names a canary** — then this run's canary is drawn and the pair is
+   compared again with `compare(..., renderer=(the baseline's, this run's))`.
+
+Nothing else can move a verdict: the renderer only switches on a rule that
+takes regions out, so a check that passes without the canary passes with
+it. A passing check says «renderer: not checked (the check passed)».
+
+A canary, once drawn, is kept for the browser it was drawn in and the
+device scale factor it was drawn at — not per context: every context of one
+browser at one scale draws the same pixels, and a context per test would
+otherwise pay for it every time. It is drawn in a tab of the context the
+screenshot came from, through the same capture as the screenshot.
+
+Anything missing makes its side `None` and the answer «unknown», with the
+reason: a picture handed in as bytes has no browser behind it; a store that
+is not a directory has nowhere to keep a canary; a baseline accepted before
+the canary existed names none; a canary file that was never committed
+cannot be read.
 """
 
 from __future__ import annotations
@@ -39,7 +50,8 @@ from ..storage import atomic
 from . import canary as _canary
 from . import targets as _targets
 
-__all__ = ["RENDERERS_DIR", "RunCanary", "keep", "of_baseline", "of_target", "status"]
+__all__ = ["NOT_DRAWN", "RENDERERS_DIR", "RunCanary", "compare_lazily", "keep",
+           "not_checked", "of_baseline", "of_target", "status"]
 
 #: Under the baseline root: one PNG per canary, named by its sha256.
 RENDERERS_DIR = ".renderers"
@@ -57,16 +69,30 @@ class RunCanary:
     drawn_ms: int | None = None
 
 
-#: One canary per browser context, for the life of the context.
-_BY_CONTEXT: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+#: The canary nobody has drawn yet — nothing so far needed it.
+NOT_DRAWN = RunCanary(why="not drawn")
+
+#: One canary per browser and device scale factor, for the life of the
+#: browser. A context without a browser (a persistent context) is its own key.
+_BY_BROWSER: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _cache_key(page, context):
+    """(the object the canary is kept on, the device scale factor)."""
+    try:
+        browser = context.browser
+    except Exception:
+        browser = None
+    return (browser if browser is not None else context), _targets._device_ratio(page)
+
+
 def of_target(target, *, stable_timeout_ms: int) -> RunCanary:
-    """The canary of the browser context `target` lives in; drawn at most once."""
+    """The canary of the browser `target` was drawn by; drawn at most once
+    per browser and device scale factor."""
     if not callable(getattr(target, "screenshot", None)):
         return RunCanary(why="the screenshot was handed in, not taken from a page")
     page = _targets._page_of(target)
@@ -74,9 +100,10 @@ def of_target(target, *, stable_timeout_ms: int) -> RunCanary:
     if context is None or not callable(getattr(context, "new_page", None)):
         return RunCanary(why="the page belongs to no browser context that can "
                              "open a tab")
+    owner, scale = _cache_key(page, context)
     try:
-        cached = _BY_CONTEXT.get(context)
-    except TypeError:                   # a context that cannot be weakly held
+        cached = _BY_BROWSER.get(owner, {}).get(scale)
+    except TypeError:                   # an owner that cannot be weakly held
         cached = None
     if cached is not None:
         return replace(cached, drawn_ms=None)
@@ -88,10 +115,44 @@ def of_target(target, *, stable_timeout_ms: int) -> RunCanary:
         run = RunCanary(why=f"the canary could not be drawn ({type(e).__name__}: {e})")
     run = replace(run, drawn_ms=int((time.perf_counter() - started) * 1000))
     try:
-        _BY_CONTEXT[context] = run
+        _BY_BROWSER.setdefault(owner, {})[scale] = run
     except TypeError:
         pass
     return run
+
+
+def compare_lazily(compare_with, baseline_canary, this_run):
+    """Compare without the renderer; with it only when that can change the verdict.
+
+    `compare_with(renderer)` compares the pair; `baseline_canary()` reads
+    the canary the baseline's passport names (or `None`); `this_run()` draws
+    this run's (a `RunCanary`). Returns `(result, renderer)` — the renderer
+    pair the result was computed with, `None` when it was computed without.
+
+    A pass is final: the renderer only switches on a rule that takes regions
+    out, so what passes without it passes with it. A failure is looked at
+    again only when the baseline names a canary and this run can draw one,
+    and compared again only when the two differ: with the same renderer the
+    rule stays off, and the second comparison would be the first.
+    """
+    result = compare_with(None)
+    if not result.failed:
+        return result, None
+    base = baseline_canary()
+    if base is None:
+        return result, None
+    run = this_run()
+    if run.png is None:
+        return result, None
+    renderer = (base, run.png)
+    if not _renderer.check(renderer).changed:
+        return result, renderer
+    return compare_with(renderer), renderer
+
+
+def not_checked() -> _renderer.RendererCheck:
+    """The line of a check that passed without the canary."""
+    return _renderer.RendererCheck(_renderer.NOT_CHECKED, why="the check passed")
 
 
 def _dir(store) -> Path | None:
@@ -142,5 +203,6 @@ def status(baseline: bytes | None, baseline_why: str,
     if check.status != _renderer.UNKNOWN:
         return check
     why = "; ".join(w for w in (baseline_why if baseline is None else "",
-                                run.why if run.png is None else "") if w)
+                                run.why if run.png is None and run is not NOT_DRAWN
+                                else "") if w)
     return _renderer.RendererCheck(_renderer.UNKNOWN, why=why or check.why)

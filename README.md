@@ -229,12 +229,13 @@ the argument above). A page that does not settle in time is compared on its
 last frame, and the reason and the report say that it did not settle. The
 number of frames and the time to stability are in every report row.
 
-Once per browser context, the first check also draws the renderer's canary —
-a small fixed page of text, in a tab of its own, taken the same way — and
-every check says whether this browser draws text as the one the baseline was
-taken with did: `renderer: same as the baseline's`, `different from the
-baseline's (canary: N px)`, or `unknown` with the reason. It costs the first
-check in a context about a quarter of a second.
+When a baseline is written, and when a check fails against a baseline that
+has one, VisTest draws the renderer's canary — a small fixed page of text, in
+a tab of its own, taken the same way, once per browser and scale — and the
+check says whether this browser draws text as the one the baseline was taken
+with did: `renderer: same as the baseline's`, `different from the baseline's
+(canary: N px)`, or `unknown` with the reason. A check that passes draws
+nothing and says `renderer: not checked (the check passed)`.
 
 ### Where the files go
 

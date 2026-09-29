@@ -71,3 +71,9 @@ def test_v1_ignores_the_renderer():
         r = compare(a, b, renderer=renderer)
         assert r.verdict == plain.verdict and r.notes == plain.notes
         assert "renderer" not in r.maps
+
+
+def test_a_canary_nobody_drew_says_so():
+    c = rd.RendererCheck(rd.NOT_CHECKED, why="the check passed")
+    assert c.line() == "renderer: not checked (the check passed)"
+    assert not c.same and not c.changed

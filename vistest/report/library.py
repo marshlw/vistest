@@ -309,7 +309,7 @@ def _row(entry: dict, budget: list[int]) -> str:
     facts.extend(_capture_facts(entry.get("capture")))
     canary_ms = (entry.get("capture") or {}).get("canary_ms")
     if canary_ms is not None:
-        #  The first check in a browser context pays for the canary once.
+        #  The check that needed the canary and was the first to draw it.
         facts.append(f"canary drawn in {int(canary_ms)} ms")
 
     suppressed = int(entry.get("suppressed_count") or 0)

@@ -168,6 +168,22 @@
   Playwright 0.05/0 28/32 → 24/28 and 14/16 → 12/14. In the «same renderer»
   group, held out: v2 7/8 → 5/6 false, Playwright 0.05/0 6/8 → 4/6. No other
   label changed; `--regenerate` redrew every frame to the same bytes.
+- **The library draws the canary only where it decides something.** Drawn
+  for every context, it cost the first check of each about a quarter of a
+  second, and pytest-playwright opens a context per test. Now it is drawn
+  (1) when a baseline is written — created or updated — to keep its sha, and
+  (2) when a check failed without it against a baseline whose passport names
+  a canary; then the two are compared, and only if they differ is the pair
+  compared again with `renderer=`. The renderer only lets a rule take regions
+  out, so the lazy path gives the verdicts of the eager one — a test runs both
+  on pairs of the browser corpus with engine v2 (and every one of the 462
+  pairs was run once for the E1 report). A canary is kept per browser and
+  device scale factor, not per context. A passing check says «renderer: not
+  checked (the check passed)». Measured like before (table template,
+  1280×800, nine fresh contexts, two runs): the first passing check in a
+  context 382–404 ms → 145–160 ms (149–163 ms before the canary existed); a
+  failing check, first in a fresh browser 616 → 635 ms, then in another
+  context of that browser 579 → 355 ms.
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 
