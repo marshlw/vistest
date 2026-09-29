@@ -48,6 +48,27 @@ Three kinds of pair
   gets no pair; it is recorded as such, because that is a result too.
 * **DISPUTED** — ΔE00 ≈ 2. In the corpus, printed, never counted.
 
+And a fourth, both at once: **real changes drawn by another renderer**
+(`CROSS_SIGNAL`, family `<mutation>@<config>`) — a SIGNAL mutation drawn
+with `--font-render-hinting=none` or by the full Chromium, against the
+corpus baseline. Geometry within two pixels drawn that way is DISPUTED
+(`CROSS_DISPUTED`, reason in the manifest). Part of it is left out for the
+budget; `CROSS_LEFT_OUT` says which part and why.
+
+The renderer's fingerprint
+--------------------------
+
+Every frame names the renderer that drew it, by its canary
+(`vistest.library.canary`): a fixed page of text drawn in a tab of its own,
+the way `expect_screenshot` draws it. One per rendering configuration, in
+`tests/browser_corpus/renderers/`, with its sha256 in the manifest
+(`renderers`); a baseline says `renderer`, a pair says `renderer.expected`
+and `renderer.actual`. A configuration that is the page's stylesheet
+(`text-rendering`, a fractional `transform`) is drawn by the baseline's
+renderer — the canary tab never sees the page's CSS — and `hinting_full`
+and `gpu_raster`, which draw the templates to the baseline's pixels, are
+the control: their canary must come out as the baseline's.
+
 The four judgement calls (ΔE00 ≈ 2, a 1px shift, opacity 0.98 and letter
 spacing +0.2px) were put to the maintainer before the corpus was frozen; the
 answer and its reason sit next to the magnitude (`DECIDED`).
@@ -96,15 +117,18 @@ What users run into is another machine: a developer on Windows, CI on Linux.
 That noise cannot be drawn here, so it is captured there and brought in:
 
     python scripts/browser_corpus.py --capture-noise-only --tag win11
-        # on the other machine: the six baselines only, no mutations, the
-        # same capture path, into bench_out/os_noise/win11/ (not the corpus),
-        # with environment.json: OS and its version, Playwright, the Chromium
-        # build, the fonts over CDP, the screen's DPI and font smoothing, the
-        # sha256 of each PNG and how it differs from the corpus environment
+        # on the other machine: the six baselines and the renderer's canary,
+        # no mutations, the same capture path, into bench_out/os_noise/win11/
+        # (not the corpus), with environment.json: OS and its version,
+        # Playwright, the Chromium build, the fonts over CDP, the screen's DPI
+        # and font smoothing, the sha256 of each PNG and how it differs from
+        # the corpus environment
     python scripts/browser_corpus.py --import-noise bench_out/os_noise/win11
         # here: the frames become the NOISE family os_<os> (os_windows), one
         # pair per template against the corpus baseline, split by template
-        # like everything else
+        # like everything else; the canary becomes renderers/os_<os>.png.
+        # A second capture of the same pixels, to bring a canary the first
+        # one did not have, is taken without --replace
 
 An imported frame is redrawn only where its own environment is found again
 (same Playwright, Chromium build, OS and its version, architecture and font
@@ -304,6 +328,19 @@ class Session:
             return page.evaluate(js)
         finally:
             page.close()
+
+    def canary(self) -> bytes:
+        """The renderer's fingerprint, drawn in a tab of this context.
+
+        Through the library's own `vistest.library.canary.draw`, which is
+        what `expect_screenshot` draws it with.
+        """
+        from vistest.library.canary import CanaryError, draw
+
+        try:
+            return draw(self.context, stable_timeout_ms=STABLE_TIMEOUT_MS)
+        except CanaryError as e:
+            raise CorpusError(f"the canary: {e}") from None
 
     @staticmethod
     def _shoot(page) -> bytes:
@@ -996,6 +1033,152 @@ WHY_NOISE = ("the DOM is the template's, untouched; only the way Chromium was "
 
 
 # --------------------------------------------------------------------------- #
+#  The renderer's fingerprint
+# --------------------------------------------------------------------------- #
+#: Where the canary of every rendering configuration is kept.
+RENDERERS_DIR = CORPUS_DIR / "renderers"
+
+#: The renderer of the corpus baselines and of every mutation pair.
+BASE_RENDERER = "base"
+
+#: Configurations whose canary must come out as the baseline's: they draw the
+#: templates to the baseline's pixels, so a canary that told them apart
+#: would be telling apart what is not different.
+RENDERER_CONTROLS = ("hinting_full", "gpu_raster")
+
+WHY_CANARY_CSS = ("the configuration is a stylesheet of the page, not a way of "
+                  "starting the browser: the canary tab never sees the page's "
+                  "CSS, so it is drawn by the baseline's renderer")
+
+
+def renderer_file(key: str) -> str:
+    return f"renderers/{key}.png"
+
+
+def renderer_launch(launch: Launch) -> Launch:
+    """How the browser was started, without the page's stylesheet."""
+    return Launch(args=launch.args, channel=launch.channel)
+
+
+def canary_record() -> dict:
+    """What the fingerprints were drawn from."""
+    from vistest.library import canary
+
+    return {"version": canary.CANARY_VERSION, "page_sha256": canary.page_sha256(),
+            "page": "vistest/library/canary.py",
+            "what": "a fixed page — the shipped font at three sizes, bold, "
+                    "italic, light on dark; the machine's serif, sans-serif "
+                    "and monospace — drawn in a tab of its own through the "
+                    "library's capture"}
+
+
+# --------------------------------------------------------------------------- #
+#  SIGNAL drawn by another renderer
+# --------------------------------------------------------------------------- #
+#: The rendering configurations real changes are drawn under, against the
+#: corpus baseline: a page that changed AND a renderer that changed.
+CROSS_CONFIGS = ("hinting_none", "full_chromium")
+
+#: (family, magnitudes) taken from `FAMILIES`, SIGNAL here as they are there:
+#: a colour, a picture, a character, a word, an outline, an element — changes
+#: that no renderer makes on its own.
+CROSS_SIGNAL: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("text_color", ("de8", "de15")), ("link_color", ("de8", "de15")),
+    ("icon_color", ("de8", "de15")), ("fill", ("de8", "de15")),
+    ("element_removed", ("gone",)), ("icon_swap", ("swapped",)),
+    ("one_char", ("one",)), ("word_swap", ("one",)),
+    ("border_added", ("light", "strong")), ("border_removed", ("gone",)),
+    ("underline", ("on",)),
+)
+
+#: Geometry within two pixels, DISPUTED under another renderer.
+CROSS_DISPUTED: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("padding", ("minus2px", "minus1px", "plus1px", "plus2px")),
+    ("offset", ("plus1px", "plus2px")),
+    ("letter_spacing", ("plus1px",)),
+    ("font_size", ("minus1px", "plus1px")),
+)
+
+#: What of the family is not in the frozen corpus, and why. Measured on
+#: 2026-09-29: the whole family is 300 pairs, 33 027 156 bytes of PNG
+#: (≈1.26 MiB per magnitude over six templates and two configurations);
+#: the corpus held 27 201 301 of its 41 943 040, which leaves room for 11
+#: magnitudes and nothing else. Cut, in this order: the DISPUTED geometry
+#: (printed, never counted — 9 magnitudes); the second colour step, ΔE00 15,
+#: keeping the harder 8 (4); the second border, keeping the lighter (1);
+#: the link colour, which is text colour on another element and tests the
+#: same property (1). Left in: 10 magnitudes, 120 pairs. To put the rest
+#: back: raise BUDGET_BYTES to 64 MiB, empty this set, --regenerate.
+CROSS_LEFT_OUT: frozenset[tuple[str, str]] = frozenset(
+    [(k, m) for k, mags in CROSS_DISPUTED for m in mags]
+    + [(k, "de15") for k in ("text_color", "link_color", "icon_color", "fill")]
+    + [("border_added", "strong"), ("link_color", "de8")])
+WHY_CROSS_LEFT_OUT = (
+    "the corpus budget (40 MiB): the whole family is 33.0 MB of PNG, the room "
+    "was 14.7 MB. Left out: the DISPUTED geometry, the ΔE00 15 steps, the "
+    "strong border and the link colour; defined here, drawn by --regenerate "
+    "once the budget allows")
+
+WHY_CROSS_SIGNAL = ("the page changed and the renderer changed too: {what}, drawn "
+                    "with {config}, against the corpus baseline. No renderer "
+                    "makes this change on its own; a tool that stays green "
+                    "missed it")
+WHY_CROSS_DISPUTED = (
+    "decided by the maintainer on 2026-09-29: geometry within two "
+    "pixels, drawn by another renderer. The renderer on its own moves glyphs "
+    "and line boxes by a pixel, so on this pair a layout change of that size "
+    "cannot be told from re-rasterisation by the pixels — printed, never "
+    "counted, like ΔE00 ≈ 2")
+
+
+def cross_family(family: str, config: str) -> str:
+    return f"{family}@{config}"
+
+
+def cross_plan(*, everything: bool = False) -> list[tuple[Family, Magnitude, str, str]]:
+    """(family, magnitude, config, label) of every pair of the family.
+
+    Without `everything`, what `CROSS_LEFT_OUT` names is left out.
+    """
+    fams = {f.key: f for f in FAMILIES}
+    out = []
+    for config in CROSS_CONFIGS:
+        for group, label in ((CROSS_SIGNAL, SIGNAL), (CROSS_DISPUTED, DISPUTED)):
+            for key, mags in group:
+                fam = fams[key]
+                by = {m.key: m for m in fam.magnitudes}
+                for m in mags:
+                    if everything or (key, m) not in CROSS_LEFT_OUT:
+                        out.append((fam, by[m], config, label))
+    return out
+
+
+def cross_why(label: str, family: str, config: str) -> str:
+    if label == DISPUTED:
+        return WHY_CROSS_DISPUTED
+    fam = next(f for f in FAMILIES if f.key == family)
+    cfg = next(c for c in NOISE_CONFIGS if c.key == config)
+    return WHY_CROSS_SIGNAL.format(what=fam.what, config=cfg.what)
+
+
+def cross_record() -> dict:
+    """The definition, as the manifest keeps it next to the frames."""
+    return {
+        "what": "real changes drawn by another renderer: the mutation of the "
+                "family named before '@', drawn in the configuration named "
+                "after it, against the corpus baseline",
+        "configs": list(CROSS_CONFIGS),
+        SIGNAL: {k: list(m) for k, m in CROSS_SIGNAL},
+        DISPUTED: {k: list(m) for k, m in CROSS_DISPUTED},
+        "why": {SIGNAL: WHY_CROSS_SIGNAL.format(what="<the family's change>",
+                                                config="<the configuration>"),
+                DISPUTED: WHY_CROSS_DISPUTED},
+        "left_out": {"magnitudes": sorted(f"{k}/{m}" for k, m in CROSS_LEFT_OUT),
+                     "why": WHY_CROSS_LEFT_OUT},
+    }
+
+
+# --------------------------------------------------------------------------- #
 #  Capture
 # --------------------------------------------------------------------------- #
 def case_name(template: str, family: str, magnitude: str) -> str:
@@ -1118,7 +1301,95 @@ def capture_all(out: Path, *, log=print) -> dict:
             zero = [k for k, v in record["pixels"].items() if not v]
             log(f"noise {cfg.key}: {len(TEMPLATES) - len(zero)} templates differ"
                 + (f", 0 px on {', '.join(zero)}" if zero else ""))
+
+        # ---- the renderer of every configuration ------------------------- #
+        doc["renderers"] = capture_renderers(pw, write, log=log)
+
+        # ---- real changes drawn by another renderer ----------------------- #
+        doc["cases"] += capture_cross(pw, bases, write, log=log)
     return doc
+
+
+def capture_renderers(pw, write, *, log=print) -> dict:
+    """The canary of the baseline and of every rendering configuration.
+
+    Drawn the way every frame is: in two browsers started the same way,
+    which must agree to the pixel. A configuration that is a stylesheet of
+    the page is drawn by the baseline's launch — the canary tab never sees
+    the page's CSS. Returns `{key: record}`; the PNGs go through `write`.
+    """
+    launches = [(BASE_RENDERER, BASELINE, "")] + [
+        (c.key, renderer_launch(c.launch), WHY_CANARY_CSS if c.launch.css else "")
+        for c in NOISE_CONFIGS]
+    drawn: dict[str, bytes] = {}
+    out: dict[str, dict] = {}
+    for key, launch, note in launches:
+        a, b = Session(pw, launch), Session(pw, launch)
+        try:
+            png = a.canary()
+            n = differing_pixels(png, b.canary())
+        finally:
+            a.close()
+            b.close()
+        if n:
+            raise CorpusError(f"canary {key}: a second browser started the same way "
+                              f"drew {n} different pixels — stop")
+        drawn[key] = png
+        write(renderer_file(key), png)
+        out[key] = {"file": renderer_file(key),
+                    "drawn_with": {"args": list(launch.args),
+                                   **({"channel": launch.channel}
+                                      if launch.channel else {})},
+                    "pixels_vs_base": differing_pixels(drawn[BASE_RENDERER], png),
+                    **({"note": note} if note else {}),
+                    **({"control": "must come out as the baseline's"}
+                       if key in RENDERER_CONTROLS else {})}
+        log(f"canary {key}: {out[key]['pixels_vs_base']} px from the baseline's")
+    return out
+
+
+def capture_cross(pw, bases: dict[str, bytes], write, *, log=print,
+                  templates: tuple[Template, ...] = TEMPLATES,
+                  everything: bool = False) -> list[dict]:
+    """The family 'real changes drawn by another renderer', every template.
+
+    The mutation is drawn in the configuration, twice, in two browsers that
+    must agree; the pair is the corpus baseline against it.
+    """
+    cases: list[dict] = []
+    plan = cross_plan(everything=everything)
+    for config in CROSS_CONFIGS:
+        cfg = next(c for c in NOISE_CONFIGS if c.key == config)
+        a, b = Session(pw, cfg.launch), Session(pw, cfg.launch)
+        try:
+            for t in templates:
+                made = 0
+                for fam, mag, cfg_key, label in plan:
+                    if cfg_key != config:
+                        continue
+                    family = cross_family(fam.key, config)
+                    name = case_name(t.key, family, mag.key)
+                    mutation, detail = plan_mutation(a, t.key, fam, mag)
+                    png = a.frame(t.key, mutation)
+                    n = differing_pixels(png, b.frame(t.key, mutation))
+                    if n:
+                        raise CorpusError(f"{name}: a second browser started the "
+                                          f"same way drew {n} different pixels — stop")
+                    changed = _changed_box(bases[t.key], png)
+                    rel = frame_file(t.key, f"{fam.key}--{mag.key}--{config}")
+                    write(rel, png)
+                    made += 1
+                    cases.append({
+                        "name": name, "template": t.key, "family": family,
+                        "magnitude": mag.key, "label": label, "kind": "cross_render",
+                        "actual": rel, "changed": changed,
+                        "detail": {"mutation": fam.key, "config": config, **detail},
+                    })
+                log(f"{t.key}: {made} changes drawn with {config}")
+        finally:
+            a.close()
+            b.close()
+    return cases
 
 
 # --------------------------------------------------------------------------- #
@@ -1132,6 +1403,9 @@ def _case_why(case: dict) -> str:
     if case["kind"] == "render":
         cfg = next(c for c in NOISE_CONFIGS if c.key == case["magnitude"])
         return f"{WHY_NOISE} ({cfg.what})"
+    if case["kind"] == "cross_render":
+        return cross_why(case["label"], case["detail"]["mutation"],
+                         case["detail"]["config"])
     fam = next(f for f in FAMILIES if f.key == case["family"])
     mag = next(m for m in fam.magnitudes if m.key == case["magnitude"])
     return mag.why or fam.why
@@ -1147,14 +1421,44 @@ def families_record() -> dict:
         for f in FAMILIES}
 
 
+def _renderer_of(case: dict, fingerprints: dict) -> str | None:
+    """The key of the canary drawn by the renderer of the pair's second frame."""
+    kind = case["kind"]
+    if kind == "mutation":
+        return BASE_RENDERER
+    if kind == "render":
+        return case["magnitude"]
+    if kind == "cross_render":
+        return case["detail"]["config"]
+    if kind == "os":
+        return case["family"] if case["family"] in fingerprints else None
+    raise CorpusError(f"{case['name']}: no renderer for a pair of kind {kind!r}")
+
+
+def renderers_section(records: dict, root: Path) -> dict:
+    """The `renderers` section: what the canary is and every fingerprint."""
+    return {
+        "canary": canary_record(),
+        "rule": "every frame names the canary its renderer drew: "
+                "templates.<t>.renderer for a baseline, cases[].renderer."
+                "expected and .actual for a pair; null where no canary was "
+                "drawn by that renderer",
+        "fingerprints": {k: {**r, "sha256": sha256((root / r["file"]).read_bytes())}
+                         for k, r in records.items()},
+    }
+
+
 def build_manifest(doc: dict, root: Path) -> dict:
     """`capture_all`'s record plus the sha256 of every file under `root`."""
+    renderers = renderers_section(doc["renderers"], root)
+    fingerprints = renderers["fingerprints"]
     templates = {}
     for t in TEMPLATES:
         rec = doc["templates"][t.key]
         templates[t.key] = {
             "title": rec["title"], "split": t.split, "base": rec["base"],
-            "sha256": sha256((root / rec["base"]).read_bytes()), "fonts": rec["fonts"]}
+            "sha256": sha256((root / rec["base"]).read_bytes()), "fonts": rec["fonts"],
+            "renderer": BASE_RENDERER}
     cases = []
     for c in doc["cases"]:
         cases.append({
@@ -1165,6 +1469,8 @@ def build_manifest(doc: dict, root: Path) -> dict:
             "expected": templates[c["template"]]["base"], "actual": c["actual"],
             "sha256": sha256((root / c["actual"]).read_bytes()),
             "changed": c["changed"], **({"detail": c["detail"]} if "detail" in c else {}),
+            "renderer": {"expected": BASE_RENDERER,
+                         "actual": _renderer_of(c, fingerprints)},
         })
     configs = {}
     for cfg in NOISE_CONFIGS:
@@ -1200,7 +1506,9 @@ def build_manifest(doc: dict, root: Path) -> dict:
         },
         "templates": templates,
         "families": families_record(),
+        "cross_render": cross_record(),
         "noise_configs": configs,
+        "renderers": renderers,
         "no_pixel_change": doc["no_pixel_change"],
         "cases": cases,
     }
@@ -1223,6 +1531,8 @@ def frozen_files(manifest: dict) -> dict[str, str]:
     """Every PNG the manifest vouches for: relative path -> sha256."""
     out = {t["base"]: t["sha256"] for t in manifest["templates"].values()}
     out.update({c["actual"]: c["sha256"] for c in manifest["cases"]})
+    fingerprints = (manifest.get("renderers") or {}).get("fingerprints") or {}
+    out.update({r["file"]: r["sha256"] for r in fingerprints.values()})
     return out
 
 
@@ -1231,7 +1541,7 @@ def verify_files(manifest: dict, root: Path = CORPUS_DIR) -> list[str]:
     problems = []
     want = frozen_files(manifest)
     on_disk = {p.relative_to(root).as_posix()
-               for p in (root / "frames").rglob("*.png")}
+               for d in ("frames", "renderers") for p in (root / d).rglob("*.png")}
     for rel in sorted(set(want) - on_disk):
         problems.append(f"missing: {rel}")
     for rel in sorted(on_disk - set(want)):
@@ -1276,9 +1586,10 @@ def regenerate(log=print) -> dict:
         problems = verify_files(manifest, staging)
         if problems:
             raise CorpusError("the fresh corpus does not check out: " + "; ".join(problems))
-        if FRAMES_DIR.exists():
-            shutil.rmtree(FRAMES_DIR)
-        shutil.copytree(staging / "frames", FRAMES_DIR)
+        for rel in ("frames", "renderers"):
+            if (CORPUS_DIR / rel).exists():
+                shutil.rmtree(CORPUS_DIR / rel)
+            shutil.copytree(staging / rel, CORPUS_DIR / rel)
         write_manifest(manifest)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -1344,6 +1655,9 @@ def drift(manifest: dict, *, full: bool = False, pw=None,
     finally:
         s.close()
     by_name = {c["name"]: c for c in manifest["cases"]}
+    cross = [c for c in manifest["cases"] if c["kind"] == "cross_render"]
+    if not full:
+        cross = sample_cross(cross)
     for cfg in NOISE_CONFIGS:
         s = Session(pw, cfg.launch)
         try:
@@ -1353,9 +1667,40 @@ def drift(manifest: dict, *, full: bool = False, pw=None,
                 n = differing_pixels(want, s.frame(key))
                 if n:
                     drifted.append(f"{key}/render/{cfg.key} ({n} px)")
+            for c in (c for c in cross if c["detail"]["config"] == cfg.key):
+                fam = fams[c["detail"]["mutation"]]
+                mag = next(m for m in fam.magnitudes if m.key == c["magnitude"])
+                mutation, _ = plan_mutation(s, c["template"], fam, mag)
+                n = differing_pixels(frozen(c["actual"]),
+                                     s.frame(c["template"], mutation))
+                if n:
+                    drifted.append(f"{c['name']} ({n} px)")
         finally:
             s.close()
+    fingerprints = (manifest.get("renderers") or {}).get("fingerprints") or {}
+    launches = {BASE_RENDERER: BASELINE,
+                **{c.key: renderer_launch(c.launch) for c in NOISE_CONFIGS}}
+    for key, rec in fingerprints.items():
+        if key not in launches:
+            continue                    # another machine's: drift_os
+        s = Session(pw, launches[key])
+        try:
+            n = differing_pixels(frozen(rec["file"]), s.canary())
+        finally:
+            s.close()
+        if n:
+            drifted.append(f"canary {key} ({n} px)")
     return [], drifted
+
+
+def sample_cross(cases: list[dict]) -> list[dict]:
+    """One pair of the cross-renderer family per template and mutation,
+    rotating over configurations and magnitudes like `sample`."""
+    order = [t.key for t in TEMPLATES]
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for c in cases:
+        groups.setdefault((c["template"], c["detail"]["mutation"]), []).append(c)
+    return [g[order.index(t) % len(g)] for (t, _), g in groups.items()]
 
 
 # --------------------------------------------------------------------------- #
@@ -1363,6 +1708,7 @@ def drift(manifest: dict, *, full: bool = False, pw=None,
 # --------------------------------------------------------------------------- #
 #: What `--capture-noise-only` writes next to the frames.
 OS_ENV_FILE = "environment.json"
+OS_CANARY_FILE = "canary.png"
 OS_NOISE_KIND = "vistest-browser-corpus-os-noise"
 OS_NOISE_FORMAT = 1
 OS_NOISE_OUT = Path("bench_out") / "os_noise"
@@ -1427,14 +1773,15 @@ _PAGE_FACTS = """() => ({device_pixel_ratio: window.devicePixelRatio,
 
 def capture_noise_only(out: Path, tag: str, *, log=print, pw=None,
                        manifest_path: Path = MANIFEST) -> dict:
-    """The six baselines, drawn here, for the corpus of another machine.
+    """The six baselines and the canary, drawn here, for the corpus of another machine.
 
     No mutations and no rendering configurations: only `base` of every
     template, through the same `Session.frame` and the library's capture as
-    the corpus, each drawn in two fresh browsers that must agree to the
-    pixel. Nothing is written until every frame is in hand, and nothing is
-    ever written into the corpus: this is the half that runs on the other
-    machine, `--import-noise` is the half that runs where the corpus lives.
+    the corpus, and the renderer's fingerprint (`Session.canary`), each drawn
+    in two fresh browsers that must agree to the pixel. Nothing is written
+    until every frame is in hand, and nothing is ever written into the
+    corpus: this is the half that runs on the other machine, `--import-noise`
+    is the half that runs where the corpus lives.
     """
     if not _TAG.match(tag or ""):
         raise CorpusError(f"--tag {tag!r}: letters, digits, '.', '_' and '-', "
@@ -1499,6 +1846,23 @@ def capture_noise_only(out: Path, tag: str, *, log=print, pw=None,
             log(f"{t.key}: drawn twice, 0 px apart"
                 + (f"; {vs['pixels']} px differ from the corpus baseline"
                    if vs else ""))
+        #  The renderer's fingerprint, drawn the same way as in the corpus.
+        canary_png = a.canary()
+        n = differing_pixels(canary_png, b.canary())
+        if n:
+            raise CorpusError(f"canary: a second browser started the same way drew "
+                              f"{n} different pixels — stop")
+        canary_data = pack(canary_png)
+        canary_entry = {"file": OS_CANARY_FILE, "sha256": sha256(canary_data),
+                        **canary_record()}
+        base_fp = ((corpus or {}).get("renderers") or {}).get(
+            "fingerprints", {}).get(BASE_RENDERER)
+        if base_fp:
+            canary_entry["vs_corpus_base"] = differing_pixels(
+                (manifest_path.parent / base_fp["file"]).read_bytes(), canary_data)
+        log("canary: drawn twice, 0 px apart"
+            + (f"; {canary_entry['vs_corpus_base']} px differ from the corpus "
+               "baseline's" if base_fp else ""))
     finally:
         a.close()
         b.close()
@@ -1513,6 +1877,7 @@ def capture_noise_only(out: Path, tag: str, *, log=print, pw=None,
         "control": "every frame drawn in two browsers started the same way; "
                    "0 pixels apart, or the capture stops",
         "templates": templates,
+        "canary": canary_entry,
         "corpus": None if corpus is None else {
             "manifest_sha256": sha256(corpus_raw),
             "environment": {k: corpus["environment"].get(k) for k in DIFF_KEYS},
@@ -1522,6 +1887,7 @@ def capture_noise_only(out: Path, tag: str, *, log=print, pw=None,
     out.mkdir(parents=True, exist_ok=True)
     for key, data in frames.items():
         (out / f"{key}.png").write_bytes(data)
+    (out / OS_CANARY_FILE).write_bytes(canary_data)
     (out / OS_ENV_FILE).write_text(json.dumps(record, indent=1, ensure_ascii=False)
                                    + "\n", encoding="utf-8", newline="\n")
     return record
@@ -1574,6 +1940,19 @@ def check_os_capture(record: dict, src: Path, manifest: dict) -> list[str]:
         if entry.get("split") != manifest["templates"][key]["split"]:
             problems.append(f"{key}: split {entry.get('split')!r}, the corpus says "
                             f"{manifest['templates'][key]['split']!r}")
+    canary = record.get("canary")
+    if canary is not None:
+        path = src / canary.get("file", "")
+        want = canary_record()
+        if not path.is_file():
+            problems.append(f"canary: {path.name} is missing")
+        elif sha256(path.read_bytes()) != canary.get("sha256"):
+            problems.append(f"canary: sha256 of {path.name} is not the recorded one")
+        if (canary.get("version"), canary.get("page_sha256")) != (
+                want["version"], want["page_sha256"]):
+            problems.append(f"canary: drawn from another page (version "
+                            f"{canary.get('version')!r}, here {want['version']}) "
+                            "— capture again with this version of the script")
     return problems
 
 
@@ -1615,8 +1994,20 @@ def import_os_noise(src: Path, *, replace: bool = False, root: Path = CORPUS_DIR
     family = os_family(env["os"])
     sections = dict(manifest.get("os_noise") or {})
     if family in sections and not replace:
-        raise CorpusError(f"{family} is already in the corpus (tag "
-                          f"{sections[family].get('tag')!r}); --replace to replace it")
+        #  The same machine drawing the same pixels again — a second capture
+        #  to bring its canary — changes no frame and needs no --replace.
+        stored = {c["template"]: c["actual"] for c in manifest["cases"]
+                  if c["family"] == family}
+        redrawn = [t.key for t in TEMPLATES if differing_pixels(
+            (root / stored.get(t.key, manifest["templates"][t.key]["base"])).read_bytes(),
+            (src / record["templates"][t.key]["file"]).read_bytes())]
+        if redrawn:
+            raise CorpusError(f"{family} is already in the corpus (tag "
+                              f"{sections[family].get('tag')!r}) and this capture "
+                              f"draws {', '.join(redrawn)} otherwise; --replace to "
+                              "replace it")
+        log(f"{family}: the same pixels as the frames in the corpus — only the "
+            "record and the canary are taken")
     corpus_env = manifest["environment"]
     what = (f"{env['os']} {env.get('os_version', '')} ({env.get('distro', '')}, "
             f"{env.get('arch', '')}), {env.get('browser_build')}, instead of "
@@ -1649,6 +2040,33 @@ def import_os_noise(src: Path, *, replace: bool = False, root: Path = CORPUS_DIR
         })
         log(f"{t.key}: {changed['pixels']} px differ from the corpus baseline "
             f"({t.split})")
+    #  The machine's canary: its renderer's fingerprint, named by its frames.
+    renderers = manifest.get("renderers")
+    if renderers is not None:
+        fingerprints = {k: v for k, v in renderers["fingerprints"].items()
+                        if k != family}
+        old_fp = renderers["fingerprints"].get(family)
+        if old_fp:
+            old_files[old_fp["file"]] = (root / old_fp["file"]).read_bytes()
+        canary = record.get("canary")
+        if canary:
+            data = pack((src / canary["file"]).read_bytes())
+            base_fp = fingerprints.get(BASE_RENDERER)
+            writes[renderer_file(family)] = data
+            fingerprints[family] = {
+                "file": renderer_file(family),
+                "drawn_with": {"machine": what, "tag": record["tag"]},
+                "pixels_vs_base": differing_pixels(
+                    (root / base_fp["file"]).read_bytes(), data) if base_fp else None,
+                "sha256": sha256(data)}
+            log(f"canary: {fingerprints[family]['pixels_vs_base']} px differ from "
+                "the corpus baseline's")
+        else:
+            log("no canary in this capture: the renderer of its frames stays unknown")
+        manifest = dict(manifest, renderers=dict(renderers, fingerprints=fingerprints))
+        for c in new_cases:
+            c["renderer"] = {"expected": BASE_RENDERER,
+                             "actual": family if family in fingerprints else None}
     sections[family] = {
         "tag": record["tag"],
         "what": what,
@@ -1706,11 +2124,34 @@ def carry_os_noise(old: dict | None, old_root: Path, new: dict, new_root: Path,
         log(f"the baselines changed: {', '.join(dropped)} dropped — capture them "
             "again on their machine (--capture-noise-only) and --import-noise")
         return new, dropped
-    carried = [c for c in old["cases"] if c["kind"] == "os"]
+    carried = [dict(c) for c in old["cases"] if c["kind"] == "os"]
     for c in carried:
         dst = new_root / c["actual"]
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(old_root / c["actual"], dst)
+    #  A machine's canary goes with its frames — while it is the same canary.
+    old_renderers = old.get("renderers") or {}
+    renderers = new.get("renderers")
+    if renderers is not None:
+        fingerprints = dict(renderers["fingerprints"])
+        same_page = old_renderers.get("canary") == renderers["canary"]
+        for family, rec in (old_renderers.get("fingerprints") or {}).items():
+            if family not in sections:
+                continue
+            if not same_page:
+                log(f"{family}: the canary page changed, its fingerprint is dropped "
+                    "— capture it again on its machine (--capture-noise-only)")
+                continue
+            dst = new_root / rec["file"]
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(old_root / rec["file"], dst)
+            fingerprints[family] = rec
+        renderers = dict(renderers, fingerprints=fingerprints)
+        for c in carried:
+            c["renderer"] = {"expected": BASE_RENDERER,
+                             "actual": c["family"] if c["family"] in fingerprints
+                             else None}
+        new = dict(new, renderers=renderers)
     return _with_os_noise(dict(new, cases=new["cases"] + carried), sections), []
 
 
@@ -1747,6 +2188,11 @@ def drift_os(manifest: dict, *, pw=None, root: Path = CORPUS_DIR
                 n = differing_pixels(want, s.frame(key))
                 if n:
                     drifted.append(f"{key}/os/{family} ({n} px)")
+            fp = ((manifest.get("renderers") or {}).get("fingerprints") or {}).get(family)
+            if fp:
+                n = differing_pixels((root / fp["file"]).read_bytes(), s.canary())
+                if n:
+                    drifted.append(f"canary {family} ({n} px)")
         finally:
             s.close()
     return skipped, drifted
@@ -1764,7 +2210,8 @@ def main(argv: list[str] | None = None) -> int:
                            "writes nothing")
     what.add_argument("--capture-noise-only", action="store_true",
                       help="on another machine: draw only the baseline of each "
-                           "template, no mutations, the same capture, into "
+                           "template and the renderer's canary, no mutations, "
+                           "the same capture, into "
                            "--out (default bench_out/os_noise/<tag>) with "
                            "environment.json; the corpus is not touched")
     what.add_argument("--import-noise", metavar="DIR",
@@ -1799,7 +2246,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Differs from the environment the corpus was drawn in:")
             for d in corpus["differences"]:
                 print(f"  {d['key']}: corpus {d['corpus']!r}, here {d['here']!r}")
-        print(f"Send the six PNG and {OS_ENV_FILE} from {out.resolve()}")
+        print("canary (the renderer's fingerprint): "
+              + (f"{record['canary']['vs_corpus_base']} px differ from the corpus "
+                 "baseline's" if "vs_corpus_base" in record["canary"] else "drawn"))
+        print(f"Send the six PNG, {OS_CANARY_FILE} and {OS_ENV_FILE} from "
+              f"{out.resolve()}")
         return 0
 
     if args.import_noise:

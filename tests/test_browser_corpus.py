@@ -266,12 +266,110 @@ def test_every_pair_says_what_it_is(manifest):
 def test_the_labels_on_disk_are_the_codes(manifest):
     """Relabelling in the code without --regenerate would be a silent change."""
     assert manifest["families"] == json.loads(json.dumps(bc.families_record()))
+    assert manifest["cross_render"] == json.loads(json.dumps(bc.cross_record()))
     defs = {(f.key, m.key): m for f in bc.FAMILIES for m in f.magnitudes}
+    cross = {(fam.key, mag.key, cfg): label for fam, mag, cfg, label
+             in bc.cross_plan(everything=True)}
     for c in manifest["cases"]:
         if c["kind"] == "mutation":
             assert c["label"] == defs[(c["family"], c["magnitude"])].label, c["name"]
+        elif c["kind"] == "cross_render":
+            d = c["detail"]
+            assert c["label"] == cross[(d["mutation"], c["magnitude"], d["config"])]
         else:
             assert c["label"] == bc.NOISE
+
+
+# --------------------------------------------------------------------------- #
+#  Real changes drawn by another renderer
+# --------------------------------------------------------------------------- #
+def test_the_cross_renderer_family_is_what_was_asked_for():
+    signal = {k for k, _ in bc.CROSS_SIGNAL}
+    assert signal == {"text_color", "link_color", "icon_color", "fill", "element_removed",
+                      "icon_swap", "one_char", "word_swap", "border_added",
+                      "border_removed", "underline"}
+    for k, mags in bc.CROSS_SIGNAL:
+        if k in ("text_color", "link_color", "icon_color", "fill"):
+            assert mags == ("de8", "de15"), k
+    assert {k for k, _ in bc.CROSS_DISPUTED} == {"padding", "offset", "letter_spacing",
+                                                  "font_size"}
+    assert bc.CROSS_CONFIGS == ("hinting_none", "full_chromium")
+    fams = {f.key: {m.key: m for m in f.magnitudes} for f in bc.FAMILIES}
+    for k, mags in (*bc.CROSS_SIGNAL, *bc.CROSS_DISPUTED):
+        for m in mags:
+            assert m in fams[k], (k, m)
+    assert "maintainer" in bc.WHY_CROSS_DISPUTED and "never counted" in bc.WHY_CROSS_DISPUTED
+
+
+def test_what_is_left_out_of_the_cross_family_is_named_with_the_reason(manifest):
+    plan = {(f.key, m.key) for f, m, _, _ in bc.cross_plan()}
+    everything = {(f.key, m.key) for f, m, _, _ in bc.cross_plan(everything=True)}
+    assert plan | set(bc.CROSS_LEFT_OUT) == everything
+    assert not plan & set(bc.CROSS_LEFT_OUT)
+    left = manifest["cross_render"]["left_out"]
+    assert left["magnitudes"] == sorted(f"{k}/{m}" for k, m in bc.CROSS_LEFT_OUT)
+    assert "budget" in left["why"]
+
+
+def test_every_cross_pair_is_a_change_drawn_by_another_renderer(manifest):
+    cross = [c for c in manifest["cases"] if c["kind"] == "cross_render"]
+    plan = bc.cross_plan()
+    assert len(cross) == len(plan) * len(bc.TEMPLATES)
+    for c in cross:
+        d = c["detail"]
+        assert c["family"] == bc.cross_family(d["mutation"], d["config"])
+        assert c["expected"] == manifest["templates"][c["template"]]["base"]
+        assert c["renderer"] == {"expected": bc.BASE_RENDERER, "actual": d["config"]}
+        assert c["split"] == manifest["templates"][c["template"]]["split"]
+
+
+# --------------------------------------------------------------------------- #
+#  The renderer's fingerprint
+# --------------------------------------------------------------------------- #
+def test_every_frame_names_the_canary_of_its_renderer(manifest):
+    fps = manifest["renderers"]["fingerprints"]
+    assert set(fps) >= {bc.BASE_RENDERER, *(c.key for c in bc.NOISE_CONFIGS)}
+    for t in manifest["templates"].values():
+        assert t["renderer"] == bc.BASE_RENDERER
+    for c in manifest["cases"]:
+        ref = c["renderer"]
+        assert ref["expected"] == bc.BASE_RENDERER, c["name"]
+        if c["kind"] == "os" and ref["actual"] is None:
+            continue                     # a machine that sent no canary: unknown
+        assert ref["actual"] in fps, c["name"]
+    by = {"mutation": bc.BASE_RENDERER}
+    for c in manifest["cases"]:
+        if c["kind"] in by:
+            assert c["renderer"]["actual"] == by[c["kind"]]
+        if c["kind"] == "render":
+            assert c["renderer"]["actual"] == c["magnitude"]
+
+
+def test_the_canaries_tell_the_renderers_apart_and_the_controls_do_not(manifest):
+    fps = manifest["renderers"]["fingerprints"]
+    assert manifest["renderers"]["canary"] == bc.canary_record()
+    for key in bc.RENDERER_CONTROLS:
+        assert fps[key]["pixels_vs_base"] == 0 and "control" in fps[key], key
+    for c in bc.NOISE_CONFIGS:
+        if c.launch.css:                 # the page's stylesheet, not the renderer
+            assert fps[c.key]["pixels_vs_base"] == 0 and fps[c.key]["note"], c.key
+    for key in ("hinting_none", "no_lcd_no_subpixel", "full_chromium"):
+        assert fps[key]["pixels_vs_base"] > 0, key
+    base = (bc.CORPUS_DIR / fps[bc.BASE_RENDERER]["file"]).read_bytes()
+    for key, rec in fps.items():
+        data = (bc.CORPUS_DIR / rec["file"]).read_bytes()
+        assert bc.sha256(data) == rec["sha256"], key
+        assert bc.differing_pixels(base, data) == rec["pixels_vs_base"], key
+
+
+def test_the_canary_is_drawn_the_same_way_twice(pw):
+    a, b = bc.Session(pw), bc.Session(pw)
+    try:
+        png = a.canary()
+        assert bc.differing_pixels(png, b.canary()) == 0
+    finally:
+        a.close()
+        b.close()
 
 
 def test_the_split_is_by_template(manifest):
@@ -360,6 +458,9 @@ def _corpus_copy(tmp_path: Path) -> Path:
             (root / c["actual"]).unlink()
     m = dict(m, cases=[c for c in m["cases"] if c["kind"] != "os"])
     m.pop("os_noise", None)
+    fps = m["renderers"]["fingerprints"]
+    for key in [k for k in fps if k.startswith("os_")]:
+        (root / fps.pop(key)["file"]).unlink()
     bc.write_manifest(m, root / "manifest.json")
     assert bc.verify_files(m, root) == []
     return root
@@ -367,7 +468,8 @@ def _corpus_copy(tmp_path: Path) -> Path:
 
 def _fake_capture(tmp_path: Path, manifest: dict, *, os_name: str = "Windows",
                   changed: tuple[str, ...] = ("table", "landing"),
-                  env: dict | None = None, name: str = "cap") -> Path:
+                  env: dict | None = None, name: str = "cap",
+                  canary: bool = False) -> Path:
     """What --capture-noise-only would write: the corpus bases, some of them
     with a few pixels changed, and a record of another machine."""
     import io
@@ -401,6 +503,16 @@ def _fake_capture(tmp_path: Path, manifest: dict, *, os_name: str = "Windows",
         "page": {"device_pixel_ratio": 1, "screen": [1280, 800], "user_agent": "x"},
         "templates": templates,
     }
+    if canary:
+        fp = manifest["renderers"]["fingerprints"][bc.BASE_RENDERER]
+        arr = np.array(bc.pixels((bc.CORPUS_DIR / fp["file"]).read_bytes()))
+        arr[2:4, 3:9] = 255 - arr[2:4, 3:9]
+        buf = io.BytesIO()
+        Image.fromarray(arr).save(buf, format="PNG")
+        data = bc.pack(buf.getvalue())
+        (src / bc.OS_CANARY_FILE).write_bytes(data)
+        record["canary"] = {"file": bc.OS_CANARY_FILE, "sha256": bc.sha256(data),
+                            **bc.canary_record()}
     (src / bc.OS_ENV_FILE).write_text(json.dumps(record), encoding="utf-8")
     return src
 
@@ -441,6 +553,52 @@ def test_imported_frames_are_one_noise_pair_per_changed_template(manifest, tmp_p
     assert keys.index("os_noise") == keys.index("noise_configs") + 1
     #  Everything that was there is still there, unchanged.
     assert new["cases"][:len(before["cases"])] == before["cases"]
+
+
+def test_an_imported_canary_names_the_renderer_of_the_machine(manifest, tmp_path):
+    root = _corpus_copy(tmp_path)
+    new = bc.import_os_noise(_fake_capture(tmp_path, manifest, canary=True), root=root,
+                             log=lambda *_: None)
+    fp = new["renderers"]["fingerprints"]["os_windows"]
+    assert fp["file"] == bc.renderer_file("os_windows") and fp["pixels_vs_base"] == 12
+    assert fp["drawn_with"]["tag"] == "win11"
+    for c in (c for c in new["cases"] if c["kind"] == "os"):
+        assert c["renderer"] == {"expected": bc.BASE_RENDERER, "actual": "os_windows"}
+    assert bc.verify_files(new, root) == []
+
+
+def test_a_capture_without_a_canary_leaves_the_renderer_unknown(manifest, tmp_path):
+    root = _corpus_copy(tmp_path)
+    new = bc.import_os_noise(_fake_capture(tmp_path, manifest), root=root,
+                             log=lambda *_: None)
+    assert "os_windows" not in new["renderers"]["fingerprints"]
+    assert all(c["renderer"]["actual"] is None for c in new["cases"] if c["kind"] == "os")
+
+
+def test_the_same_pixels_again_bring_the_canary_without_replace(manifest, tmp_path):
+    """The first capture had no canary; the same machine draws the same frames
+    again with one. No frame changes, and --replace is not needed."""
+    root = _corpus_copy(tmp_path)
+    first = bc.import_os_noise(_fake_capture(tmp_path, manifest), root=root,
+                               log=lambda *_: None)
+    frames = {c["actual"]: (root / c["actual"]).read_bytes()
+              for c in first["cases"] if c["kind"] == "os"}
+    again = _fake_capture(tmp_path, manifest, name="cap2", canary=True)
+    new = bc.import_os_noise(again, root=root, log=lambda *_: None)
+    assert "os_windows" in new["renderers"]["fingerprints"]
+    assert {rel: (root / rel).read_bytes() for rel in frames} == frames
+    assert [c["name"] for c in new["cases"]] == [c["name"] for c in first["cases"]]
+    assert bc.verify_files(new, root) == []
+
+
+def test_a_canary_of_another_page_is_refused(manifest, tmp_path):
+    root = _corpus_copy(tmp_path)
+    src = _fake_capture(tmp_path, manifest, canary=True)
+    record = json.loads((src / bc.OS_ENV_FILE).read_text("utf-8"))
+    record["canary"]["version"] = 0
+    (src / bc.OS_ENV_FILE).write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(bc.CorpusError, match="drawn from another page"):
+        bc.import_os_noise(src, root=root, log=lambda *_: None)
 
 
 def test_a_second_import_of_the_same_os_needs_replace(manifest, tmp_path):
@@ -551,7 +709,12 @@ def test_capture_noise_only_draws_the_six_baselines_and_nothing_else(pw, tmp_pat
     out = tmp_path / "osn"
     record = bc.capture_noise_only(out, "selfcheck", pw=pw, log=lambda *_: None)
     assert sorted(p.name for p in out.iterdir()) == sorted(
-        [f"{t.key}.png" for t in bc.TEMPLATES] + [bc.OS_ENV_FILE])
+        [f"{t.key}.png" for t in bc.TEMPLATES] + [bc.OS_ENV_FILE, bc.OS_CANARY_FILE])
+    canary = record["canary"]
+    assert canary["file"] == bc.OS_CANARY_FILE
+    assert bc.sha256((out / bc.OS_CANARY_FILE).read_bytes()) == canary["sha256"]
+    assert canary["version"] == bc.canary_record()["version"]
+    assert canary["vs_corpus_base"] == 0          # this machine is the corpus's
     on_disk = json.loads((out / bc.OS_ENV_FILE).read_text("utf-8"))
     assert on_disk == json.loads(json.dumps(record, ensure_ascii=False))
     env = record["environment"]

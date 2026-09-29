@@ -7,6 +7,7 @@
   "browser_build": "chromium_headless_shell-1194",
   "browser_product": "HeadlessChrome/141.0.7390.37",
   "os": "Linux",
+  "os_version": "Ubuntu 24.04.4 LTS",
   "arch": "x86_64",
   "distro": "Ubuntu 24.04.4 LTS",
   "python": "3.11.15",
@@ -18,6 +19,11 @@
   "container": {
    "image": null,
    "in_container": false
+  },
+  "host": {
+   "dpi": null,
+   "dpi_source": "no display: headless",
+   "font_smoothing": null
   },
   "capture": {
    "via": "vistest.library.targets.capture",
@@ -69,7 +75,8 @@
      "custom": true,
      "glyphs": 16
     }
-   ]
+   ],
+   "renderer": "base"
   },
   "form": {
    "title": "account settings form",
@@ -89,7 +96,8 @@
      "custom": true,
      "glyphs": 28
     }
-   ]
+   ],
+   "renderer": "base"
   },
   "cards": {
    "title": "product cards in a catalogue grid",
@@ -109,7 +117,8 @@
      "custom": true,
      "glyphs": 101
     }
-   ]
+   ],
+   "renderer": "base"
   },
   "landing": {
    "title": "marketing landing page with a hero and a chart",
@@ -129,7 +138,8 @@
      "custom": true,
      "glyphs": 153
     }
-   ]
+   ],
+   "renderer": "base"
   },
   "article": {
    "title": "long serif text with a sidebar",
@@ -155,7 +165,8 @@
      "custom": true,
      "glyphs": 1720
     }
-   ]
+   ],
+   "renderer": "base"
   },
   "dark": {
    "title": "dark-theme monitoring dashboard",
@@ -175,7 +186,8 @@
      "custom": true,
      "glyphs": 46
     }
-   ]
+   ],
+   "renderer": "base"
   }
  },
  "families": {
@@ -565,6 +577,96 @@
    }
   }
  },
+ "cross_render": {
+  "what": "real changes drawn by another renderer: the mutation of the family named before '@', drawn in the configuration named after it, against the corpus baseline",
+  "configs": [
+   "hinting_none",
+   "full_chromium"
+  ],
+  "SIGNAL": {
+   "text_color": [
+    "de8",
+    "de15"
+   ],
+   "link_color": [
+    "de8",
+    "de15"
+   ],
+   "icon_color": [
+    "de8",
+    "de15"
+   ],
+   "fill": [
+    "de8",
+    "de15"
+   ],
+   "element_removed": [
+    "gone"
+   ],
+   "icon_swap": [
+    "swapped"
+   ],
+   "one_char": [
+    "one"
+   ],
+   "word_swap": [
+    "one"
+   ],
+   "border_added": [
+    "light",
+    "strong"
+   ],
+   "border_removed": [
+    "gone"
+   ],
+   "underline": [
+    "on"
+   ]
+  },
+  "DISPUTED": {
+   "padding": [
+    "minus2px",
+    "minus1px",
+    "plus1px",
+    "plus2px"
+   ],
+   "offset": [
+    "plus1px",
+    "plus2px"
+   ],
+   "letter_spacing": [
+    "plus1px"
+   ],
+   "font_size": [
+    "minus1px",
+    "plus1px"
+   ]
+  },
+  "why": {
+   "SIGNAL": "the page changed and the renderer changed too: <the family's change>, drawn with <the configuration>, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "DISPUTED": "decided by the maintainer on 2026-09-29: geometry within two pixels, drawn by another renderer. The renderer on its own moves glyphs and line boxes by a pixel, so on this pair a layout change of that size cannot be told from re-rasterisation by the pixels — printed, never counted, like ΔE00 ≈ 2"
+  },
+  "left_out": {
+   "magnitudes": [
+    "border_added/strong",
+    "fill/de15",
+    "font_size/minus1px",
+    "font_size/plus1px",
+    "icon_color/de15",
+    "letter_spacing/plus1px",
+    "link_color/de15",
+    "link_color/de8",
+    "offset/plus1px",
+    "offset/plus2px",
+    "padding/minus1px",
+    "padding/minus2px",
+    "padding/plus1px",
+    "padding/plus2px",
+    "text_color/de15"
+   ],
+   "why": "the corpus budget (40 MiB): the whole family is 33.0 MB of PNG, the room was 14.7 MB. Left out: the DISPUTED geometry, the ΔE00 15 steps, the strong border and the link colour; defined here, drawn by --regenerate once the budget allows"
+  }
+ },
  "noise_configs": {
   "hinting_none": {
    "what": "--font-render-hinting=none",
@@ -920,6 +1022,105 @@
    "redrawn": "only where this environment is found again (same Playwright, Chromium build, OS and its version, architecture, font smoothing); elsewhere the drift test is skipped with the difference named"
   }
  },
+ "renderers": {
+  "canary": {
+   "version": 1,
+   "page_sha256": "360dfa9085915a2439be5bee707619e1996a038f232a1a340836ae7921837033",
+   "page": "vistest/library/canary.py",
+   "what": "a fixed page — the shipped font at three sizes, bold, italic, light on dark; the machine's serif, sans-serif and monospace — drawn in a tab of its own through the library's capture"
+  },
+  "rule": "every frame names the canary its renderer drew: templates.<t>.renderer for a baseline, cases[].renderer.expected and .actual for a pair; null where no canary was drawn by that renderer",
+  "fingerprints": {
+   "base": {
+    "file": "renderers/base.png",
+    "drawn_with": {
+     "args": []
+    },
+    "pixels_vs_base": 0,
+    "sha256": "24f328fa10a635d736b8d5107225bd04ade2960c14e7b68f27e6c55480adedbb"
+   },
+   "hinting_none": {
+    "file": "renderers/hinting_none.png",
+    "drawn_with": {
+     "args": [
+      "--font-render-hinting=none"
+     ]
+    },
+    "pixels_vs_base": 6495,
+    "sha256": "3e00855af362087d6d45a9b696bda782ce8e53493dfc4096879c6df930689156"
+   },
+   "hinting_full": {
+    "file": "renderers/hinting_full.png",
+    "drawn_with": {
+     "args": [
+      "--font-render-hinting=full"
+     ]
+    },
+    "pixels_vs_base": 0,
+    "control": "must come out as the baseline's",
+    "sha256": "24f328fa10a635d736b8d5107225bd04ade2960c14e7b68f27e6c55480adedbb"
+   },
+   "no_lcd_no_subpixel": {
+    "file": "renderers/no_lcd_no_subpixel.png",
+    "drawn_with": {
+     "args": [
+      "--disable-lcd-text",
+      "--disable-font-subpixel-positioning"
+     ]
+    },
+    "pixels_vs_base": 10661,
+    "sha256": "a822a357eb00230a95f2e62652028db1cf70b30c5b8e61afefc46171fc14812e"
+   },
+   "geometric_precision": {
+    "file": "renderers/geometric_precision.png",
+    "drawn_with": {
+     "args": []
+    },
+    "pixels_vs_base": 0,
+    "note": "the configuration is a stylesheet of the page, not a way of starting the browser: the canary tab never sees the page's CSS, so it is drawn by the baseline's renderer",
+    "sha256": "24f328fa10a635d736b8d5107225bd04ade2960c14e7b68f27e6c55480adedbb"
+   },
+   "shift_0.25px": {
+    "file": "renderers/shift_0.25px.png",
+    "drawn_with": {
+     "args": []
+    },
+    "pixels_vs_base": 0,
+    "note": "the configuration is a stylesheet of the page, not a way of starting the browser: the canary tab never sees the page's CSS, so it is drawn by the baseline's renderer",
+    "sha256": "24f328fa10a635d736b8d5107225bd04ade2960c14e7b68f27e6c55480adedbb"
+   },
+   "shift_0.5px": {
+    "file": "renderers/shift_0.5px.png",
+    "drawn_with": {
+     "args": []
+    },
+    "pixels_vs_base": 0,
+    "note": "the configuration is a stylesheet of the page, not a way of starting the browser: the canary tab never sees the page's CSS, so it is drawn by the baseline's renderer",
+    "sha256": "24f328fa10a635d736b8d5107225bd04ade2960c14e7b68f27e6c55480adedbb"
+   },
+   "full_chromium": {
+    "file": "renderers/full_chromium.png",
+    "drawn_with": {
+     "args": [],
+     "channel": "chromium"
+    },
+    "pixels_vs_base": 6173,
+    "sha256": "e029c415852a4a1bef1b4f48799562feb6e596b1ffbe225e4e961dd8e1dae0ab"
+   },
+   "gpu_raster": {
+    "file": "renderers/gpu_raster.png",
+    "drawn_with": {
+     "args": [
+      "--enable-gpu-rasterization",
+      "--force-gpu-rasterization"
+     ]
+    },
+    "pixels_vs_base": 0,
+    "control": "must come out as the baseline's",
+    "sha256": "24f328fa10a635d736b8d5107225bd04ade2960c14e7b68f27e6c55480adedbb"
+   }
+  }
+ },
  "no_pixel_change": [],
  "cases": [
   {
@@ -948,6 +1149,10 @@
     "before": "#2563eb",
     "after": "#3068f1",
     "delta_e00": 2.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -976,6 +1181,10 @@
     "before": "#2563eb",
     "after": "#3a6df6",
     "delta_e00": 3.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1004,6 +1213,10 @@
     "before": "#2563eb",
     "after": "#4d77ff",
     "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1032,6 +1245,10 @@
     "before": "#2563eb",
     "after": "#6c8dff",
     "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1060,6 +1277,10 @@
     "before": "#1f2937",
     "after": "#252f3e",
     "delta_e00": 1.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1088,6 +1309,10 @@
     "before": "#1f2937",
     "after": "#2c3544",
     "delta_e00": 3.93
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1116,6 +1341,10 @@
     "before": "#1f2937",
     "after": "#384251",
     "delta_e00": 8.05
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1144,6 +1373,10 @@
     "before": "#1f2937",
     "after": "#4d5666",
     "delta_e00": 14.89
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1172,6 +1405,10 @@
     "before": "#2563eb",
     "after": "#3068f1",
     "delta_e00": 2.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1200,6 +1437,10 @@
     "before": "#2563eb",
     "after": "#3a6df6",
     "delta_e00": 3.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1228,6 +1469,10 @@
     "before": "#2563eb",
     "after": "#4d77ff",
     "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1256,6 +1501,10 @@
     "before": "#2563eb",
     "after": "#6c8dff",
     "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1284,6 +1533,10 @@
     "before": "#6b7280",
     "after": "#757c8b",
     "delta_e00": 4.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1312,6 +1565,10 @@
     "before": "#6b7280",
     "after": "#7f8795",
     "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1340,6 +1597,10 @@
     "before": "#6b7280",
     "after": "#949baa",
     "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1362,6 +1623,10 @@
      1236,
      89
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1384,6 +1649,10 @@
      1236,
      89
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1406,6 +1675,10 @@
      72,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1428,6 +1701,10 @@
      57,
      1
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1450,6 +1727,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1472,6 +1753,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1494,6 +1779,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1516,6 +1805,10 @@
      379,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1538,6 +1831,10 @@
      379,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1560,6 +1857,10 @@
      381,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1582,6 +1883,10 @@
      1236,
      541
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1604,6 +1909,10 @@
      749,
      35
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1626,6 +1935,10 @@
      749,
      36
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1648,6 +1961,10 @@
      749,
      38
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1670,6 +1987,10 @@
      760,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1692,6 +2013,10 @@
      763,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1714,6 +2039,10 @@
      224,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1736,6 +2065,10 @@
      371,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1758,6 +2091,10 @@
      398,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1780,6 +2117,10 @@
      417,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1802,6 +2143,10 @@
      683,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1824,6 +2169,10 @@
      749,
      37
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1846,6 +2195,10 @@
      749,
      40
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1868,6 +2221,10 @@
      10,
      10
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1890,6 +2247,10 @@
      9,
      10
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1912,6 +2273,10 @@
      664,
      373
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1934,6 +2299,10 @@
      1236,
      411
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1956,6 +2325,10 @@
      144,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -1978,6 +2351,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2000,6 +2377,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2022,6 +2403,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2044,6 +2429,10 @@
      107,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2066,6 +2455,10 @@
      1236,
      445
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2088,6 +2481,10 @@
      1280,
      495
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2110,6 +2507,10 @@
      80,
      40
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2138,6 +2539,10 @@
     "before": "#0f766e",
     "after": "#197b73",
     "delta_e00": 1.87
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2166,6 +2571,10 @@
     "before": "#0f766e",
     "after": "#218178",
     "delta_e00": 4.12
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2194,6 +2603,10 @@
     "before": "#0f766e",
     "after": "#2e8b82",
     "delta_e00": 8.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2222,6 +2635,10 @@
     "before": "#0f766e",
     "after": "#449e95",
     "delta_e00": 15.05
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2250,6 +2667,10 @@
     "before": "#111827",
     "after": "#181e2e",
     "delta_e00": 2.04
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2278,6 +2699,10 @@
     "before": "#111827",
     "after": "#1e2534",
     "delta_e00": 4.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2306,6 +2731,10 @@
     "before": "#111827",
     "after": "#2b3142",
     "delta_e00": 7.95
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2334,6 +2763,10 @@
     "before": "#111827",
     "after": "#404758",
     "delta_e00": 15.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2362,6 +2795,10 @@
     "before": "#2563eb",
     "after": "#3068f1",
     "delta_e00": 2.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2390,6 +2827,10 @@
     "before": "#2563eb",
     "after": "#3a6df6",
     "delta_e00": 3.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2418,6 +2859,10 @@
     "before": "#2563eb",
     "after": "#4d77ff",
     "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2446,6 +2891,10 @@
     "before": "#2563eb",
     "after": "#6c8dff",
     "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2474,6 +2923,10 @@
     "before": "#b45309",
     "after": "#c05d17",
     "delta_e00": 3.93
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2502,6 +2955,10 @@
     "before": "#b45309",
     "after": "#cd6722",
     "delta_e00": 7.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2530,6 +2987,10 @@
     "before": "#b45309",
     "after": "#e57b36",
     "delta_e00": 14.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2552,6 +3013,10 @@
      284,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2574,6 +3039,10 @@
      284,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2596,6 +3065,10 @@
      348,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2618,6 +3091,10 @@
      57,
      1
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2640,6 +3117,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2662,6 +3143,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2684,6 +3169,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2706,6 +3195,10 @@
      427,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2728,6 +3221,10 @@
      427,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2750,6 +3247,10 @@
      776,
      68
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2772,6 +3273,10 @@
      776,
      70
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2794,6 +3299,10 @@
      109,
      12
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2816,6 +3325,10 @@
      109,
      12
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2838,6 +3351,10 @@
      109,
      13
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2860,6 +3377,10 @@
      776,
      571
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2882,6 +3403,10 @@
      776,
      572
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2904,6 +3429,10 @@
      71,
      12
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2926,6 +3455,10 @@
      150,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2948,6 +3481,10 @@
      174,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2970,6 +3507,10 @@
      184,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -2992,6 +3533,10 @@
      776,
      519
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3014,6 +3559,10 @@
      776,
      541
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3036,6 +3585,10 @@
      776,
      545
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3058,6 +3611,10 @@
      10,
      6
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3080,6 +3637,10 @@
      9,
      10
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3102,6 +3663,10 @@
      8,
      9
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3124,6 +3689,10 @@
      61,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3146,6 +3715,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3168,6 +3741,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3190,6 +3767,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3212,6 +3793,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3234,6 +3819,10 @@
      135,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3256,6 +3845,10 @@
      776,
      489
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3278,6 +3871,10 @@
      814,
      527
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3300,6 +3897,10 @@
      93,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3328,6 +3929,10 @@
     "before": "#ea580c",
     "after": "#e35203",
     "delta_e00": 2.03
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3356,6 +3961,10 @@
     "before": "#ea580c",
     "after": "#dc4d00",
     "delta_e00": 3.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3384,6 +3993,10 @@
     "before": "#ea580c",
     "after": "#d04200",
     "delta_e00": 7.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3412,6 +4025,10 @@
     "before": "#ea580c",
     "after": "#bb2f00",
     "delta_e00": 14.94
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3440,6 +4057,10 @@
     "before": "#57534e",
     "after": "#5d5853",
     "delta_e00": 1.93
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3468,6 +4089,10 @@
     "before": "#57534e",
     "after": "#635e59",
     "delta_e00": 4.04
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3496,6 +4121,10 @@
     "before": "#57534e",
     "after": "#6d6963",
     "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3524,6 +4153,10 @@
     "before": "#57534e",
     "after": "#7f7b75",
     "delta_e00": 15.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3552,6 +4185,10 @@
     "before": "#c2410c",
     "after": "#c84712",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3580,6 +4217,10 @@
     "before": "#c2410c",
     "after": "#cf4c18",
     "delta_e00": 4.04
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3608,6 +4249,10 @@
     "before": "#c2410c",
     "after": "#db5722",
     "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3636,6 +4281,10 @@
     "before": "#c2410c",
     "after": "#f36b35",
     "delta_e00": 14.95
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3664,6 +4313,10 @@
     "before": "#fafaf9",
     "after": "#e7e7e6",
     "delta_e00": 3.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3692,6 +4345,10 @@
     "before": "#fafaf9",
     "after": "#d5d5d5",
     "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3720,6 +4377,10 @@
     "before": "#fafaf9",
     "after": "#b8b9b8",
     "delta_e00": 15.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3742,6 +4403,10 @@
      1216,
      26
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3764,6 +4429,10 @@
      1216,
      26
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3786,6 +4455,10 @@
      290,
      296
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3808,6 +4481,10 @@
      92,
      1
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3830,6 +4507,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3852,6 +4533,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3874,6 +4559,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3896,6 +4585,10 @@
      261,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3918,6 +4611,10 @@
      261,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3940,6 +4637,10 @@
      1228,
      97
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3962,6 +4663,10 @@
      1228,
      99
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -3984,6 +4689,10 @@
      1206,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4006,6 +4715,10 @@
      1206,
      16
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4028,6 +4741,10 @@
      1206,
      18
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4050,6 +4767,10 @@
      1229,
      386
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4072,6 +4793,10 @@
      1229,
      387
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4094,6 +4819,10 @@
      97,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4116,6 +4845,10 @@
      116,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4138,6 +4871,10 @@
      145,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4160,6 +4897,10 @@
      152,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4182,6 +4923,10 @@
      255,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4204,6 +4949,10 @@
      255,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4226,6 +4975,10 @@
      255,
      34
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4248,6 +5001,10 @@
      54,
      57
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4270,6 +5027,10 @@
      12,
      12
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4292,6 +5053,10 @@
      58,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4314,6 +5079,10 @@
      40,
      17
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4336,6 +5105,10 @@
      117,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4358,6 +5131,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4380,6 +5157,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4402,6 +5183,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4424,6 +5209,10 @@
      52,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4446,6 +5235,10 @@
      315,
      320
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4468,6 +5261,10 @@
      344,
      350
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4490,6 +5287,10 @@
      60,
      38
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4518,6 +5319,10 @@
     "before": "#4f46e5",
     "after": "#574bec",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4546,6 +5351,10 @@
     "before": "#4f46e5",
     "after": "#5e51f2",
     "delta_e00": 4.09
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4574,6 +5383,10 @@
     "before": "#4f46e5",
     "after": "#6c5bfe",
     "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4602,6 +5415,10 @@
     "before": "#4f46e5",
     "after": "#856fff",
     "delta_e00": 14.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4630,6 +5447,10 @@
     "before": "#475569",
     "after": "#4c5b6f",
     "delta_e00": 2.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4658,6 +5479,10 @@
     "before": "#475569",
     "after": "#526075",
     "delta_e00": 3.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4686,6 +5511,10 @@
     "before": "#475569",
     "after": "#5d6b7f",
     "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4714,6 +5543,10 @@
     "before": "#475569",
     "after": "#6e7d92",
     "delta_e00": 15.07
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4742,6 +5575,10 @@
     "before": "#4f46e5",
     "after": "#574bec",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4770,6 +5607,10 @@
     "before": "#4f46e5",
     "after": "#5e51f2",
     "delta_e00": 4.09
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4798,6 +5639,10 @@
     "before": "#4f46e5",
     "after": "#6c5bfe",
     "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4826,6 +5671,10 @@
     "before": "#4f46e5",
     "after": "#856fff",
     "delta_e00": 14.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4854,6 +5703,10 @@
     "before": "#4f46e5",
     "after": "#5e51f2",
     "delta_e00": 4.09
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4882,6 +5735,10 @@
     "before": "#4f46e5",
     "after": "#6c5bfe",
     "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4910,6 +5767,10 @@
     "before": "#4f46e5",
     "after": "#856fff",
     "delta_e00": 14.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4932,6 +5793,10 @@
      156,
      37
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4954,6 +5819,10 @@
      156,
      37
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4976,6 +5845,10 @@
      145,
      44
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -4998,6 +5871,10 @@
      142,
      1
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5020,6 +5897,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5042,6 +5923,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5064,6 +5949,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5086,6 +5975,10 @@
      306,
      44
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5108,6 +6001,10 @@
      306,
      44
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5130,6 +6027,10 @@
      308,
      44
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5152,6 +6053,10 @@
      1280,
      654
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5174,6 +6079,10 @@
      1132,
      170
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5196,6 +6105,10 @@
      1132,
      171
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5218,6 +6131,10 @@
      1132,
      173
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5240,6 +6157,10 @@
      536,
      141
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5262,6 +6183,10 @@
      550,
      142
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5284,6 +6209,10 @@
      198,
      12
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5306,6 +6235,10 @@
      127,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5328,6 +6261,10 @@
      154,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5350,6 +6287,10 @@
      161,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5372,6 +6313,10 @@
      1280,
      655
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5394,6 +6339,10 @@
      1280,
      660
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5416,6 +6365,10 @@
      1280,
      666
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5438,6 +6391,10 @@
      16,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5460,6 +6417,10 @@
      12,
      13
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5482,6 +6443,10 @@
      35,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5504,6 +6469,10 @@
      1280,
      665
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5526,6 +6495,10 @@
      158,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5548,6 +6521,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5570,6 +6547,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5592,6 +6573,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5614,6 +6599,10 @@
      149,
      42
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5636,6 +6625,10 @@
      600,
      464
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5658,6 +6651,10 @@
      600,
      466
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5680,6 +6677,10 @@
      153,
      52
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5708,6 +6709,10 @@
     "before": "#9a3412",
     "after": "#a13a18",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5736,6 +6741,10 @@
     "before": "#9a3412",
     "after": "#a8401d",
     "delta_e00": 4.04
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5764,6 +6773,10 @@
     "before": "#9a3412",
     "after": "#b54b27",
     "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5792,6 +6805,10 @@
     "before": "#9a3412",
     "after": "#ca5d37",
     "delta_e00": 14.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5820,6 +6837,10 @@
     "before": "#1f2328",
     "after": "#25292f",
     "delta_e00": 2.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5848,6 +6869,10 @@
     "before": "#1f2328",
     "after": "#2b3035",
     "delta_e00": 4.09
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5876,6 +6901,10 @@
     "before": "#1f2328",
     "after": "#383c42",
     "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5904,6 +6933,10 @@
     "before": "#1f2328",
     "after": "#4d5157",
     "delta_e00": 15.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5932,6 +6965,10 @@
     "before": "#1d4ed8",
     "after": "#2b53df",
     "delta_e00": 1.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5960,6 +6997,10 @@
     "before": "#1d4ed8",
     "after": "#3658e5",
     "delta_e00": 3.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -5988,6 +7029,10 @@
     "before": "#1d4ed8",
     "after": "#4763f1",
     "delta_e00": 8.09
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6016,6 +7061,10 @@
     "before": "#1d4ed8",
     "after": "#6274ff",
     "delta_e00": 14.91
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6044,6 +7093,10 @@
     "before": "#6b7280",
     "after": "#757c8b",
     "delta_e00": 4.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6072,6 +7125,10 @@
     "before": "#6b7280",
     "after": "#7f8795",
     "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6100,6 +7157,10 @@
     "before": "#6b7280",
     "after": "#949baa",
     "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6122,6 +7183,10 @@
      262,
      349
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6144,6 +7209,10 @@
      262,
      349
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6166,6 +7235,10 @@
      3,
      46
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6188,6 +7261,10 @@
      198,
      1
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6210,6 +7287,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6232,6 +7313,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6254,6 +7339,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6276,6 +7365,10 @@
      1280,
      739
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6298,6 +7391,10 @@
      1280,
      739
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6320,6 +7417,10 @@
      1280,
      741
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6342,6 +7443,10 @@
      1280,
      743
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6364,6 +7469,10 @@
      768,
      294
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6386,6 +7495,10 @@
      768,
      295
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6408,6 +7521,10 @@
      768,
      297
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6430,6 +7547,10 @@
      560,
      29
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6452,6 +7573,10 @@
      575,
      30
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6474,6 +7599,10 @@
      256,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6496,6 +7625,10 @@
      27,
      9
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6518,6 +7651,10 @@
      37,
      9
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6540,6 +7677,10 @@
      39,
      9
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6562,6 +7703,10 @@
      768,
      441
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6584,6 +7729,10 @@
      768,
      446
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6606,6 +7755,10 @@
      768,
      456
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6628,6 +7781,10 @@
      10,
      8
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6650,6 +7807,10 @@
      9,
      9
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6672,6 +7833,10 @@
      22,
      10
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6694,6 +7859,10 @@
      55,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6716,6 +7885,10 @@
      154,
      29
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6738,6 +7911,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6760,6 +7937,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6782,6 +7963,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6804,6 +7989,10 @@
      87,
      27
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6826,6 +8015,10 @@
      262,
      147
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6848,6 +8041,10 @@
      304,
      186
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6870,6 +8067,10 @@
      122,
      37
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6898,6 +8099,10 @@
     "before": "#38bdf8",
     "after": "#2ab6f0",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6926,6 +8131,10 @@
     "before": "#38bdf8",
     "after": "#19afe9",
     "delta_e00": 4.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6954,6 +8163,10 @@
     "before": "#38bdf8",
     "after": "#00a1db",
     "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -6982,6 +8195,10 @@
     "before": "#38bdf8",
     "after": "#008cc3",
     "delta_e00": 14.9
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7010,6 +8227,10 @@
     "before": "#e5e7eb",
     "after": "#dcdee2",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7038,6 +8259,10 @@
     "before": "#e5e7eb",
     "after": "#d4d5d9",
     "delta_e00": 4.04
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7066,6 +8291,10 @@
     "before": "#e5e7eb",
     "after": "#c3c5c8",
     "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7094,6 +8323,10 @@
     "before": "#e5e7eb",
     "after": "#a9abae",
     "delta_e00": 14.9
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7122,6 +8355,10 @@
     "before": "#38bdf8",
     "after": "#2ab6f0",
     "delta_e00": 1.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7150,6 +8387,10 @@
     "before": "#38bdf8",
     "after": "#19afe9",
     "delta_e00": 4.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7178,6 +8419,10 @@
     "before": "#38bdf8",
     "after": "#00a1db",
     "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7206,6 +8451,10 @@
     "before": "#38bdf8",
     "after": "#008cc3",
     "delta_e00": 14.9
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7234,6 +8483,10 @@
     "before": "#f8fafc",
     "after": "#e5e7e8",
     "delta_e00": 4.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7262,6 +8515,10 @@
     "before": "#f8fafc",
     "after": "#d4d5d7",
     "delta_e00": 7.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7290,6 +8547,10 @@
     "before": "#f8fafc",
     "after": "#b7b9ba",
     "delta_e00": 15.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7312,6 +8573,10 @@
      1028,
      330
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7334,6 +8599,10 @@
      1028,
      330
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7356,6 +8625,10 @@
      242,
      100
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7378,6 +8651,10 @@
      162,
      1
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7400,6 +8677,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7422,6 +8703,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7444,6 +8729,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7466,6 +8755,10 @@
      292,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7488,6 +8781,10 @@
      292,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7510,6 +8807,10 @@
      1028,
      494
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7532,6 +8833,10 @@
      1028,
      496
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7554,6 +8859,10 @@
      580,
      35
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7576,6 +8885,10 @@
      580,
      36
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7598,6 +8911,10 @@
      1028,
      94
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7620,6 +8937,10 @@
      290,
      16
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7642,6 +8963,10 @@
      307,
      17
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7664,6 +8989,10 @@
      68,
      14
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7686,6 +9015,10 @@
      9,
      8
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7708,6 +9041,10 @@
      28,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7730,6 +9067,10 @@
      29,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7752,6 +9093,10 @@
      451,
      15
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7774,6 +9119,10 @@
      1028,
      94
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7796,6 +9145,10 @@
      1028,
      98
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7818,6 +9171,10 @@
      12,
      12
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7840,6 +9197,10 @@
      16,
      18
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7862,6 +9223,10 @@
      48,
      11
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7884,6 +9249,10 @@
      39,
      9
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7906,6 +9275,10 @@
      72,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7928,6 +9301,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7950,6 +9327,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7972,6 +9353,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -7994,6 +9379,10 @@
      113,
      32
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -8016,6 +9405,10 @@
      651,
      342
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -8038,6 +9431,10 @@
      665,
      356
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -8060,6 +9457,10 @@
      71,
      44
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
    }
   },
   {
@@ -8082,6 +9483,10 @@
      1234,
      594
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
    }
   },
   {
@@ -8104,6 +9509,10 @@
      759,
      567
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
    }
   },
   {
@@ -8126,6 +9535,10 @@
      1217,
      441
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
    }
   },
   {
@@ -8148,6 +9561,10 @@
      1154,
      707
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
    }
   },
   {
@@ -8170,6 +9587,10 @@
      1189,
      740
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
    }
   },
   {
@@ -8192,6 +9613,10 @@
      1219,
      434
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
    }
   },
   {
@@ -8214,6 +9639,10 @@
      1236,
      595
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "no_lcd_no_subpixel"
    }
   },
   {
@@ -8236,6 +9665,10 @@
      759,
      568
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "no_lcd_no_subpixel"
    }
   },
   {
@@ -8258,6 +9691,10 @@
      1218,
      442
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "no_lcd_no_subpixel"
    }
   },
   {
@@ -8280,6 +9717,10 @@
      1154,
      706
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "no_lcd_no_subpixel"
    }
   },
   {
@@ -8302,6 +9743,10 @@
      1190,
      739
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "no_lcd_no_subpixel"
    }
   },
   {
@@ -8324,6 +9769,10 @@
      1220,
      434
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "no_lcd_no_subpixel"
    }
   },
   {
@@ -8346,6 +9795,10 @@
      1236,
      595
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
    }
   },
   {
@@ -8368,6 +9821,10 @@
      759,
      568
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
    }
   },
   {
@@ -8390,6 +9847,10 @@
      1218,
      442
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
    }
   },
   {
@@ -8412,6 +9873,10 @@
      1154,
      708
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
    }
   },
   {
@@ -8434,6 +9899,10 @@
      1190,
      740
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
    }
   },
   {
@@ -8456,6 +9925,10 @@
      1219,
      434
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
    }
   },
   {
@@ -8478,6 +9951,10 @@
      1280,
      567
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
    }
   },
   {
@@ -8500,6 +9977,10 @@
      777,
      490
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
    }
   },
   {
@@ -8522,6 +10003,10 @@
      1280,
      427
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
    }
   },
   {
@@ -8544,6 +10029,10 @@
      1280,
      669
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
    }
   },
   {
@@ -8566,6 +10055,10 @@
      1280,
      712
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
    }
   },
   {
@@ -8588,6 +10081,10 @@
      1255,
      800
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
    }
   },
   {
@@ -8610,6 +10107,10 @@
      1280,
      616
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
    }
   },
   {
@@ -8632,6 +10133,10 @@
      777,
      600
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
    }
   },
   {
@@ -8654,6 +10159,10 @@
      1280,
      461
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
    }
   },
   {
@@ -8676,6 +10185,10 @@
      1280,
      706
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
    }
   },
   {
@@ -8698,6 +10211,10 @@
      1280,
      740
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
    }
   },
   {
@@ -8720,6 +10237,10 @@
      1255,
      800
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
    }
   },
   {
@@ -8742,6 +10263,10 @@
      1234,
      595
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
    }
   },
   {
@@ -8764,6 +10289,10 @@
      758,
      567
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
    }
   },
   {
@@ -8786,6 +10315,10 @@
      1215,
      441
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
    }
   },
   {
@@ -8808,6 +10341,10 @@
      1154,
      706
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
    }
   },
   {
@@ -8830,6 +10367,10 @@
      1189,
      740
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
    }
   },
   {
@@ -8852,6 +10393,3754 @@
      1218,
      434
     ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/text_color@hinting_none/de8",
+   "template": "table",
+   "split": "calibration",
+   "family": "text_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/text_color--de8--hinting_none.png",
+   "sha256": "3d85ceb1437e3b8436a84b9448fc1e575031592c51a009b0cc834243ac8cc7c9",
+   "changed": {
+    "pixels": 57514,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#1f2937",
+    "after": "#384251",
+    "delta_e00": 8.05
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/icon_color@hinting_none/de8",
+   "template": "table",
+   "split": "calibration",
+   "family": "icon_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/icon_color--de8--hinting_none.png",
+   "sha256": "e856014fbb5637e8d60b0a0a4fec26e4605e5ff252db5aed8e60437446cf7d20",
+   "changed": {
+    "pixels": 56068,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#6b7280",
+    "after": "#7f8795",
+    "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/fill@hinting_none/de8",
+   "template": "table",
+   "split": "calibration",
+   "family": "fill@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/fill--de8--hinting_none.png",
+   "sha256": "5189bc1a2bda0e63cb4d13702b88ea2a09bd13ed64b4e1b364d058a0a4f7615d",
+   "changed": {
+    "pixels": 58566,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "hinting_none",
+    "property": "background-color",
+    "before": "#2563eb",
+    "after": "#4d77ff",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/element_removed@hinting_none/gone",
+   "template": "table",
+   "split": "calibration",
+   "family": "element_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/element_removed--gone--hinting_none.png",
+   "sha256": "ac6fddfd0fdff3a47a5689b672a86819cd842026c9f08be5f319b3443a3f162d",
+   "changed": {
+    "pixels": 89698,
+    "box": [
+     22,
+     21,
+     1236,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/icon_swap@hinting_none/swapped",
+   "template": "table",
+   "split": "calibration",
+   "family": "icon_swap@hinting_none",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/icon_swap--swapped--hinting_none.png",
+   "sha256": "88b52652b14224cfbd565f252df3db5570267af2b114a2941e3c5a0f3d8519b9",
+   "changed": {
+    "pixels": 56101,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/one_char@hinting_none/one",
+   "template": "table",
+   "split": "calibration",
+   "family": "one_char@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/one_char--one--hinting_none.png",
+   "sha256": "65de7c20861e38184bd8a8f24fdab57aeade8056b3f3cf71e20d198fc3ea7821",
+   "changed": {
+    "pixels": 56099,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/word_swap@hinting_none/one",
+   "template": "table",
+   "split": "calibration",
+   "family": "word_swap@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/word_swap--one--hinting_none.png",
+   "sha256": "d90d29d60c52e06e9d477413f4c4c4099799b98140a29cf6b620efb9e13fb5b0",
+   "changed": {
+    "pixels": 57335,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/border_added@hinting_none/light",
+   "template": "table",
+   "split": "calibration",
+   "family": "border_added@hinting_none",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/border_added--light--hinting_none.png",
+   "sha256": "38b44a6d6c5fd4f725d49c0c562147c99d246c850241c3039742d598eaa43576",
+   "changed": {
+    "pixels": 66121,
+    "box": [
+     22,
+     21,
+     1236,
+     596
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/border_removed@hinting_none/gone",
+   "template": "table",
+   "split": "calibration",
+   "family": "border_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/border_removed--gone--hinting_none.png",
+   "sha256": "71e58a8022a1a7561937d27f49c178638d36029ec0527c8e2a6c088ce9ac13ae",
+   "changed": {
+    "pixels": 56149,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/underline@hinting_none/on",
+   "template": "table",
+   "split": "calibration",
+   "family": "underline@hinting_none",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/underline--on--hinting_none.png",
+   "sha256": "12d63bced65609ed6a724ec599c71e7197f1d471a5740f7a1103c312781100e4",
+   "changed": {
+    "pixels": 56117,
+    "box": [
+     23,
+     21,
+     1234,
+     594
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/text_color@hinting_none/de8",
+   "template": "form",
+   "split": "calibration",
+   "family": "text_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/text_color--de8--hinting_none.png",
+   "sha256": "ffbd8e7f28b50b4e4ecfedb99f069c17c6eac7737dca59a2bd4098e0120dc1b4",
+   "changed": {
+    "pixels": 30702,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#111827",
+    "after": "#2b3142",
+    "delta_e00": 7.95
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/icon_color@hinting_none/de8",
+   "template": "form",
+   "split": "calibration",
+   "family": "icon_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/icon_color--de8--hinting_none.png",
+   "sha256": "709ace0dbf52e0aceb4054691b87d953370ff31a53ee883f928608055399fbf2",
+   "changed": {
+    "pixels": 30535,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#b45309",
+    "after": "#cd6722",
+    "delta_e00": 7.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/fill@hinting_none/de8",
+   "template": "form",
+   "split": "calibration",
+   "family": "fill@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/fill--de8--hinting_none.png",
+   "sha256": "98e7844f24296ce61784c0eb30387bc85952337cf89e0f8c80b25c7301e5c009",
+   "changed": {
+    "pixels": 34199,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "hinting_none",
+    "property": "background-color",
+    "before": "#0f766e",
+    "after": "#2e8b82",
+    "delta_e00": 8.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/element_removed@hinting_none/gone",
+   "template": "form",
+   "split": "calibration",
+   "family": "element_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/element_removed--gone--hinting_none.png",
+   "sha256": "0059f9f54d267c08aedf6916074ccda555ff2058b05715ff72dd168553251dec",
+   "changed": {
+    "pixels": 30966,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/icon_swap@hinting_none/swapped",
+   "template": "form",
+   "split": "calibration",
+   "family": "icon_swap@hinting_none",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/icon_swap--swapped--hinting_none.png",
+   "sha256": "81087f0782c68f2006471ca04e2dc8cf3057b6c05a06dce2230ada846568a636",
+   "changed": {
+    "pixels": 30490,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/one_char@hinting_none/one",
+   "template": "form",
+   "split": "calibration",
+   "family": "one_char@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/one_char--one--hinting_none.png",
+   "sha256": "fc43405638a3a5e3ab82a42cbfbb3198c170bda226b8f7748fe3fede3b92dab7",
+   "changed": {
+    "pixels": 30469,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/word_swap@hinting_none/one",
+   "template": "form",
+   "split": "calibration",
+   "family": "word_swap@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/word_swap--one--hinting_none.png",
+   "sha256": "2e5106505c38a3c46a4737b4d61bfbc4914e174e5c1136e9801f6f68e27244d6",
+   "changed": {
+    "pixels": 30444,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/border_added@hinting_none/light",
+   "template": "form",
+   "split": "calibration",
+   "family": "border_added@hinting_none",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/border_added--light--hinting_none.png",
+   "sha256": "a97055718d7de169bcbb3031b2a3bd2f5acd875a68378c93dee45cc642ffad5c",
+   "changed": {
+    "pixels": 30178,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/border_removed@hinting_none/gone",
+   "template": "form",
+   "split": "calibration",
+   "family": "border_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/border_removed--gone--hinting_none.png",
+   "sha256": "db8e3e3c6d7863bab77b1815e04bb043393eb5a516524ccc79b5fefbbe3ec2d4",
+   "changed": {
+    "pixels": 31222,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "form/underline@hinting_none/on",
+   "template": "form",
+   "split": "calibration",
+   "family": "underline@hinting_none",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/underline--on--hinting_none.png",
+   "sha256": "6b2fc3ec454edc39608a1a4c3b57892a0dfb4029d30bd1cba7f34dc2be5cd97c",
+   "changed": {
+    "pixels": 30495,
+    "box": [
+     259,
+     30,
+     759,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/text_color@hinting_none/de8",
+   "template": "cards",
+   "split": "calibration",
+   "family": "text_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/text_color--de8--hinting_none.png",
+   "sha256": "4761b8e7d867da0565ea39bcd716cdcf9980665cdf82d519d5aa87cc5f4f4f77",
+   "changed": {
+    "pixels": 28214,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#57534e",
+    "after": "#6d6963",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/icon_color@hinting_none/de8",
+   "template": "cards",
+   "split": "calibration",
+   "family": "icon_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/icon_color--de8--hinting_none.png",
+   "sha256": "9806f56e5f534e162a75856b348435e5e1dc42f1967ff83befb06145e543da77",
+   "changed": {
+    "pixels": 28079,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#fafaf9",
+    "after": "#d5d5d5",
+    "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/fill@hinting_none/de8",
+   "template": "cards",
+   "split": "calibration",
+   "family": "fill@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/fill--de8--hinting_none.png",
+   "sha256": "c7d1c6af42f88894865f217c2f2a7d2a9794375893c4c086a1cf590bf670143b",
+   "changed": {
+    "pixels": 29334,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "hinting_none",
+    "property": "background-color",
+    "before": "#ea580c",
+    "after": "#d04200",
+    "delta_e00": 7.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/element_removed@hinting_none/gone",
+   "template": "cards",
+   "split": "calibration",
+   "family": "element_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/element_removed--gone--hinting_none.png",
+   "sha256": "d412d24a89ed3fb2aaa49cce4c1613e9df988c262fd9cdc44d8570e7dbc38a25",
+   "changed": {
+    "pixels": 28677,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/icon_swap@hinting_none/swapped",
+   "template": "cards",
+   "split": "calibration",
+   "family": "icon_swap@hinting_none",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/icon_swap--swapped--hinting_none.png",
+   "sha256": "7c378a20206325f58bd34efaf282c637371a3252c9e71b1fc2103b77bc6f61d8",
+   "changed": {
+    "pixels": 29494,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/one_char@hinting_none/one",
+   "template": "cards",
+   "split": "calibration",
+   "family": "one_char@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/one_char--one--hinting_none.png",
+   "sha256": "1d7e741eed6a05f305f7490ca3384fd86ce1516ea31b986e3c612d601d4b8fd0",
+   "changed": {
+    "pixels": 28076,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/word_swap@hinting_none/one",
+   "template": "cards",
+   "split": "calibration",
+   "family": "word_swap@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/word_swap--one--hinting_none.png",
+   "sha256": "3cf70de3bde805ddbfde623fc09f591cd49b806c86ba35dd52f36202b8abd234",
+   "changed": {
+    "pixels": 28275,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/border_added@hinting_none/light",
+   "template": "cards",
+   "split": "calibration",
+   "family": "border_added@hinting_none",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/border_added--light--hinting_none.png",
+   "sha256": "be45d1ac47b4f2cc1d36e2a0e49823d2a33d91cf9814dc66dee4ac997bfe6b61",
+   "changed": {
+    "pixels": 28807,
+    "box": [
+     32,
+     19,
+     1217,
+     447
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/border_removed@hinting_none/gone",
+   "template": "cards",
+   "split": "calibration",
+   "family": "border_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/border_removed--gone--hinting_none.png",
+   "sha256": "4e766781766f5f89a91d5edf1c101b9ac10bcbd02ac17831aa5901a14665be65",
+   "changed": {
+    "pixels": 29246,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "cards/underline@hinting_none/on",
+   "template": "cards",
+   "split": "calibration",
+   "family": "underline@hinting_none",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/underline--on--hinting_none.png",
+   "sha256": "ef51bceefdab6397fc4c1d66441cc73e20f9b248e2de460e7503a6f1618b47d7",
+   "changed": {
+    "pixels": 28132,
+    "box": [
+     32,
+     19,
+     1217,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/text_color@hinting_none/de8",
+   "template": "landing",
+   "split": "held_out",
+   "family": "text_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/text_color--de8--hinting_none.png",
+   "sha256": "0fad8de612843894cc637e6c2609fc0761f07f9687272cc1f427530342f19869",
+   "changed": {
+    "pixels": 51468,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#475569",
+    "after": "#5d6b7f",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/icon_color@hinting_none/de8",
+   "template": "landing",
+   "split": "held_out",
+   "family": "icon_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/icon_color--de8--hinting_none.png",
+   "sha256": "518fb0840f544718ce64035489fd952c45134c302eb7f3b62a5f41b29803e9e9",
+   "changed": {
+    "pixels": 51096,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#4f46e5",
+    "after": "#6c5bfe",
+    "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/fill@hinting_none/de8",
+   "template": "landing",
+   "split": "held_out",
+   "family": "fill@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/fill--de8--hinting_none.png",
+   "sha256": "5cbc22ac076008ecdcd030fc07daa71002316009c855562c3284024ac0cf7d41",
+   "changed": {
+    "pixels": 56388,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "hinting_none",
+    "property": "background-color",
+    "before": "#4f46e5",
+    "after": "#6c5bfe",
+    "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/element_removed@hinting_none/gone",
+   "template": "landing",
+   "split": "held_out",
+   "family": "element_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/element_removed--gone--hinting_none.png",
+   "sha256": "73b42636ce61f7c47ff5cbb2cb76f67acc77f84c5f510adcafe19dd22488ee14",
+   "changed": {
+    "pixels": 303817,
+    "box": [
+     0,
+     21,
+     1280,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/icon_swap@hinting_none/swapped",
+   "template": "landing",
+   "split": "held_out",
+   "family": "icon_swap@hinting_none",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/icon_swap--swapped--hinting_none.png",
+   "sha256": "8a1c7c9eab233087fa0ccccfed1ed6c1776ec0476bfff7f0b161de8f8b3a2574",
+   "changed": {
+    "pixels": 51032,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/one_char@hinting_none/one",
+   "template": "landing",
+   "split": "held_out",
+   "family": "one_char@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/one_char--one--hinting_none.png",
+   "sha256": "63d140e384f256c982bae0ef0f0216b39da67ebd33ad41a711b5190a9f88672b",
+   "changed": {
+    "pixels": 50969,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/word_swap@hinting_none/one",
+   "template": "landing",
+   "split": "held_out",
+   "family": "word_swap@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/word_swap--one--hinting_none.png",
+   "sha256": "5e4de94d6c3776d8b719e4290cf3e42038bae07c5de1dacbb4be8f508e3ea303",
+   "changed": {
+    "pixels": 50991,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/border_added@hinting_none/light",
+   "template": "landing",
+   "split": "held_out",
+   "family": "border_added@hinting_none",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/border_added--light--hinting_none.png",
+   "sha256": "c1206a0bce156a9a74f948f462ae8038238f30a74429099e94728ed32bfa11a8",
+   "changed": {
+    "pixels": 51484,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/border_removed@hinting_none/gone",
+   "template": "landing",
+   "split": "held_out",
+   "family": "border_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/border_removed--gone--hinting_none.png",
+   "sha256": "d2d8a0b4e7bba84174d5a5ffee577cf10878b247d9fa809ea21e2582b9ae00dd",
+   "changed": {
+    "pixels": 51344,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "landing/underline@hinting_none/on",
+   "template": "landing",
+   "split": "held_out",
+   "family": "underline@hinting_none",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/underline--on--hinting_none.png",
+   "sha256": "0efd3c32c4525b9e5b1be8bfbd1efb2dca693d9e1eed105599b17800b491a898",
+   "changed": {
+    "pixels": 51077,
+    "box": [
+     63,
+     21,
+     1154,
+     707
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/text_color@hinting_none/de8",
+   "template": "article",
+   "split": "calibration",
+   "family": "text_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/text_color--de8--hinting_none.png",
+   "sha256": "612714342ba68b00d276670d774fea708bcad5d56cf479fba5d3ab367e0b203d",
+   "changed": {
+    "pixels": 127440,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#1f2328",
+    "after": "#383c42",
+    "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/icon_color@hinting_none/de8",
+   "template": "article",
+   "split": "calibration",
+   "family": "icon_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/icon_color--de8--hinting_none.png",
+   "sha256": "7eb612ff81f8188c7695c9438db03a9be9983a0573614e90224cada00b7703b6",
+   "changed": {
+    "pixels": 126664,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#6b7280",
+    "after": "#7f8795",
+    "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/fill@hinting_none/de8",
+   "template": "article",
+   "split": "calibration",
+   "family": "fill@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/fill--de8--hinting_none.png",
+   "sha256": "f31c4bc79cf2d07d2d41f0e6d408e91b82d318d2121013f66faec49d6b8e9f7c",
+   "changed": {
+    "pixels": 128393,
+    "box": [
+     39,
+     12,
+     1201,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "hinting_none",
+    "property": "background-color",
+    "before": "#9a3412",
+    "after": "#b54b27",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/element_removed@hinting_none/gone",
+   "template": "article",
+   "split": "calibration",
+   "family": "element_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/element_removed--gone--hinting_none.png",
+   "sha256": "d8252e01325251259218188872a068bdea5637b4198ade2e71a1ad610d2fccd3",
+   "changed": {
+    "pixels": 126627,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/icon_swap@hinting_none/swapped",
+   "template": "article",
+   "split": "calibration",
+   "family": "icon_swap@hinting_none",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/icon_swap--swapped--hinting_none.png",
+   "sha256": "ca8df1c6a5c47983e75aa262c53a33d1b9b481f1116ab63b66bc843b1b2564a0",
+   "changed": {
+    "pixels": 126612,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/one_char@hinting_none/one",
+   "template": "article",
+   "split": "calibration",
+   "family": "one_char@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/one_char--one--hinting_none.png",
+   "sha256": "bd61066ebdfd4975dbe5daac631833f19c3ac04cf8fa8146041a51ce615aec4a",
+   "changed": {
+    "pixels": 126574,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/word_swap@hinting_none/one",
+   "template": "article",
+   "split": "calibration",
+   "family": "word_swap@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/word_swap--one--hinting_none.png",
+   "sha256": "3554bd96561a0fba3a772173d5394efd5e06d965849adf2685f3651c7a9e0921",
+   "changed": {
+    "pixels": 126600,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/border_added@hinting_none/light",
+   "template": "article",
+   "split": "calibration",
+   "family": "border_added@hinting_none",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/border_added--light--hinting_none.png",
+   "sha256": "ab6ee99c68f3140338f6aa5a237725d7537a76762a0500e39523e72af9cc0197",
+   "changed": {
+    "pixels": 134582,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/border_removed@hinting_none/gone",
+   "template": "article",
+   "split": "calibration",
+   "family": "border_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/border_removed--gone--hinting_none.png",
+   "sha256": "5814c99cc72f3ea3bafca23ff67316de0ef6f029978435f9ba9f7c5dacb6aecc",
+   "changed": {
+    "pixels": 126706,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "article/underline@hinting_none/on",
+   "template": "article",
+   "split": "calibration",
+   "family": "underline@hinting_none",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/underline--on--hinting_none.png",
+   "sha256": "81905ba1ff069d351d504e565d7c88e1ff4452ef60e3c876d0758ce918eac6e0",
+   "changed": {
+    "pixels": 126761,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/text_color@hinting_none/de8",
+   "template": "dark",
+   "split": "held_out",
+   "family": "text_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/text_color--de8--hinting_none.png",
+   "sha256": "edeb96b99d25edd7d7d7601e70ab9d585a59c1f82672e26e5426538f2e0dcfe5",
+   "changed": {
+    "pixels": 33702,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#e5e7eb",
+    "after": "#c3c5c8",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/icon_color@hinting_none/de8",
+   "template": "dark",
+   "split": "held_out",
+   "family": "icon_color@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/icon_color--de8--hinting_none.png",
+   "sha256": "c7b0467eb332d206fa80f8ac454ff663c803f77a85d1b61dc35f01b30e666640",
+   "changed": {
+    "pixels": 33835,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "hinting_none",
+    "property": "color",
+    "before": "#f8fafc",
+    "after": "#d4d5d7",
+    "delta_e00": 7.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/fill@hinting_none/de8",
+   "template": "dark",
+   "split": "held_out",
+   "family": "fill@hinting_none",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/fill--de8--hinting_none.png",
+   "sha256": "5723695fe8841187ea45c54e33e642ddd1e77ab43b892ce1aea7cff7c5172774",
+   "changed": {
+    "pixels": 36375,
+    "box": [
+     22,
+     20,
+     1232,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "hinting_none",
+    "property": "background-color",
+    "before": "#38bdf8",
+    "after": "#00a1db",
+    "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/element_removed@hinting_none/gone",
+   "template": "dark",
+   "split": "held_out",
+   "family": "element_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/element_removed--gone--hinting_none.png",
+   "sha256": "d71b85a2a6b0bb136f1003fe4ade28d709134a7bf0c52213a8318adab7a9eb54",
+   "changed": {
+    "pixels": 33619,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/icon_swap@hinting_none/swapped",
+   "template": "dark",
+   "split": "held_out",
+   "family": "icon_swap@hinting_none",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/icon_swap--swapped--hinting_none.png",
+   "sha256": "ffe3e70ec0e41f41984659427eb3c0c8d945d67610c994b1aebd74ff927df315",
+   "changed": {
+    "pixels": 33796,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/one_char@hinting_none/one",
+   "template": "dark",
+   "split": "held_out",
+   "family": "one_char@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/one_char--one--hinting_none.png",
+   "sha256": "a1f4ec7701201601e300a4a4553b0ae2f286874a2fef687ebcdc944378855106",
+   "changed": {
+    "pixels": 33753,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/word_swap@hinting_none/one",
+   "template": "dark",
+   "split": "held_out",
+   "family": "word_swap@hinting_none",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/word_swap--one--hinting_none.png",
+   "sha256": "906dfb2fb017943ba08b16ef2600cb586703a58779bb1b50106762508b6676fb",
+   "changed": {
+    "pixels": 33727,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/border_added@hinting_none/light",
+   "template": "dark",
+   "split": "held_out",
+   "family": "border_added@hinting_none",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/border_added--light--hinting_none.png",
+   "sha256": "a1f3a70b7bfc4d2e16ac3c51d83ff17ccf735e69ea79d64a5c416da6a443a287",
+   "changed": {
+    "pixels": 55519,
+    "box": [
+     22,
+     20,
+     1232,
+     494
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/border_removed@hinting_none/gone",
+   "template": "dark",
+   "split": "held_out",
+   "family": "border_removed@hinting_none",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/border_removed--gone--hinting_none.png",
+   "sha256": "01eaf249772b3ae523b49b2492f55c03f546ea431b6f7eab8cf82027693d44c1",
+   "changed": {
+    "pixels": 34420,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "dark/underline@hinting_none/on",
+   "template": "dark",
+   "split": "held_out",
+   "family": "underline@hinting_none",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with --font-render-hinting=none, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/underline--on--hinting_none.png",
+   "sha256": "b4c8f85e02c5919ef549e4ea37fa97e6428898acd3e767a23435935e85ef4b42",
+   "changed": {
+    "pixels": 33857,
+    "box": [
+     22,
+     20,
+     1219,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "hinting_none"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "hinting_none"
+   }
+  },
+  {
+   "name": "table/text_color@full_chromium/de8",
+   "template": "table",
+   "split": "calibration",
+   "family": "text_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/text_color--de8--full_chromium.png",
+   "sha256": "3e063b7c7bd8dd46aa390653040955f48b7a1000ae0fa813730ddb41a8d38bd1",
+   "changed": {
+    "pixels": 53946,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#1f2937",
+    "after": "#384251",
+    "delta_e00": 8.05
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/icon_color@full_chromium/de8",
+   "template": "table",
+   "split": "calibration",
+   "family": "icon_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/icon_color--de8--full_chromium.png",
+   "sha256": "4fc54230db37b32b18b9f7afacde9855a8fedda11527a614a446bc6c7755c8bc",
+   "changed": {
+    "pixels": 51629,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#6b7280",
+    "after": "#7f8795",
+    "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/fill@full_chromium/de8",
+   "template": "table",
+   "split": "calibration",
+   "family": "fill@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/fill--de8--full_chromium.png",
+   "sha256": "ba1d7ba52ab8914de0853bdac3698b0ea8091f4173f977e5947bd602fdec1368",
+   "changed": {
+    "pixels": 54160,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "full_chromium",
+    "property": "background-color",
+    "before": "#2563eb",
+    "after": "#4d77ff",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/element_removed@full_chromium/gone",
+   "template": "table",
+   "split": "calibration",
+   "family": "element_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/element_removed--gone--full_chromium.png",
+   "sha256": "13d58d829c2a3d0cc1fd5217ed81c66083066091833cd0c8e719e12158112580",
+   "changed": {
+    "pixels": 87887,
+    "box": [
+     22,
+     20,
+     1236,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/icon_swap@full_chromium/swapped",
+   "template": "table",
+   "split": "calibration",
+   "family": "icon_swap@full_chromium",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/icon_swap--swapped--full_chromium.png",
+   "sha256": "7512ede9336b969781746bc7e7a3986a5667d4e89451abe3eeed101418b154d9",
+   "changed": {
+    "pixels": 51662,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/one_char@full_chromium/one",
+   "template": "table",
+   "split": "calibration",
+   "family": "one_char@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/one_char--one--full_chromium.png",
+   "sha256": "a92a37865954202cd9fea68d7c0b4e371fe8e3cfd225a4adaba9e5f9d366bc65",
+   "changed": {
+    "pixels": 51681,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/word_swap@full_chromium/one",
+   "template": "table",
+   "split": "calibration",
+   "family": "word_swap@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/word_swap--one--full_chromium.png",
+   "sha256": "5090ffa5c371cf0601d85e0a85e604f8e203fa7068ba442734822c6f504af33c",
+   "changed": {
+    "pixels": 53371,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/border_added@full_chromium/light",
+   "template": "table",
+   "split": "calibration",
+   "family": "border_added@full_chromium",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/border_added--light--full_chromium.png",
+   "sha256": "e06da59ae8330d3b0e69bd7020e6e7fd4c6fc66ecb395bb512228ae66bd2546e",
+   "changed": {
+    "pixels": 62154,
+    "box": [
+     22,
+     20,
+     1236,
+     597
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/border_removed@full_chromium/gone",
+   "template": "table",
+   "split": "calibration",
+   "family": "border_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/border_removed--gone--full_chromium.png",
+   "sha256": "395563220de43ed11a8baa4de95160aadae57cb68d9043793db9ddc37ab03711",
+   "changed": {
+    "pixels": 51710,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "table/underline@full_chromium/on",
+   "template": "table",
+   "split": "calibration",
+   "family": "underline@full_chromium",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/table/base.png",
+   "actual": "frames/table/underline--on--full_chromium.png",
+   "sha256": "f707bbfd62bd398a638fbf14eb7da461b7da0336d011924cd5462ede4df7e7aa",
+   "changed": {
+    "pixels": 51678,
+    "box": [
+     23,
+     20,
+     1234,
+     595
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/text_color@full_chromium/de8",
+   "template": "form",
+   "split": "calibration",
+   "family": "text_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/text_color--de8--full_chromium.png",
+   "sha256": "992f4b0150719c149d201dd63c8a10e49d295e59d526a6240ff3c8c818b19938",
+   "changed": {
+    "pixels": 28602,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#111827",
+    "after": "#2b3142",
+    "delta_e00": 7.95
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/icon_color@full_chromium/de8",
+   "template": "form",
+   "split": "calibration",
+   "family": "icon_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/icon_color--de8--full_chromium.png",
+   "sha256": "db4159ce438bba0d20a3a928a85e76ef11b30a50eefec0613d7bc88a66949390",
+   "changed": {
+    "pixels": 28007,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#b45309",
+    "after": "#cd6722",
+    "delta_e00": 7.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/fill@full_chromium/de8",
+   "template": "form",
+   "split": "calibration",
+   "family": "fill@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/fill--de8--full_chromium.png",
+   "sha256": "eabfd255ba5a58ca0de7ac7cca404b46a4ad588bb633cf676226cb177edd11a9",
+   "changed": {
+    "pixels": 31749,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "full_chromium",
+    "property": "background-color",
+    "before": "#0f766e",
+    "after": "#2e8b82",
+    "delta_e00": 8.02
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/element_removed@full_chromium/gone",
+   "template": "form",
+   "split": "calibration",
+   "family": "element_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/element_removed--gone--full_chromium.png",
+   "sha256": "78d22db2f6d10a90d0a1767353b2a16c2810bd196cd72ee1cc4f1b303ff5095f",
+   "changed": {
+    "pixels": 28461,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/icon_swap@full_chromium/swapped",
+   "template": "form",
+   "split": "calibration",
+   "family": "icon_swap@full_chromium",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/icon_swap--swapped--full_chromium.png",
+   "sha256": "5bf051a03a96852b7ea5551f83c4b135debc3e7faaaa23bc24df4f40fb6502a4",
+   "changed": {
+    "pixels": 27962,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/one_char@full_chromium/one",
+   "template": "form",
+   "split": "calibration",
+   "family": "one_char@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/one_char--one--full_chromium.png",
+   "sha256": "d4a7947c8270c0d3192ce2e22ebd47270e421ac9623c46ee0a42221c8057db41",
+   "changed": {
+    "pixels": 27940,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/word_swap@full_chromium/one",
+   "template": "form",
+   "split": "calibration",
+   "family": "word_swap@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/word_swap--one--full_chromium.png",
+   "sha256": "951ae531fe73493b24161bc6fb9ca4b15ab4ac3d6d284ad72c44dbb0ca84074c",
+   "changed": {
+    "pixels": 27921,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/border_added@full_chromium/light",
+   "template": "form",
+   "split": "calibration",
+   "family": "border_added@full_chromium",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/border_added--light--full_chromium.png",
+   "sha256": "450467b001fe1f9906109e69ec44847e69736f4933ed568a361cc0e03e9623df",
+   "changed": {
+    "pixels": 27584,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/border_removed@full_chromium/gone",
+   "template": "form",
+   "split": "calibration",
+   "family": "border_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/border_removed--gone--full_chromium.png",
+   "sha256": "ea8471104a4a54a1eace499248ea3b13d654c383d242d507365a792dbcaf0637",
+   "changed": {
+    "pixels": 28694,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "form/underline@full_chromium/on",
+   "template": "form",
+   "split": "calibration",
+   "family": "underline@full_chromium",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/form/base.png",
+   "actual": "frames/form/underline--on--full_chromium.png",
+   "sha256": "9e30dd8a2e0f2ffdf7ee6b71d99db621d577e1df5790b38bfadc0f6b9869a576",
+   "changed": {
+    "pixels": 27967,
+    "box": [
+     260,
+     30,
+     758,
+     567
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/text_color@full_chromium/de8",
+   "template": "cards",
+   "split": "calibration",
+   "family": "text_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/text_color--de8--full_chromium.png",
+   "sha256": "55460dd9af829f332b8531f38e64db5d1fdeee73fb1a607fe834b1fe596c033a",
+   "changed": {
+    "pixels": 25881,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#57534e",
+    "after": "#6d6963",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/icon_color@full_chromium/de8",
+   "template": "cards",
+   "split": "calibration",
+   "family": "icon_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/icon_color--de8--full_chromium.png",
+   "sha256": "1c640e1610f89c78084f3c056b0498510301f27d2218b3b7a3d6a5c76a1d9f07",
+   "changed": {
+    "pixels": 25698,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#fafaf9",
+    "after": "#d5d5d5",
+    "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/fill@full_chromium/de8",
+   "template": "cards",
+   "split": "calibration",
+   "family": "fill@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/fill--de8--full_chromium.png",
+   "sha256": "70490c943facc40ff31c3632a2695fbf51b137e92bb51e1c4e4a68e4b927eba2",
+   "changed": {
+    "pixels": 26963,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "full_chromium",
+    "property": "background-color",
+    "before": "#ea580c",
+    "after": "#d04200",
+    "delta_e00": 7.97
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/element_removed@full_chromium/gone",
+   "template": "cards",
+   "split": "calibration",
+   "family": "element_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/element_removed--gone--full_chromium.png",
+   "sha256": "5ea219725521d3ea9ab61c9b168dc5691d9cf5cf35f44e98b2bceb1c53a34630",
+   "changed": {
+    "pixels": 26304,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/icon_swap@full_chromium/swapped",
+   "template": "cards",
+   "split": "calibration",
+   "family": "icon_swap@full_chromium",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/icon_swap--swapped--full_chromium.png",
+   "sha256": "faeffc20dc1ffe1fb6c57b5fa7801616b8958eacd8a25ceab609344a3134b279",
+   "changed": {
+    "pixels": 27113,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/one_char@full_chromium/one",
+   "template": "cards",
+   "split": "calibration",
+   "family": "one_char@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/one_char--one--full_chromium.png",
+   "sha256": "9b75c69e64e798729978562078436cbe360610bc23fbed89a892b4f6fb4de251",
+   "changed": {
+    "pixels": 25689,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/word_swap@full_chromium/one",
+   "template": "cards",
+   "split": "calibration",
+   "family": "word_swap@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/word_swap--one--full_chromium.png",
+   "sha256": "a64324ac9fc6c9f097e2aaca273093cd2b5d2bb0ff0d49353053e9195c65b3ee",
+   "changed": {
+    "pixels": 25941,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/border_added@full_chromium/light",
+   "template": "cards",
+   "split": "calibration",
+   "family": "border_added@full_chromium",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/border_added--light--full_chromium.png",
+   "sha256": "3f08f582a23d7bb4e4bb05798abb471b8504fcf8691fe0390cbfa7b4b9aa8a59",
+   "changed": {
+    "pixels": 26594,
+    "box": [
+     32,
+     19,
+     1217,
+     447
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/border_removed@full_chromium/gone",
+   "template": "cards",
+   "split": "calibration",
+   "family": "border_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/border_removed--gone--full_chromium.png",
+   "sha256": "e384f44e79a43bb9fef6ac564fa3dc6f015fe12e61cfc07b17b4be9715f62366",
+   "changed": {
+    "pixels": 26865,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "cards/underline@full_chromium/on",
+   "template": "cards",
+   "split": "calibration",
+   "family": "underline@full_chromium",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/cards/base.png",
+   "actual": "frames/cards/underline--on--full_chromium.png",
+   "sha256": "5b648d3263f28f602307f14e71c519e2f6f13ef1fbc90c8acd398ee225a85a23",
+   "changed": {
+    "pixels": 25751,
+    "box": [
+     34,
+     19,
+     1215,
+     441
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/text_color@full_chromium/de8",
+   "template": "landing",
+   "split": "held_out",
+   "family": "text_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/text_color--de8--full_chromium.png",
+   "sha256": "4522cfc370759405c8ce55c0503df278fc28c013993c7ddb97f78ebfb2289702",
+   "changed": {
+    "pixels": 49528,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#475569",
+    "after": "#5d6b7f",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/icon_color@full_chromium/de8",
+   "template": "landing",
+   "split": "held_out",
+   "family": "icon_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/icon_color--de8--full_chromium.png",
+   "sha256": "a9155ef198aa917ac4d1ccb44a1482847bc772a5e81606bc76c59e0131b2f54a",
+   "changed": {
+    "pixels": 49198,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#4f46e5",
+    "after": "#6c5bfe",
+    "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/fill@full_chromium/de8",
+   "template": "landing",
+   "split": "held_out",
+   "family": "fill@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/fill--de8--full_chromium.png",
+   "sha256": "b7f36777554c378a6c4fcb3f178bf568dac84c933aacf5eaa34029fe9e24f449",
+   "changed": {
+    "pixels": 54472,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "full_chromium",
+    "property": "background-color",
+    "before": "#4f46e5",
+    "after": "#6c5bfe",
+    "delta_e00": 8.1
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/element_removed@full_chromium/gone",
+   "template": "landing",
+   "split": "held_out",
+   "family": "element_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/element_removed--gone--full_chromium.png",
+   "sha256": "d92e17b226988ddede9f4ffda82af8ba1352a08215d8d8edd73a675287eacc21",
+   "changed": {
+    "pixels": 303134,
+    "box": [
+     0,
+     21,
+     1280,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/icon_swap@full_chromium/swapped",
+   "template": "landing",
+   "split": "held_out",
+   "family": "icon_swap@full_chromium",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/icon_swap--swapped--full_chromium.png",
+   "sha256": "3857c9138c8f989d9f4f57c7474da27d55a5a2d3d35c528175ebe03891726ea4",
+   "changed": {
+    "pixels": 49134,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/one_char@full_chromium/one",
+   "template": "landing",
+   "split": "held_out",
+   "family": "one_char@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/one_char--one--full_chromium.png",
+   "sha256": "8757400d327fa7e91ec55d869ebce1bc634da4edb75bc1443a9dd93cb048add6",
+   "changed": {
+    "pixels": 49070,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/word_swap@full_chromium/one",
+   "template": "landing",
+   "split": "held_out",
+   "family": "word_swap@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/word_swap--one--full_chromium.png",
+   "sha256": "6f2d4f5788e4336395d2e7f79a9495c53d49787f4301dde00cb8164f9845ab43",
+   "changed": {
+    "pixels": 49095,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/border_added@full_chromium/light",
+   "template": "landing",
+   "split": "held_out",
+   "family": "border_added@full_chromium",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/border_added--light--full_chromium.png",
+   "sha256": "300a755055270f3a7cdf4e8a1c1b1b14f00c2b6db2165fd705c853c5dcd1847c",
+   "changed": {
+    "pixels": 49660,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/border_removed@full_chromium/gone",
+   "template": "landing",
+   "split": "held_out",
+   "family": "border_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/border_removed--gone--full_chromium.png",
+   "sha256": "af04c866af5614e723a01b8c2c0bd0d22fbddddddbedbefa29a87cf4bab6c3e1",
+   "changed": {
+    "pixels": 49446,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "landing/underline@full_chromium/on",
+   "template": "landing",
+   "split": "held_out",
+   "family": "underline@full_chromium",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/landing/base.png",
+   "actual": "frames/landing/underline--on--full_chromium.png",
+   "sha256": "9aded6cb8f71ab9d4375676034f55520efbe1bf70d30a7859d00cff1eb4ccd8a",
+   "changed": {
+    "pixels": 49179,
+    "box": [
+     63,
+     21,
+     1154,
+     706
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/text_color@full_chromium/de8",
+   "template": "article",
+   "split": "calibration",
+   "family": "text_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/text_color--de8--full_chromium.png",
+   "sha256": "c05b163be4ec04539253214fbae09aba3aac2fe530600a3f93c1a69f0ff7ad1f",
+   "changed": {
+    "pixels": 118661,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#1f2328",
+    "after": "#383c42",
+    "delta_e00": 8.01
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/icon_color@full_chromium/de8",
+   "template": "article",
+   "split": "calibration",
+   "family": "icon_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/icon_color--de8--full_chromium.png",
+   "sha256": "0ed6c5d665f7d5508261261dbd4fdb432afa93037f4933d5c70d7ce43e45e93f",
+   "changed": {
+    "pixels": 116935,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#6b7280",
+    "after": "#7f8795",
+    "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/fill@full_chromium/de8",
+   "template": "article",
+   "split": "calibration",
+   "family": "fill@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/fill--de8--full_chromium.png",
+   "sha256": "aa507c36fb64eb4b37c00c6657d7e9aeb6bf2a6412eae70309ac549ab066a152",
+   "changed": {
+    "pixels": 118747,
+    "box": [
+     39,
+     12,
+     1201,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "full_chromium",
+    "property": "background-color",
+    "before": "#9a3412",
+    "after": "#b54b27",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/element_removed@full_chromium/gone",
+   "template": "article",
+   "split": "calibration",
+   "family": "element_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/element_removed--gone--full_chromium.png",
+   "sha256": "981f80511cdc73c67924195c1ed515b06151d8c07fb3e1d312d104b0da1c7cbb",
+   "changed": {
+    "pixels": 117027,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/icon_swap@full_chromium/swapped",
+   "template": "article",
+   "split": "calibration",
+   "family": "icon_swap@full_chromium",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/icon_swap--swapped--full_chromium.png",
+   "sha256": "5b3a636ae2b5ada20ff87f2a1ab74d6e5da8180e23e39a4593d997597d7556f5",
+   "changed": {
+    "pixels": 116883,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/one_char@full_chromium/one",
+   "template": "article",
+   "split": "calibration",
+   "family": "one_char@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/one_char--one--full_chromium.png",
+   "sha256": "c0989e13052b69578041a76c5b6960bde07c423d49931410f88ba474e0c1755e",
+   "changed": {
+    "pixels": 116837,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/word_swap@full_chromium/one",
+   "template": "article",
+   "split": "calibration",
+   "family": "word_swap@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/word_swap--one--full_chromium.png",
+   "sha256": "4034898a1dae262749c9b974b15f8df3fea8eba4e1d4b70ae14d1d2762ab0075",
+   "changed": {
+    "pixels": 116882,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/border_added@full_chromium/light",
+   "template": "article",
+   "split": "calibration",
+   "family": "border_added@full_chromium",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/border_added--light--full_chromium.png",
+   "sha256": "0a2c9ec7d3b068d9002552b9ab5a0d372a281a60f9b7d76da18d279cb3410b70",
+   "changed": {
+    "pixels": 126282,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/border_removed@full_chromium/gone",
+   "template": "article",
+   "split": "calibration",
+   "family": "border_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/border_removed--gone--full_chromium.png",
+   "sha256": "7faf4b1119efb4c0940b5d77e53646e6d1941f9f2c30852c563367138802523c",
+   "changed": {
+    "pixels": 116977,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "article/underline@full_chromium/on",
+   "template": "article",
+   "split": "calibration",
+   "family": "underline@full_chromium",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/article/base.png",
+   "actual": "frames/article/underline--on--full_chromium.png",
+   "sha256": "39345281bd7c2da04f2bba5fe78ff7dd591eb152695a255287f10704f1b28702",
+   "changed": {
+    "pixels": 117032,
+    "box": [
+     39,
+     12,
+     1189,
+     740
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/text_color@full_chromium/de8",
+   "template": "dark",
+   "split": "held_out",
+   "family": "text_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: colour of body text, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/text_color--de8--full_chromium.png",
+   "sha256": "ad4311169710b1ee94a30c1e550839a8cd5789cf5ae13cab2ceb554adaccdae0",
+   "changed": {
+    "pixels": 30618,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "text_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#e5e7eb",
+    "after": "#c3c5c8",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/icon_color@full_chromium/de8",
+   "template": "dark",
+   "split": "held_out",
+   "family": "icon_color@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: stroke colour of an icon, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/icon_color--de8--full_chromium.png",
+   "sha256": "bde03251ebbfdbfd6ef2d8b2974a7266ef0a177e63dd249a7c5d91403a765a51",
+   "changed": {
+    "pixels": 30715,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "icon_color",
+    "config": "full_chromium",
+    "property": "color",
+    "before": "#f8fafc",
+    "after": "#d4d5d7",
+    "delta_e00": 7.99
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/fill@full_chromium/de8",
+   "template": "dark",
+   "split": "held_out",
+   "family": "fill@full_chromium",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: background colour of a filled button, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/fill--de8--full_chromium.png",
+   "sha256": "706180708a12c998ed6d1415fec6674051fc11a6abc0b594a4d934a3dd3581fa",
+   "changed": {
+    "pixels": 33303,
+    "box": [
+     23,
+     20,
+     1231,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "fill",
+    "config": "full_chromium",
+    "property": "background-color",
+    "before": "#38bdf8",
+    "after": "#00a1db",
+    "delta_e00": 8.11
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/element_removed@full_chromium/gone",
+   "template": "dark",
+   "split": "held_out",
+   "family": "element_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a small element is removed (display:none), drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/element_removed--gone--full_chromium.png",
+   "sha256": "05266442eca53b747b2dcd9269ae4c35932c8253b52740b7a3aa405e23cb2617",
+   "changed": {
+    "pixels": 30502,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "element_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/icon_swap@full_chromium/swapped",
+   "template": "dark",
+   "split": "held_out",
+   "family": "icon_swap@full_chromium",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one icon replaced by another of the same size, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/icon_swap--swapped--full_chromium.png",
+   "sha256": "c578ee450f1971eefdffc5a2f391f976ef16afe894ba1303f4314467bb6ecf68",
+   "changed": {
+    "pixels": 30676,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "icon_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/one_char@full_chromium/one",
+   "template": "dark",
+   "split": "held_out",
+   "family": "one_char@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one character of a number changes, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/one_char--one--full_chromium.png",
+   "sha256": "1c406e6da0b38071cddbe34db634a52ff3a163d5030f721b00a8cb4b6171ea7b",
+   "changed": {
+    "pixels": 30641,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "one_char",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/word_swap@full_chromium/one",
+   "template": "dark",
+   "split": "held_out",
+   "family": "word_swap@full_chromium",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: one word replaced by another, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/word_swap--one--full_chromium.png",
+   "sha256": "e04c40eba384e5b8464f8d185f15eb4304cacf6776b0fd43fe124889f58c958e",
+   "changed": {
+    "pixels": 30625,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "word_swap",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/border_added@full_chromium/light",
+   "template": "dark",
+   "split": "held_out",
+   "family": "border_added@full_chromium",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a 1px border appears on an element that had none, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/border_added--light--full_chromium.png",
+   "sha256": "13a4684eb77555a9fa729d95b13a758c77c859ec1b36718dfe7f416102ed13f0",
+   "changed": {
+    "pixels": 53252,
+    "box": [
+     23,
+     20,
+     1231,
+     494
+    ]
+   },
+   "detail": {
+    "mutation": "border_added",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/border_removed@full_chromium/gone",
+   "template": "dark",
+   "split": "held_out",
+   "family": "border_removed@full_chromium",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: an element's border becomes transparent, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/border_removed--gone--full_chromium.png",
+   "sha256": "f6b548b46141bbadfb9450ac82180b62f5a74d8349954aafe7b8778f115c029b",
+   "changed": {
+    "pixels": 31300,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "border_removed",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
+   }
+  },
+  {
+   "name": "dark/underline@full_chromium/on",
+   "template": "dark",
+   "split": "held_out",
+   "family": "underline@full_chromium",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "cross_render",
+   "why": "the page changed and the renderer changed too: a link gets underlined, drawn with full Chromium (channel=chromium) instead of the headless shell, against the corpus baseline. No renderer makes this change on its own; a tool that stays green missed it",
+   "expected": "frames/dark/base.png",
+   "actual": "frames/dark/underline--on--full_chromium.png",
+   "sha256": "c7f546945906ad4234abab689d10406e48dd1740805b767ddcb5631992d72f3a",
+   "changed": {
+    "pixels": 30737,
+    "box": [
+     23,
+     20,
+     1218,
+     434
+    ]
+   },
+   "detail": {
+    "mutation": "underline",
+    "config": "full_chromium"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "full_chromium"
    }
   },
   {
@@ -8877,6 +14166,10 @@
    },
    "detail": {
     "tag": "win11"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": null
    }
   },
   {
@@ -8902,6 +14195,10 @@
    },
    "detail": {
     "tag": "win11"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": null
    }
   },
   {
@@ -8927,6 +14224,10 @@
    },
    "detail": {
     "tag": "win11"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": null
    }
   },
   {
@@ -8952,6 +14253,10 @@
    },
    "detail": {
     "tag": "win11"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": null
    }
   },
   {
@@ -8977,6 +14282,10 @@
    },
    "detail": {
     "tag": "win11"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": null
    }
   },
   {
@@ -9002,6 +14311,10 @@
    },
    "detail": {
     "tag": "win11"
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": null
    }
   }
  ]

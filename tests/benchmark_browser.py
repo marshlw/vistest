@@ -118,6 +118,27 @@ def run_vistest(manifest: dict, preset: str, *, ai: bool = True,
     return tool
 
 
+#: The two groups the pairs are read in, by how the browser that drew the
+#: second frame was started and where: the same way as the baseline's
+#: (page CSS aside), or not.
+SAME_RENDERER, OTHER_RENDERER = "same renderer", "other renderer"
+GROUP_RULE = ("a pair is in «other renderer» when the browser that drew its "
+              "second frame was started otherwise than the baseline's — other "
+              "flags, another build, another machine — and in «same renderer» "
+              "when only the page differs (a mutation, or a stylesheet: "
+              "text-rendering, a fractional transform)")
+
+
+def renderer_group(case: dict, manifest: dict) -> str:
+    kind = case["kind"]
+    if kind == "mutation":
+        return SAME_RENDERER
+    if kind in ("os", "cross_render"):
+        return OTHER_RENDERER
+    cfg = manifest["noise_configs"][case["magnitude"]]
+    return OTHER_RENDERER if cfg.get("args") or cfg.get("channel") else SAME_RENDERER
+
+
 def load_native(path: Path, manifest_path: Path = bc.MANIFEST) -> dict:
     doc = json.loads(Path(path).read_text("utf-8"))
     if doc.get("source") != "native":
@@ -333,6 +354,27 @@ def report(manifest: dict, tools: list[Tool], *, timing: bool, notes: list[str],
                  f"{_frac(a.misses, a.signal):>8s} {_pct(a.misses, a.signal)} | "
                  f"{_frac(a.disputed_failed, a.disputed):>8s} | {ms}")
 
+    # ---- by renderer group ----------------------------------------------- #
+    groups = {g: [c for c in cases if renderer_group(c, manifest) == g]
+              for g in (SAME_RENDERER, OTHER_RENDERER)}
+    L.append("")
+    L.append(f"By renderer: {GROUP_RULE}")
+    L.append(head)
+    L.append("-" * len(head))
+    for g, members in groups.items():
+        count_g = {lab: sum(1 for c in members if c["label"] == lab)
+                   for lab in (bc.SIGNAL, bc.NOISE, bc.DISPUTED)}
+        L.append(f"{g}: {count_g[bc.SIGNAL]} SIGNAL, {count_g[bc.NOISE]} NOISE, "
+                 f"{count_g[bc.DISPUTED]} DISPUTED")
+        for t in tools:
+            c, h, a = (score(t, members, x) for x in (*HALVES, None))
+            L.append(f"  {t.title:{w - 2}s} | "
+                     f"{_frac(c.false, c.noise):>8s} {_frac(c.misses, c.signal):>10s} | "
+                     f"{_frac(h.false, h.noise):>8s} {_frac(h.misses, h.signal):>10s} | "
+                     f"{_frac(a.false, a.noise):>6s} {_pct(a.false, a.noise)} "
+                     f"{_frac(a.misses, a.signal):>8s} {_pct(a.misses, a.signal)} | "
+                     f"{_frac(a.disputed_failed, a.disputed):>8s} |")
+
     # ---- per family ------------------------------------------------------ #
     for group in ("VisTest", "Playwright"):
         members = [t for t in tools if t.group == group]
@@ -421,6 +463,25 @@ def markdown(manifest: dict, tools: list[Tool], native: dict | None,
                  f"{a.false}/{a.noise} ({_pct(a.false, a.noise).strip()}) | "
                  f"{a.misses}/{a.signal} ({_pct(a.misses, a.signal).strip()}) | "
                  f"{a.disputed_failed}/{a.disputed} |")
+    L.append("")
+    L.append("## By renderer")
+    L.append("")
+    L.append(f"{GROUP_RULE[0].upper()}{GROUP_RULE[1:]}.")
+    for g in (SAME_RENDERER, OTHER_RENDERER):
+        members = [c for c in cases if renderer_group(c, manifest) == g]
+        L.append("")
+        L.append(f"**{g}**: {sum(1 for c in members if c['label'] == bc.SIGNAL)} SIGNAL, "
+                 f"{sum(1 for c in members if c['label'] == bc.NOISE)} NOISE, "
+                 f"{sum(1 for c in members if c['label'] == bc.DISPUTED)} DISPUTED.")
+        L.append("")
+        L.append("| Tool | Calibration: false | Calibration: misses | Held out: false | "
+                 "Held out: misses | All: false | All: misses |")
+        L.append("|---|---|---|---|---|---|---|")
+        for t in tools:
+            c, h, a = (score(t, members, x) for x in (*HALVES, None))
+            L.append(f"| {t.title} | {c.false}/{c.noise} | {c.misses}/{c.signal} | "
+                     f"{h.false}/{h.noise} | {h.misses}/{h.signal} | "
+                     f"{a.false}/{a.noise} | {a.misses}/{a.signal} |")
     for group in ("VisTest", "Playwright"):
         members = [t for t in tools if t.group == group]
         if not members:
