@@ -41,6 +41,32 @@
   before anything is explained. `tests/benchmark.py --engine v1|v2|both`
   chooses the rows: both by default on the browser corpus, v1 by default on
   the synthetic one. New: `tests/test_engine_v2.py`.
+- **Step 2: the explanation «text re-rasterisation»** (`vistest/core/v2/rerender.py`,
+  rule `rerender-text`). A region is noise only when four properties hold,
+  each a function with its own tests and its numbers in `suppressed_by`:
+  (a) the ink did not change colour — each colour channel read at its extreme
+  away from the paper, in each frame on its own (LCD anti-aliasing covers the
+  channels one at a time), ΔE00 < 2; (b) the ink shapes, binarised at half
+  their own contrast, agree to one pixel both ways, A ⊆ dilate(B, 1) and
+  B ⊆ dilate(A, 1), not one pixel outside; (c) the paper did not change
+  (ΔE00 < 1) and no changed pixel lies more than 2 px from the ink; (d) the
+  change reached the page: at least 40 % of the page's ink clusters hold a
+  changed pixel (`TEXT_SHARE`, a `Gap` from the calibration half: 0.549 on
+  the noisiest form, 0.291 on article/offset/plus1px). A region the rule
+  refused keeps an annotation naming the properties that failed. The ink mass
+  B/A of every region is measured and reported, not used. On the calibration
+  half the rule explains 768 of 1794 regions of the five re-rasterisation
+  families; 884 fail on (b) alone — words whose glyphs drift past a pixel;
+  no pair turns green yet, and no signal pair is lost (0/184, 0/92). The
+  families that must stay red have no region explained on either half.
+  `scripts/diagnose_browser.py --v2` prints it by family.
+- **The AI layer cannot make a region disappear in v2.** A region `refine`
+  does not hand back is suppressed as `ai-layer: <name> did not return this
+  region`; `unassigned_pixels` stays 0.
+- **The v2 row is «VisTest v2».** The presets do not act on it; of `DiffConfig`
+  it reads only `DIFFCONFIG_READ` (size policy, memory limit, ignored kinds,
+  and the two severity weights, which order and do not decide), and a test
+  changes every other field at once to show it.
 - **The OpenCV version is in the browser table.** `--corpus browser` prints
   `VisTest rows computed with: OpenCV …, numpy …, Python …` under its title
   (and in the markdown), in the output rather than on stderr: a before and an

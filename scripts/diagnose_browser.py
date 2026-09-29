@@ -331,11 +331,79 @@ def finding_alignment(cases, bases, root, out):
     out("")
 
 
+# --------------------------------------------------------------------------- #
+#  v2: what the re-rasterisation rule did, region by region
+# --------------------------------------------------------------------------- #
+def _family_key(c: dict) -> str:
+    if c["kind"] in ("render", "os") or c["label"] == bc.SIGNAL:
+        return c["family"]
+    return f"{c['family']} {c['magnitude']}"
+
+
+def _q(values, p) -> float:
+    return float(np.percentile(values, p)) if len(values) else float("nan")
+
+
+def v2_rerender_table(cases, bases, root, out) -> None:
+    """Per family: regions of the v2 base, how many the rule explained, and how
+    many failed each property (a region is counted under every property it
+    failed), with the ink mass ratio B/A — measured, not used."""
+    from vistest.core.v2 import V2Config
+
+    v2 = V2Config()
+    out("=== v2: text re-rasterisation, region by region ===")
+    out(f"(a) ink ΔE00 < {v2.ink_delta_e:g}; (b) shape within 1 px both ways, 0 px "
+        f"outside; (c) paper ΔE00 < {v2.jnd_delta_e:g} and nothing changed away from "
+        f"the ink; (d) >= {v2.min_text_share:.0%} of the page's ink clusters changed")
+    out("regions: live after the base (min-size taken out); a region is counted under "
+        "every property it failed; «only b» failed (b) and nothing else; mass: ink "
+        "mass B/A, median [10th..90th percentile] — reported, not a rule")
+    fams: dict[tuple[str, str], dict] = {}
+    for c in cases:
+        exp, act = bases[c["template"]], pngio.read(root / c["actual"])
+        res = compare(exp, act, cfg=VisTestConfig.preset_of("balanced").diff,
+                      name=c["name"], engine="v2")
+        d = fams.setdefault((_family_key(c), c["label"]), {
+            "pairs": 0, "green": 0, "regions": 0, "explained": 0,
+            "a": 0, "b": 0, "c": 0, "d": 0, "only b": 0, "mass": [], "share": []})
+        d["pairs"] += 1
+        d["green"] += res.verdict.value == "pass"
+        recs = res.maps.get("v2_rerender") or []
+        if recs:
+            d["share"].append(recs[0]["text_share"])
+        for r in recs:
+            d["regions"] += 1
+            failed = [k for k, ok in r["holds"].items() if not ok]
+            d["explained"] += not failed
+            for k in failed:
+                d[k] += 1
+            d["only b"] += failed == ["b"]
+            if r["mass_a"] > 0:
+                d["mass"].append(r["mass_b"] / r["mass_a"])
+    head = (f"{'family':28s} {'label':8s} {'pass':>7s} {'regions':>7s} {'expl.':>6s} "
+            f"{'fail a':>6s} {'fail b':>6s} {'fail c':>6s} {'fail d':>6s} {'only b':>6s} "
+            f"{'text share':>11s}  {'ink mass B/A':>22s}")
+    out(head)
+    out("-" * len(head))
+    for (key, label), d in fams.items():
+        share = (f"{min(d['share']):.2f}–{max(d['share']):.2f}" if d["share"] else "—")
+        m = d["mass"]
+        mass = (f"{_q(m, 50):.3f} [{_q(m, 10):.3f}..{_q(m, 90):.3f}]" if m else "—")
+        out(f"{key:28s} {label:8s} {d['green']:>3d}/{d['pairs']:<3d} {d['regions']:7d} "
+            f"{d['explained']:6d} {d['a']:6d} {d['b']:6d} {d['c']:6d} {d['d']:6d} "
+            f"{d['only b']:6d} {share:>11s}  {mass:>22s}")
+    out("")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--template", action="append",
                     help="limit to these templates (repeatable); default: the "
                          "calibration half")
+    ap.add_argument("--v2", action="store_true",
+                    help="instead of the v1 findings: what v2's re-rasterisation "
+                         "rule did, by family (regions explained, failed per "
+                         "property, ink mass B/A)")
     args = ap.parse_args(argv)
     if cv2 is None:
         print("OpenCV is required", file=sys.stderr)
@@ -345,6 +413,11 @@ def main(argv=None) -> int:
     templates = args.template or list(manifest["split"][bc.CALIBRATION])
     cases = [c for c in manifest["cases"] if c["template"] in templates]
     out = print
+    if args.v2:
+        out(f"OpenCV {cv2.__version__}, numpy {np.__version__}; templates: "
+            + ", ".join(templates))
+        v2_rerender_table(cases, bases, root, out)
+        return 0
     out("=== v1 on the browser corpus: where the signal is lost ===")
     out(f"OpenCV {cv2.__version__}, numpy {np.__version__}; preset balanced; templates: "
         + ", ".join(templates))

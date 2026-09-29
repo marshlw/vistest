@@ -219,7 +219,8 @@ def load_native(path: str | Path, corpus_root: str | Path | None = None) -> dict
 
 
 def _v2_title(cfg: VisTestConfig, ai: AIPipeline | None) -> str:
-    return f"VisTest v2 ({cfg.preset})" if ai else f"VisTest v2 ({cfg.preset}, no AI)"
+    #  No preset: the presets do not act on v2 (core/v2/settings.py).
+    return "VisTest v2" if ai else "VisTest v2 (no AI)"
 
 
 def score_vistest(cases: list[cp.Case], cfg: VisTestConfig,
@@ -402,15 +403,15 @@ def v2_settings(cfg: VisTestConfig, ai: AIPipeline | None) -> list[str]:
     from dataclasses import fields
 
     from vistest.core.v2 import V2Config
+    from vistest.core.v2.settings import DIFFCONFIG_READ
 
     v = V2Config()
     own = ", ".join(f"`{f.name}={getattr(v, f.name)!r}`" for f in fields(v))
     d = cfg.diff
+    read = ", ".join(f"`{k}={getattr(d, k)!r}`" for k in DIFFCONFIG_READ)
     return [
         f"`V2Config`: {own} (`vistest/core/v2/settings.py`)",
-        f"from `DiffConfig` only the size policy and the memory limit: "
-        f"`fail_on_size_change={d.fail_on_size_change!r}`, "
-        f"`size_tolerance_px={d.size_tolerance_px!r}`, `max_pixels={d.max_pixels!r}`",
+        f"of `DiffConfig` only {read}; the preset changes nothing else for v2",
         "no AI layer (`--no-ai`)" if ai is None else
         "the AI layer as in the v1 row (`AIPipeline(AIConfig())`), on the regions "
         "no rule explained",

@@ -35,6 +35,7 @@ from .. import structure as _struct
 from .. import warp as _warp
 from ..settings import DiffConfig
 from . import base as _base
+from . import rerender as _rerender
 from .settings import V2Config
 
 ENGINE = "v2"
@@ -101,16 +102,29 @@ def compare(
             r.suppressed_by = (f"min-size: {g.pixels} px < {v2.min_region_px} px "
                                f"(v2.min_region_px) (was {r.kind.value})")
 
-    # ---------- 2. AI layer (optional), on what nothing explained ----------
+    # ---------- 2. Explanations: named rules, all-or-nothing per region ----
+    assessed = _explain_rerender(regions, groups, labels, exp, act, cand, v2, res)
+
+    # ---------- 3. AI layer (optional), on what nothing explained ----------
+    #  Whatever the layer does, every region stays accounted for: one it does
+    #  not hand back is suppressed under the layer's name, never dropped.
     live = [r for r in regions if not r.suppressed_by]
     if ai_hooks is not None and live:
         try:
             explained = [r for r in regions if r.suppressed_by]
-            regions = ai_hooks.refine(live, exp, act, res) + explained
+            back = ai_hooks.refine(live, exp, act, res)
+            kept = {id(r) for r in back}
+            layer = _layer_name(ai_hooks)
+            for r in live:
+                if id(r) not in kept:
+                    r.suppressed_by = (f"ai-layer: {layer} did not return this region "
+                                       f"(was {r.kind.value})")
+                    explained.append(r)
+            regions = list(back) + explained
         except Exception as e:  # AI should never fail the test
             res.notes.append(f"AI layer skipped: {type(e).__name__}: {e}")
 
-    # ---------- 3. Separation and verdict ----------
+    # ---------- 4. Separation and verdict ----------
     ignore_kinds = {ChangeKind(k) for k in cfg.ignore_kinds}
     for r in regions:
         if r.kind in ignore_kinds and not r.suppressed_by:
@@ -125,12 +139,60 @@ def compare(
     res.verdict = _verdict(res, cfg)
     res.duration_ms = int((time.perf_counter() - t0) * 1000)
 
+    res.maps["v2_rerender"] = assessed
     res.maps["de_map"] = de
     res.maps["mask"] = cand
     res.maps["labels"] = labels
     res.maps["aligned_actual"] = act
     res.maps["expected"] = exp
     return res
+
+
+def _layer_name(hooks) -> str:
+    return str(getattr(hooks, "name", None) or type(hooks).__name__)
+
+
+def _explain_rerender(regions, groups, labels, exp, act, cand, v2: V2Config,
+                      res: CompareResult) -> list[dict]:
+    """Text re-rasterisation (core/v2/rerender.py), on every region still live.
+
+    A region is taken out only when all four properties hold; the sentence in
+    `suppressed_by` carries the numbers of each. A region the rule looked at
+    and refused keeps an annotation saying which properties failed and by how
+    much. Returns one record per region looked at, for the benchmark and the
+    diagnosis script (kept in `res.maps`, not serialised).
+    """
+    live = [(r, g) for r, g in zip(regions, groups, strict=True) if not r.suppressed_by]
+    if not live:
+        return []
+    text = _rerender.page_text_change(exp, act, cand)
+    out = []
+    counts = {"explained": 0}
+    for r, g in live:
+        c = _rerender.crop(exp, act, labels, g.label, (g.x, g.y, g.w, g.h), v2.group_px)
+        a = _rerender.assess(c, text, ink_limit=v2.ink_delta_e,
+                             share_limit=v2.min_text_share, jnd=v2.jnd_delta_e)
+        out.append({"box": (g.x, g.y, g.w, g.h), "pixels": g.pixels,
+                    "holds": a.holds, "failed": a.failed,
+                    "ink_delta_e": a.ink.delta_e, "outside": a.shape.outside,
+                    "paper_delta_e": a.background.delta_e,
+                    "changed_away": a.background.changed_away,
+                    "text_share": a.text.share, "mass_a": a.mass_a, "mass_b": a.mass_b})
+        if a.explained:
+            r.suppressed_by = f"{_rerender.RULE}: {a.sentence()} (was {r.kind.value})"
+            r.kind = ChangeKind.NOISE
+            r.severity = 0.0
+            counts["explained"] += 1
+        else:
+            r.annotations.append({
+                "text": f"not re-rasterised text — fails {a.failed}: {a.sentence()}",
+                "kind": _rerender.RULE, "value": a.failed, "source": f"engine {ENGINE}"})
+    if counts["explained"]:
+        res.notes.append(
+            f"Noise explained and suppressed: {counts['explained']} region(s) by text "
+            f"re-rasterisation ({text.text()[4:]}). Each names the four properties "
+            "it passed and their numbers.")
+    return out
 
 
 def _region(g: _base.Group, gray_exp, gray_act, de, cand, total, cfg) -> DiffRegion:

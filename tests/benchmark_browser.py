@@ -102,10 +102,12 @@ def run_vistest(manifest: dict, preset: str, *, ai: bool = True,
         tool = Tool(key=preset, title=f"VisTest {preset}" + ("" if ai else " (no AI)"),
                     group="VisTest", default=preset == "balanced")
     else:
-        #  v2 reads the preset for its size policy only; its own numbers are
-        #  in core/v2/settings.py and do not change with the preset.
-        tool = Tool(key=engine, title=f"VisTest {engine} ({preset})"
-                    + ("" if ai else " (no AI)"), group="VisTest")
+        #  No preset in the title: the presets do not act on v2 (its numbers
+        #  are in core/v2/settings.py; of DiffConfig it reads only what
+        #  DIFFCONFIG_READ lists). What strict/balanced/loose will mean for
+        #  v2 is to be decided before it becomes the default.
+        tool = Tool(key=engine, title=f"VisTest {engine}" + ("" if ai else " (no AI)"),
+                    group="VisTest")
     for c in manifest["cases"]:
         actual = pngio.read(root / c["actual"])
         t0 = time.perf_counter()

@@ -161,7 +161,7 @@ def test_v2_answers_in_a_row_of_its_own(manifest):
     small = dict(manifest, cases=list(picked.values()))
     tool = bb.run_vistest(small, "balanced", engine="v2")
     assert set(tool.failed) == {c["name"] for c in small["cases"]}
-    assert (tool.key, tool.title, tool.default) == ("v2", "VisTest v2 (balanced)", False)
+    assert (tool.key, tool.title, tool.default) == ("v2", "VisTest v2", False)
     assert bb.ENGINES["both"] == ("v1", "v2")
 
 

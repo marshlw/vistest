@@ -208,3 +208,94 @@ def test_the_base_catches_what_v1_lost(corpus, name):
     r = compare(exp, act, engine="v2")
     assert r.verdict is Verdict.FAIL
     _accounted(r)
+
+
+# --------------------------------------------------------------------------- #
+#  The AI layer: whatever it does, nothing disappears
+# --------------------------------------------------------------------------- #
+class _DropsOne:
+    """A layer that silently forgets the first region it is handed."""
+
+    name = "test-dropper"
+
+    def refine(self, regions, expected, actual, result):
+        return regions[1:]
+
+
+class _MarksOne:
+    """A layer that suppresses a region the way the engine expects: by saying why."""
+
+    def refine(self, regions, expected, actual, result):
+        regions[0].suppressed_by = "gate: below the learned threshold"
+        return regions
+
+
+def _three_marks():
+    a = _page()
+    b = a.copy()
+    for x in (10, 60, 110):
+        b[20:26, x:x + 6] = (220, 38, 38)
+    return a, b
+
+
+def test_a_region_the_ai_layer_drops_is_suppressed_under_its_name():
+    a, b = _three_marks()
+    r = compare(a, b, engine="v2", ai_hooks=_DropsOne())
+    assert len(r.regions) == 2
+    dropped = [s for s in r.suppressed if s.suppressed_by.startswith("ai-layer:")]
+    assert len(dropped) == 1 and dropped[0].pixel_count == 36
+    assert dropped[0].suppressed_by.startswith("ai-layer: test-dropper did not return")
+    _accounted(r)
+
+
+def test_a_region_the_ai_layer_suppresses_keeps_the_layers_reason():
+    a, b = _three_marks()
+    r = compare(a, b, engine="v2", ai_hooks=_MarksOne())
+    assert [s.suppressed_by for s in r.suppressed] == ["gate: below the learned threshold"]
+    assert len(r.regions) == 2
+    _accounted(r)
+
+
+def test_a_layer_without_a_name_is_named_by_its_class():
+    class Anonymous:
+        def refine(self, regions, expected, actual, result):
+            return []
+    a, b = _three_marks()
+    r = compare(a, b, engine="v2", ai_hooks=Anonymous())
+    assert r.verdict is Verdict.PASS and not r.regions
+    assert all(s.suppressed_by.startswith("ai-layer: Anonymous ") for s in r.suppressed)
+    _accounted(r)
+
+
+# --------------------------------------------------------------------------- #
+#  What v2 reads of DiffConfig, and what it does not
+# --------------------------------------------------------------------------- #
+def test_v2_reads_only_the_diffconfig_fields_it_lists():
+    """Change every field v2 claims to ignore, at once: not one number moves."""
+    from dataclasses import fields, replace
+
+    from vistest.core.settings import DiffConfig
+    from vistest.core.v2.settings import DIFFCONFIG_READ
+
+    base_cfg = DiffConfig()
+    names = {f.name for f in fields(DiffConfig)}
+    assert set(DIFFCONFIG_READ) <= names
+    changed = {}
+    for f in fields(DiffConfig):
+        if f.name in DIFFCONFIG_READ:
+            continue
+        v = getattr(base_cfg, f.name)
+        changed[f.name] = (not v if isinstance(v, bool) else
+                           v * 3 + 1 if isinstance(v, (int, float)) else
+                           ("moved",) if isinstance(v, tuple) else v)
+    other = replace(base_cfg, **changed)
+    rng = np.random.default_rng(11)
+    a = rng.integers(0, 256, (80, 100, 3), dtype=np.uint8)
+    b = a.copy()
+    b[10:30, 10:40] = (0, 0, 0)
+    b[rng.random((80, 100)) > 0.97] = (255, 255, 255)
+    one = compare(a, b, engine="v2", cfg=base_cfg)
+    two = compare(a, b, engine="v2", cfg=other)
+    assert [r.to_dict() for r in one.regions] == [r.to_dict() for r in two.regions]
+    assert [r.to_dict() for r in one.suppressed] == [r.to_dict() for r in two.suppressed]
+    assert one.verdict is two.verdict
