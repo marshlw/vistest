@@ -6,42 +6,50 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Explanation «text re-rasterisation»: four properties, all of them required.
+"""Explanation «text re-rasterisation»: when the renderer changed, and only then.
 
 A renderer that draws the same text again — another hinting mode, grey
-anti-aliasing instead of LCD, `geometricPrecision`, another build, another
-OS — changes the *shape* of glyph edges. It does not change what the text is,
-what colour it is written in, what it is written on, and it does not do it
-to one word: it does it to the page. A region is re-rasterised text only when
-all four of these hold, each measured on its own:
+anti-aliasing instead of LCD, another build, another OS — changes the *shape*
+of glyph edges. It does not change what the text is, what colour it is
+written in, what it is written on, and it does not pick a block up and put
+it down elsewhere. From two screenshots alone that cannot be told from a
+page whose typography changed within a pixel; so the rule does not try. The
+engine runs it only when the renderer's canary (`core/renderer.py`) proves
+the renderer changed, and says so in a note; with the same renderer, or an
+unknown one, no region is taken out as re-rasterised text.
+
+When it runs, a region is re-rasterised text only when all of these hold,
+each measured on its own:
 
 (a) `ink_colour` — the ink did not change colour. The core of the strokes —
     the extreme each colour channel reaches away from the paper, found in
     each frame on its own — is compared between the frames (ΔE00). A new
     ink colour moves the core; a re-rasterised edge does not.
-(b) `shape_within` — the shape agrees to one pixel both ways. Binarised at half
-    the ink contrast of their own frame, the ink masks satisfy
-    A ⊆ dilate(B, 1) and B ⊆ dilate(A, 1). A different glyph, a word that
-    moved by two pixels, a line that wrapped elsewhere does not.
+(b) `glyph_drift` — the shape agrees to one pixel both ways, after each
+    glyph is allowed its own shift along the line of up to K pixels
+    (`V2Config.glyph_drift_px`). Binarised at half the ink contrast of their
+    own frame, each ink component of A lies within dilate(B, 1) once
+    shifted, and each of B within dilate(A, 1). K was measured on the
+    calibration half and is 0: a «9» that became an «8» at 9–12 px needs
+    one pixel of drift, less than the renderer's own noise needs — so
+    `shape_within`, the step-2 form, is what decides, and the drift each
+    region would need is printed.
 (c) `background_unchanged` — the paper is the same colour, and nothing changed
     away from the ink (farther than `AWAY_PX` from the ink of either frame).
-(d) `page_text_change` — the change is not local. Re-rasterisation is a
-    property of the renderer: it reaches the text of the whole page. When
-    the text changed in one block and the rest of the page's text is the
-    same, pixel for pixel, the explanation does not apply. Without this (a)–(c)
-    cannot tell letter-spacing +0.2 px from a hinting change: both stay within
-    a pixel and keep their colour.
+(e) `block_shift` — not a pure shift. If B in the region is A moved by a
+    whole (dx, dy) ≠ (0, 0) within a few pixels, it is a block that moved —
+    a layout change, not a re-rasterisation — and it is said in words: «the
+    block moved by +1 px along y».
+
+(d) `page_text_change` — the share of the page's ink clusters that changed —
+    is measured and printed, and decides nothing: with the renderer's change
+    proven by its canary, the page's share is not what separates noise from
+    a change.
 
 The rule writes what it measured for each property into `suppressed_by`, and
 into `DiffRegion.annotations` for regions it refused, so that a person can
-check the numbers and disagree.
-
-What the four properties cannot see: a change of *all* the text of the page
-at once that keeps colour and stays within a pixel — a global
-`font-weight`, say, or a global letter-spacing of a fraction of a pixel. (d)
-passes because everything changed, and (a)–(c) pass because each glyph stays
-within a pixel. `ink_mass` measures how much ink there is on each side; it is
-reported, not used — a candidate for a fifth property.
+check the numbers and disagree. `ink_mass` measures how much ink there is on
+each side; it is reported, not used.
 """
 
 from __future__ import annotations
@@ -250,6 +258,93 @@ def shape_within(c: Crop, tol_px: int = SHAPE_TOLERANCE_PX) -> Shape:
                  outside_b=int((ib & ~da & c.inner).sum()), ink_b=int((ib & c.inner).sum()))
 
 
+#: How far the drift each glyph needs is measured, in pixels. A glyph that
+#: fits at no drift up to this is a glyph that is not there in the other frame.
+GLYPH_DRIFT_REACH_PX = 8
+
+
+@dataclass(frozen=True)
+class GlyphShape:
+    """(b) with the glyphs free to drift along the line, each on its own.
+
+    Another renderer moves every glyph a little along the line — another
+    hinting rounds each advance its own way, and the error adds up along a
+    word — without changing what the glyph is. So each ink component (a
+    glyph, or glyphs that touch) of each frame may take its own horizontal
+    shift up to `limit` pixels; after it, the component must lie within one
+    pixel of the other frame's ink, as in `shape_within`.
+    """
+
+    need_px: int | None     # the largest shift a glyph needs; None: one fits at none
+    outside: int            # ink px still outside after each glyph's best shift ≤ limit
+    glyphs: int             # ink components looked at, both frames
+    unfit: int              # of them, those no shift up to the limit fits
+    ink_a: int
+    ink_b: int
+    limit: int
+
+    def holds(self) -> bool:
+        return self.need_px is not None and self.need_px <= self.limit
+
+    def text(self) -> str:
+        need = (f"the worst needs {self.need_px} px" if self.need_px is not None
+                else f"one fits at no shift up to {GLYPH_DRIFT_REACH_PX} px")
+        return (f"(b) each glyph within {SHAPE_TOLERANCE_PX} px after a shift along "
+                f"the line of up to {self.limit} px: {need}; {self.unfit} of "
+                f"{self.glyphs} glyphs do not fit, {self.outside} ink px outside")
+
+
+def _shift_x(mask: np.ndarray, s: int) -> np.ndarray:
+    """`out[y, x] = mask[y, x + s]`, False where that falls off the crop."""
+    out = np.zeros_like(mask)
+    if s > 0:
+        out[:, :-s] = mask[:, s:]
+    elif s < 0:
+        out[:, -s:] = mask[:, :s]
+    else:
+        out[:] = mask
+    return out
+
+
+def glyph_drift(c: Crop, limit_px: int, tol_px: int = SHAPE_TOLERANCE_PX,
+                reach_px: int = GLYPH_DRIFT_REACH_PX) -> GlyphShape:
+    """(b) Per glyph: the smallest horizontal shift that puts it within
+    `tol_px` of the other frame's ink, both ways; counted in the region's box.
+    """
+    ia, ib = ink_masks(c)
+    k = np.ones((2 * tol_px + 1,) * 2, np.uint8)
+    da = cv2.dilate(ia.astype(np.uint8), k) > 0
+    db = cv2.dilate(ib.astype(np.uint8), k) > 0
+    shifts = sorted(range(-reach_px, reach_px + 1), key=lambda v: (abs(v), v))
+    worst = 0
+    none_fit = False
+    outside = glyphs = unfit = 0
+    for src, dst in ((ia, db), (ib, da)):
+        n, lab = cv2.connectedComponents(src.astype(np.uint8), connectivity=8)
+        mine = src & c.inner
+        comps = np.unique(lab[mine])
+        comps = comps[comps > 0]
+        if not len(comps):
+            continue
+        need = np.full(n, -1, np.int64)
+        least = np.full(n, np.iinfo(np.int64).max, np.int64)
+        for s in shifts:
+            bad = np.bincount(lab[mine & ~_shift_x(dst, s)], minlength=n)
+            need[(need < 0) & (bad == 0)] = abs(s)
+            if abs(s) <= limit_px:
+                least = np.minimum(least, bad)
+        glyphs += len(comps)
+        unfit += int(((need[comps] < 0) | (need[comps] > limit_px)).sum())
+        outside += int(least[comps].sum())
+        if (need[comps] < 0).any():
+            none_fit = True
+        else:
+            worst = max(worst, int(need[comps].max()))
+    return GlyphShape(need_px=None if none_fit else worst, outside=outside,
+                      glyphs=glyphs, unfit=unfit, ink_a=int((ia & c.inner).sum()),
+                      ink_b=int((ib & c.inner).sum()), limit=limit_px)
+
+
 # --------------------------------------------------------------------------- #
 #  (c) the background did not change
 # --------------------------------------------------------------------------- #
@@ -341,6 +436,88 @@ def page_text_change(exp: np.ndarray, act: np.ndarray, cand: np.ndarray) -> Text
 
 
 # --------------------------------------------------------------------------- #
+#  (e) not a pure shift
+# --------------------------------------------------------------------------- #
+#: How far a block is looked for, in whole pixels along each axis.
+SHIFT_REACH_PX = 4
+
+
+def _moved(dx: int, dy: int) -> str:
+    parts = [f"{v:+d} px along {axis}" for v, axis in ((dx, "x"), (dy, "y")) if v]
+    return "the block moved by " + " and ".join(parts)
+
+
+@dataclass(frozen=True)
+class BlockShift:
+    """(e) Is B, in the region, A moved by whole pixels?
+
+    A re-rasterised glyph changes its edges; a block that moved is the same
+    pixels somewhere else. So among the moves (dx, dy) ≠ (0, 0) within
+    `SHIFT_REACH_PX`, the one that leaves the fewest changed pixels is found:
+    B[p] against A[p − (dx, dy)] for every changed pixel p of the region.
+    If what it leaves is at most `limit` of them, the region is a block
+    that moved — a layout change, which this rule does not take out.
+    """
+
+    dx: int
+    dy: int
+    left: int           # changed pixels of the region still changed under the move
+    changed: int        # changed pixels of the region
+    limit: float
+
+    @property
+    def residual(self) -> float:
+        return self.left / self.changed if self.changed else 1.0
+
+    def holds(self) -> bool:
+        return self.residual > self.limit
+
+    def moved(self) -> str:
+        return _moved(self.dx, self.dy)
+
+    def text(self) -> str:
+        if self.holds():
+            return (f"(e) not a pure shift: the closest whole-pixel move "
+                    f"({self.dx:+d}, {self.dy:+d}) leaves {100.0 * self.residual:.0f}% "
+                    f"of {self.changed} changed px")
+        return (f"(e) {self.moved()}: B is A moved, {100.0 * self.residual:.1f}% of "
+                f"{self.changed} changed px left")
+
+
+def block_shift(exp: np.ndarray, act: np.ndarray, lab_exp: np.ndarray,
+                lab_act: np.ndarray, where: np.ndarray, *, jnd: float, limit: float,
+                reach_px: int = SHIFT_REACH_PX) -> BlockShift:
+    """(e) over the region's changed pixels `where` (a full-frame mask)."""
+    ys, xs = np.nonzero(where)
+    n = len(ys)
+    H, W = exp.shape[:2]
+    best = (0, 0, n + 1)
+    #  The shortest move first: of two moves that explain the block equally
+    #  well (a regular pattern), the smaller is the one named.
+    moves = sorted(((dx, dy) for dy in range(-reach_px, reach_px + 1)
+                    for dx in range(-reach_px, reach_px + 1) if dx or dy),
+                   key=lambda m: (abs(m[0]) + abs(m[1]), abs(m[1]), m[1], m[0]))
+    for dx, dy in moves:
+        sy, sx = ys - dy, xs - dx
+        inside = (sy >= 0) & (sy < H) & (sx >= 0) & (sx < W)
+        left = int((~inside).sum())
+        if left >= best[2]:
+            continue
+        py, px, qy, qx = ys[inside], xs[inside], sy[inside], sx[inside]
+        differ = np.any(act[py, px] != exp[qy, qx], axis=1)
+        if differ.any():
+            de = _color.delta_e_ciede2000(lab_act[py[differ], px[differ]][None],
+                                          lab_exp[qy[differ], qx[differ]][None])[0]
+            left += int((de > jnd).sum())
+        if left < best[2]:
+            best = (dx, dy, left)
+            if not left:
+                break
+    dx, dy, left = best
+    return BlockShift(dx=dx, dy=dy, left=min(left, n), changed=n, limit=limit)
+
+
+# --------------------------------------------------------------------------- #
 #  Ink mass — measured and reported, not a property
 # --------------------------------------------------------------------------- #
 def ink_mass(c: Crop) -> tuple[float, float]:
@@ -360,16 +537,23 @@ def ink_mass(c: Crop) -> tuple[float, float]:
 
 
 # --------------------------------------------------------------------------- #
-#  All four, for one region
+#  The properties, for one region
 # --------------------------------------------------------------------------- #
+#: The properties that decide. (d) is measured and printed, and decides
+#: nothing: with the renderer's change proven by its canary, a change of the
+#: page's text share is not what stands between noise and a miss.
+DECIDING = ("a", "b", "c", "e")
+
+
 @dataclass(frozen=True)
 class Assessment:
-    """The four properties of one region, measured, and the verdict on each."""
+    """The properties of one region, measured, and the verdict on each."""
 
     ink: InkColour
-    shape: Shape
+    shape: GlyphShape
     background: Background
     text: TextChange
+    block: BlockShift
     mass_a: float
     mass_b: float
     ink_limit: float
@@ -381,15 +565,18 @@ class Assessment:
         return {"a": self.ink.holds(self.ink_limit),
                 "b": self.shape.holds(),
                 "c": self.background.holds(self.jnd),
-                "d": self.text.holds(self.share_limit)}
+                "d": self.text.holds(self.share_limit),
+                "e": self.block.holds()}
 
     @property
     def explained(self) -> bool:
-        return all(self.holds.values())
+        holds = self.holds
+        return all(holds[k] for k in DECIDING)
 
     @property
     def failed(self) -> str:
-        return ",".join(k for k, ok in self.holds.items() if not ok)
+        holds = self.holds
+        return ",".join(k for k in DECIDING if not holds[k])
 
     @property
     def mass_ratio(self) -> float:
@@ -397,13 +584,25 @@ class Assessment:
 
     def sentence(self) -> str:
         return "; ".join((self.ink.text(), self.shape.text(), self.background.text(),
-                          self.text.text()))
+                          self.block.text(),
+                          self.text.text().replace("(d)", "(d, not deciding)", 1)))
+
+    def why_not(self) -> str:
+        """The failed properties in words, the block's move first when it moved."""
+        holds = self.holds
+        parts = []
+        if not holds["e"]:
+            parts.append(self.block.moved())
+        for key, prop in (("a", self.ink), ("b", self.shape), ("c", self.background)):
+            if not holds[key]:
+                parts.append(prop.text())
+        return "; ".join(parts)
 
 
-def assess(c: Crop, text: TextChange, *, ink_limit: float, share_limit: float,
-           jnd: float) -> Assessment:
+def assess(c: Crop, text: TextChange, block: BlockShift, *, ink_limit: float,
+           share_limit: float, jnd: float, drift_px: int) -> Assessment:
     ma, mb = ink_mass(c)
-    return Assessment(ink=ink_colour(c), shape=shape_within(c),
-                      background=background_unchanged(c), text=text,
+    return Assessment(ink=ink_colour(c), shape=glyph_drift(c, drift_px),
+                      background=background_unchanged(c), text=text, block=block,
                       mass_a=ma, mass_b=mb, ink_limit=ink_limit,
                       share_limit=share_limit, jnd=jnd)

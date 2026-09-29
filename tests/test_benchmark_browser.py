@@ -53,6 +53,22 @@ def test_every_pair_is_on_exactly_one_row(manifest):
     assert len([r for r in table if r.label == bc.SIGNAL]) == len(bc.FAMILIES) + len(cross)
 
 
+def test_the_renderer_of_a_pair_comes_from_its_frames(manifest):
+    """Not from the family's name, not from the label: from the record of each frame."""
+    import copy
+
+    canaries = bb.fingerprints(manifest)
+    by = {c["name"]: c for c in manifest["cases"]}
+    pair = bb.renderer_pair(by["table/render/hinting_none"], canaries)
+    assert pair == (canaries["base"], canaries["hinting_none"])
+    renamed = copy.deepcopy(by["table/render/hinting_none"])
+    renamed["renderer"] = {"expected": "base", "actual": "base"}
+    assert bb.renderer_pair(renamed, canaries) == (canaries["base"], canaries["base"])
+    nothing = dict(renamed, renderer={"expected": "base", "actual": None})
+    assert bb.renderer_pair(nothing, canaries) == (canaries["base"], None)
+    assert bb.renderer_pair({"name": "x"}, canaries) == (None, None)
+
+
 def test_the_renderer_groups_follow_how_the_browser_was_started(manifest):
     groups = {}
     for c in manifest["cases"]:

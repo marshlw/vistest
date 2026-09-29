@@ -344,54 +344,90 @@ def _q(values, p) -> float:
     return float(np.percentile(values, p)) if len(values) else float("nan")
 
 
-def v2_rerender_table(cases, bases, root, out) -> None:
+#: `--as-if-changed`: two canaries one pixel apart, so the rule runs on every
+#: pair whatever its frames' renderers — to see what each property would do.
+_AS_IF_CHANGED = (np.zeros((1, 1, 3), np.uint8), np.full((1, 1, 3), 255, np.uint8))
+
+
+def v2_rerender_table(cases, bases, root, out, manifest, *, as_if_changed=False) -> None:
     """Per family: regions of the v2 base, how many the rule explained, and how
-    many failed each property (a region is counted under every property it
-    failed), with the ink mass ratio B/A — measured, not used."""
+    many failed each deciding property (a region is counted under every
+    property it failed); the drift each glyph needed, the moves (e) found,
+    and (d) — printed, not deciding."""
+    from collections import Counter
+
+    sys.path.insert(0, str(bc.REPO / "tests"))
+    from benchmark_browser import fingerprints, renderer_pair
+
     from vistest.core.v2 import V2Config
+    from vistest.core.v2.rerender import _moved
 
     v2 = V2Config()
+    canaries = fingerprints(manifest, root)
     out("=== v2: text re-rasterisation, region by region ===")
-    out(f"(a) ink ΔE00 < {v2.ink_delta_e:g}; (b) shape within 1 px both ways, 0 px "
-        f"outside; (c) paper ΔE00 < {v2.jnd_delta_e:g} and nothing changed away from "
-        f"the ink; (d) >= {v2.min_text_share:.0%} of the page's ink clusters changed")
-    out("regions: live after the base (min-size taken out); a region is counted under "
-        "every property it failed; «only b» failed (b) and nothing else; mass: ink "
-        "mass B/A, median [10th..90th percentile] — reported, not a rule")
+    out("the rule runs only where the renderer is proven changed (canary of each "
+        "frame, from the manifest)" if not as_if_changed else
+        "AS IF the renderer had changed on every pair (--as-if-changed): what each "
+        "property would do; not what the engine does")
+    out(f"deciding: (a) ink ΔE00 < {v2.ink_delta_e:g}; (b) each glyph within 1 px after "
+        f"a shift along the line of up to {v2.glyph_drift_px} px; (c) paper ΔE00 < "
+        f"{v2.jnd_delta_e:g} and nothing changed away from the ink; (e) not a pure "
+        f"shift: the closest whole-pixel move leaves > {v2.shift_residual:.0%} of the "
+        "changed px. Printed only: (d) the page's share of changed ink clusters")
+    out("renderer: pairs whose canaries are the same / differ / unknown; regions: "
+        "live after the base; «b needs»: the drift the glyphs of the regions "
+        "looked at needed, median and largest (∞: one fits at no shift up to 8 px); "
+        "moves: the most common move among regions failing (e)")
     fams: dict[tuple[str, str], dict] = {}
     for c in cases:
         exp, act = bases[c["template"]], pngio.read(root / c["actual"])
+        rend = _AS_IF_CHANGED if as_if_changed else renderer_pair(c, canaries)
         res = compare(exp, act, cfg=VisTestConfig.preset_of("balanced").diff,
-                      name=c["name"], engine="v2")
+                      name=c["name"], engine="v2", renderer=rend)
         d = fams.setdefault((_family_key(c), c["label"]), {
-            "pairs": 0, "green": 0, "regions": 0, "explained": 0,
-            "a": 0, "b": 0, "c": 0, "d": 0, "only b": 0, "mass": [], "share": []})
+            "pairs": 0, "green": 0, "rend": Counter(), "regions": 0, "looked": 0,
+            "explained": 0, "a": 0, "b": 0, "c": 0, "e": 0, "only b": 0,
+            "need": [], "moves": Counter(), "share": []})
         d["pairs"] += 1
         d["green"] += res.verdict.value == "pass"
+        d["rend"][res.maps["renderer"].status] += 1
+        d["regions"] += sum(1 for r in res.regions + res.suppressed
+                            if not (r.suppressed_by or "").startswith("min-size"))
         recs = res.maps.get("v2_rerender") or []
         if recs:
             d["share"].append(recs[0]["text_share"])
         for r in recs:
-            d["regions"] += 1
-            failed = [k for k, ok in r["holds"].items() if not ok]
+            d["looked"] += 1
+            failed = [k for k in ("a", "b", "c", "e") if not r["holds"][k]]
             d["explained"] += not failed
             for k in failed:
                 d[k] += 1
             d["only b"] += failed == ["b"]
-            if r["mass_a"] > 0:
-                d["mass"].append(r["mass_b"] / r["mass_a"])
-    head = (f"{'family':28s} {'label':8s} {'pass':>7s} {'regions':>7s} {'expl.':>6s} "
-            f"{'fail a':>6s} {'fail b':>6s} {'fail c':>6s} {'fail d':>6s} {'only b':>6s} "
-            f"{'text share':>11s}  {'ink mass B/A':>22s}")
+            need = r["glyph_need_px"]
+            d["need"].append(float("inf") if need is None else need)
+            if not r["holds"]["e"]:
+                d["moves"][tuple(r["shift"])] += 1
+    head = (f"{'family':28s} {'label':8s} {'pass':>7s} {'renderer s/d/u':>14s} "
+            f"{'regions':>7s} {'looked':>6s} {'expl.':>6s} {'fail a':>6s} {'fail b':>6s} "
+            f"{'fail c':>6s} {'fail e':>6s} {'only b':>6s} {'b needs':>8s} "
+            f"{'(d) share':>10s}  moves")
     out(head)
     out("-" * len(head))
     for (key, label), d in fams.items():
         share = (f"{min(d['share']):.2f}–{max(d['share']):.2f}" if d["share"] else "—")
-        m = d["mass"]
-        mass = (f"{_q(m, 50):.3f} [{_q(m, 10):.3f}..{_q(m, 90):.3f}]" if m else "—")
-        out(f"{key:28s} {label:8s} {d['green']:>3d}/{d['pairs']:<3d} {d['regions']:7d} "
-            f"{d['explained']:6d} {d['a']:6d} {d['b']:6d} {d['c']:6d} {d['d']:6d} "
-            f"{d['only b']:6d} {share:>11s}  {mass:>22s}")
+        need = d["need"]
+        needs = "—"
+        if need:
+            med, top = np.median(need), max(need)
+            needs = "/".join("∞" if v == float("inf") else f"{v:g}" for v in (med, top))
+        rend = f"{d['rend']['same']}/{d['rend']['changed']}/{d['rend']['unknown']}"
+        mv = d["moves"].most_common(1)
+        moves = (f"{_moved(*mv[0][0])[len('the block moved by '):]} ×{mv[0][1]}"
+                 if mv else "")
+        out(f"{key:28s} {label:8s} {d['green']:>3d}/{d['pairs']:<3d} {rend:>14s} "
+            f"{d['regions']:7d} {d['looked']:6d} {d['explained']:6d} {d['a']:6d} "
+            f"{d['b']:6d} {d['c']:6d} {d['e']:6d} {d['only b']:6d} {needs:>8s} "
+            f"{share:>10s}  {moves}")
     out("")
 
 
@@ -403,7 +439,10 @@ def main(argv=None) -> int:
     ap.add_argument("--v2", action="store_true",
                     help="instead of the v1 findings: what v2's re-rasterisation "
                          "rule did, by family (regions explained, failed per "
-                         "property, ink mass B/A)")
+                         "property, the drift glyphs needed, the moves found)")
+    ap.add_argument("--as-if-changed", action="store_true",
+                    help="with --v2: run the rule on every pair as if the "
+                         "renderer had changed — what each property would do")
     args = ap.parse_args(argv)
     if cv2 is None:
         print("OpenCV is required", file=sys.stderr)
@@ -416,7 +455,8 @@ def main(argv=None) -> int:
     if args.v2:
         out(f"OpenCV {cv2.__version__}, numpy {np.__version__}; templates: "
             + ", ".join(templates))
-        v2_rerender_table(cases, bases, root, out)
+        v2_rerender_table(cases, bases, root, out, manifest,
+                          as_if_changed=args.as_if_changed)
         return 0
     out("=== v1 on the browser corpus: where the signal is lost ===")
     out(f"OpenCV {cv2.__version__}, numpy {np.__version__}; preset balanced; templates: "

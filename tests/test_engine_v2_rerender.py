@@ -6,14 +6,16 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""v2, the explanation «text re-rasterisation»: four properties, one test each.
+"""v2, the explanation «text re-rasterisation»: five properties, one test each.
 
 Each property is exercised on pictures built by hand, where the answer is
 known by construction: a stroke redrawn a pixel over, a stroke two pixels
-over, the same stroke in another ink, on another paper, with a speck of
-change away from it; a page where every word changed, and one where one did.
-Then the rule end to end, and the two numbers chosen on the calibration half
-replayed on the pairs they were measured on.
+over, glyphs that drift along the line, the same stroke in another ink, on
+another paper, with a speck of change away from it; a page where every word
+changed, and one where one did; a block moved by a whole pixel. Then the
+rule end to end — only where the renderer is proven to have changed — and
+the numbers chosen on the calibration half replayed on the pairs they were
+measured on.
 """
 
 from __future__ import annotations
@@ -28,12 +30,16 @@ from vistest.core import compare
 from vistest.core.v2 import V2Config
 from vistest.core.v2 import base as v2base
 from vistest.core.v2 import rerender as rr
-from vistest.core.v2.settings import MIN_REGION_PX, TEXT_SHARE
+from vistest.core.v2.settings import GLYPH_DRIFT_PX, MIN_REGION_PX, SHIFT_RESIDUAL, TEXT_SHARE
 from vistest.models import ChangeKind, Verdict
 
 ROOT = Path(__file__).resolve().parents[1]
 PAPER = (255, 255, 255)
 INK = (31, 41, 55)            # #1f2937
+
+#: Two canaries a pixel apart: the renderer changed. And the same one twice.
+CHANGED = (np.zeros((2, 2, 3), np.uint8), np.full((2, 2, 3), 255, np.uint8))
+SAME = (np.zeros((2, 2, 3), np.uint8), np.zeros((2, 2, 3), np.uint8))
 
 
 def _blank(h=40, w=60, paper=PAPER) -> np.ndarray:
@@ -141,6 +147,41 @@ def test_b_the_tolerance_is_one_pixel_and_says_so():
     assert "within 1 px" in rr.shape_within(c).text()
 
 
+def _glyphs(img, xs, y=10):
+    for x in xs:
+        _stroke(img, x, y, w=2, h=12)
+    return img
+
+
+def test_b_each_glyph_may_drift_on_its_own_up_to_the_limit():
+    """Three glyphs; the renderer moved the second by 2 px and the third by 3.
+    With the pixel of tolerance on top, they need a drift of 1 and 2."""
+    a = _glyphs(_blank(40, 80), (10, 25, 40))
+    b = _glyphs(_blank(40, 80), (10, 27, 43))
+    c = _crop(a, b)
+    for limit, holds in ((0, False), (1, False), (2, True), (8, True)):
+        g = rr.glyph_drift(c, limit)
+        assert g.need_px == 2 and g.holds() is holds, limit
+    assert rr.glyph_drift(c, 1).unfit == 2          # the third, in A and in B
+    assert rr.glyph_drift(c, 2).outside == 0
+
+
+def test_b_without_drift_it_is_the_shape_of_step_2():
+    a = _stroke(_blank(), 20, 10)
+    for x, holds in ((21, True), (22, False)):
+        c = _crop(a, _stroke(_blank(), x, 10))
+        assert rr.glyph_drift(c, 0).holds() is holds is rr.shape_within(c).holds()
+
+
+def test_b_ink_that_fits_at_no_drift_says_so():
+    a = _stroke(_blank(), 20, 10)
+    b = a.copy()
+    b[25, 10:50] = INK                               # an underline
+    g = rr.glyph_drift(_crop(a, b), 8)
+    assert g.need_px is None and not g.holds()
+    assert "one fits at no shift up to 8 px" in g.text()
+
+
 # --------------------------------------------------------------------------- #
 #  (c) the background did not change
 # --------------------------------------------------------------------------- #
@@ -220,56 +261,125 @@ def test_d_a_page_without_ink_has_no_share():
 
 
 # --------------------------------------------------------------------------- #
+#  (e) not a pure shift
+# --------------------------------------------------------------------------- #
+def _block(a, b):
+    la, lb = v2base._color.srgb_to_lab(a), v2base._color.srgb_to_lab(b)
+    cand = _cand(a, b)
+    return rr.block_shift(a, b, la, lb, cand, jnd=1.0, limit=SHIFT_RESIDUAL.value)
+
+
+def test_e_a_block_moved_by_a_pixel_is_a_move_and_says_where():
+    a = _glyphs(_blank(40, 80), (10, 25, 40))
+    b = np.full_like(a, 255)
+    b[1:] = a[:-1]                                  # the block, 1 px down
+    bs = _block(a, b)
+    assert (bs.dx, bs.dy, bs.left) == (0, 1, 0) and not bs.holds()
+    assert bs.moved() == "the block moved by +1 px along y"
+    assert bs.text().startswith("(e) the block moved by +1 px along y: B is A moved")
+
+
+def test_e_both_axes_are_named():
+    assert rr._moved(-2, 1) == "the block moved by -2 px along x and +1 px along y"
+
+
+def test_e_a_redrawn_stroke_is_not_a_move():
+    a = _glyphs(_blank(40, 80), (10, 25, 40))
+    b = _blank(40, 80)
+    for x in (10, 25, 40):
+        _stroke(b, x, 10, w=2, h=12, edge=0.8)       # the edges drawn otherwise
+    bs = _block(a, b)
+    assert bs.residual > SHIFT_RESIDUAL.value and bs.holds()
+    assert bs.text().startswith("(e) not a pure shift")
+
+
+# --------------------------------------------------------------------------- #
 #  The rule, end to end
 # --------------------------------------------------------------------------- #
-def test_every_word_redrawn_within_a_pixel_is_explained_and_says_why():
+def test_every_word_redrawn_within_a_pixel_is_explained_when_the_renderer_changed():
     a, words = _page_of_words()
     b = _redraw(a, words, range(10))
-    r = compare(a, b, engine="v2")
+    r = compare(a, b, engine="v2", renderer=CHANGED)
     assert r.verdict is Verdict.PASS and not r.regions
     assert r.suppressed and all(s.suppressed_by.startswith("rerender-text: (a) ink ")
                                 for s in r.suppressed)
     s = r.suppressed[0].suppressed_by
-    for part in ("(a) ink #1f2937 → #1f2937, ΔE00 0.0", "(b) shape within 1 px: 0 of",
-                 "(c) paper ΔE00 0.0, 0 changed px", "(d) 100% of the page's text changed",
-                 "(was "):
+    for part in ("(a) ink #1f2937 → #1f2937, ΔE00 0.0",
+                 "(b) each glyph within 1 px after a shift along the line of up to 0 px",
+                 "(c) paper ΔE00 0.0, 0 changed px", "(e) not a pure shift",
+                 "(d, not deciding) 100% of the page's text changed", "(was "):
         assert part in s, part
     assert all(x.kind is ChangeKind.NOISE and x.severity == 0 for x in r.suppressed)
     assert r.unassigned_pixels == 0
+    assert ("renderer differs from the baseline's (canary: 4 px): typography changes "
+            "within a pixel cannot be verified here — make baselines on this "
+            "renderer to check them") in r.notes
 
 
-def test_one_word_redrawn_within_a_pixel_is_not_explained():
+@pytest.mark.parametrize("renderer, note", [
+    (None, "renderer: unknown — text re-rasterisation is not explained"),
+    (SAME, "renderer: same as the baseline's"),
+    ((CHANGED[0], None), "renderer: unknown — text re-rasterisation is not explained"),
+])
+def test_without_a_proven_renderer_change_the_rule_is_off(renderer, note):
+    a, words = _page_of_words()
+    b = _redraw(a, words, range(10))
+    r = compare(a, b, engine="v2", renderer=renderer)
+    assert r.verdict is Verdict.FAIL and len(r.regions) == 10
+    assert note in r.notes
+    assert r.maps["v2_rerender"] == []
+    assert not any(n["kind"] == "rerender-text" for x in r.regions for n in x.annotations)
+
+
+def test_one_word_redrawn_within_a_pixel_cannot_be_told_from_the_renderer():
     """Letter-spacing +0.2 px looks like this: within a pixel, same ink, same
-    paper — and only one word. (d) is what keeps it red."""
+    paper, one word. With the renderer changed it is taken out — (d) says
+    10 % and decides nothing — and the note says what cannot be verified.
+    With the same renderer it stays red."""
     a, words = _page_of_words()
     b = _redraw(a, words, [3])
-    r = compare(a, b, engine="v2")
-    assert r.verdict is Verdict.FAIL and len(r.regions) == 1
-    note = [n for n in r.regions[0].annotations if n["kind"] == "rerender-text"]
-    assert note and note[0]["value"] == "d"
-    assert note[0]["text"].startswith("not re-rasterised text — fails d:")
+    changed = compare(a, b, engine="v2", renderer=CHANGED)
+    assert changed.verdict is Verdict.PASS
+    assert "(d, not deciding) 10% of the page's text changed (1 of 10" in \
+        changed.suppressed[0].suppressed_by
+    assert any("cannot be verified here" in n for n in changed.notes)
+    assert compare(a, b, engine="v2", renderer=SAME).verdict is Verdict.FAIL
 
 
 def test_every_word_in_a_new_ink_is_not_explained():
-    """A global colour change: (d) holds — everything changed — and (a) does not."""
+    """A global colour change under another renderer: (a) does not hold."""
     a, words = _page_of_words()
     b = a.copy()
     b[np.all(a == INK, axis=2)] = (77, 86, 102)
-    r = compare(a, b, engine="v2")
+    r = compare(a, b, engine="v2", renderer=CHANGED)
     assert r.verdict is Verdict.FAIL
-    assert all(n["value"] == "a" for x in r.regions for n in x.annotations
-               if n["kind"] == "rerender-text")
+    notes = [n for x in r.regions for n in x.annotations if n["kind"] == "rerender-text"]
+    assert notes and all(n["value"] == "a" for n in notes)
+
+
+def test_a_block_that_moved_is_not_explained_and_says_how_it_moved():
+    a, words = _page_of_words()
+    b = np.full_like(a, 255)
+    b[1:] = a[:-1]
+    r = compare(a, b, engine="v2", renderer=CHANGED)
+    assert r.verdict is Verdict.FAIL
+    notes = [n for x in r.regions for n in x.annotations if n["kind"] == "rerender-text"]
+    assert notes and all(n["value"] == "e" for n in notes)
+    assert notes[0]["text"] == ("not re-rasterised text — fails e: the block moved "
+                                "by +1 px along y")
 
 
 def test_the_measurements_are_kept_for_every_region_looked_at():
     a, words = _page_of_words()
     b = _redraw(a, words, [3])
-    r = compare(a, b, engine="v2")
+    r = compare(a, b, engine="v2", renderer=CHANGED)
     recs = r.maps["v2_rerender"]
     assert len(recs) == len(r.regions) + len(r.suppressed)
     rec = recs[0]
-    assert set(rec["holds"]) == {"a", "b", "c", "d"}
-    assert rec["failed"] == "d" and rec["mass_a"] > 0 and rec["mass_b"] > 0
+    assert set(rec["holds"]) == {"a", "b", "c", "d", "e"}
+    assert rec["failed"] == "" and rec["holds"]["d"] is False
+    assert rec["glyph_need_px"] == 0 and rec["shift_residual"] > SHIFT_RESIDUAL.value
+    assert rec["mass_a"] > 0 and rec["mass_b"] > 0
 
 
 def test_ink_mass_is_measured_not_used():
@@ -280,8 +390,9 @@ def test_ink_mass_is_measured_not_used():
     ma, mb = rr.ink_mass(c)
     assert mb / ma > 1.2
     t = rr.TextChange(10, 10)
-    heavy = rr.assess(c, t, ink_limit=2.0, share_limit=0.4, jnd=1.0)
-    assert heavy.mass_ratio > 1.2 and set(heavy.holds) == {"a", "b", "c", "d"}
+    block = rr.BlockShift(dx=1, dy=0, left=10, changed=10, limit=0.25)
+    heavy = rr.assess(c, t, block, ink_limit=2.0, share_limit=0.4, jnd=1.0, drift_px=0)
+    assert heavy.mass_ratio > 1.2 and set(heavy.holds) == {"a", "b", "c", "d", "e"}
 
 
 # --------------------------------------------------------------------------- #
@@ -323,6 +434,37 @@ def test_text_share_signal_side_is_where_it_was_measured(corpus):
     tc = _share(corpus("article/offset/plus1px"))
     assert (tc.changed, tc.total) == (48, 165)
     assert round(tc.share, 3) == TEXT_SHARE.signal < TEXT_SHARE.value
+
+
+def _region_at(pair, box):
+    a, b = pair
+    r = compare(a, b, engine="v2", renderer=CHANGED,
+                v2=V2Config(glyph_drift_px=8))
+    return next(x for x in r.maps["v2_rerender"] if list(x["box"]) == box)
+
+
+def test_glyph_drift_signal_side_is_where_it_was_measured(corpus):
+    """A «9» that became an «8»: one pixel of drift and it is gone."""
+    for name, box in (("article/one_char@hinting_none/one", [194, 141, 9, 11]),
+                      ("article/one_char@full_chromium/one", [194, 142, 9, 9])):
+        rec = _region_at(corpus(name), box)
+        assert rec["glyph_need_px"] == GLYPH_DRIFT_PX.signal > GLYPH_DRIFT_PX.value
+        assert rec["holds"]["a"] and rec["holds"]["c"] and rec["holds"]["e"]
+
+
+def test_shift_residual_is_where_it_was_measured(corpus):
+    moved = _region_at(corpus("table/render/hinting_none"), [505, 77, 7, 30])
+    assert round(moved["shift_residual"], 3) == SHIFT_RESIDUAL.signal
+    assert tuple(moved["shift"]) == (-1, 0) and not moved["holds"]["e"]
+    text = _region_at(corpus("article/render/full_chromium"), [547, 225, 46, 13])
+    assert round(text["shift_residual"], 3) == SHIFT_RESIDUAL.noise
+    assert text["holds"]["e"]
+    #  What step 2 took out: exact moves.
+    for name, box, shift in (("table/element_removed/gone", [202, 205, 139, 12], (0, -1)),
+                             ("article/line_height/plus1px", [146, 315, 43, 14], (0, 1))):
+        rec = _region_at(corpus(name), box)
+        assert rec["shift_residual"] == 0.0 and tuple(rec["shift"]) == shift
+        assert not rec["holds"]["e"]
 
 
 def test_min_region_px_is_where_it_was_measured(corpus):

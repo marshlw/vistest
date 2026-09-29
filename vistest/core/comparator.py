@@ -59,6 +59,7 @@ def compare(
     ai_hooks=None,
     engine: str = "v1",
     v2=None,
+    renderer=None,
 ) -> CompareResult:
     """Compare two RGB images (uint8, H×W×3).
 
@@ -72,6 +73,10 @@ def compare(
                  only what a named rule explains (`core/v2/`). Both stay, so
                  both can be measured on the same pairs.
     v2:          `core.v2.V2Config` for engine="v2"; ignored by v1.
+    renderer:    `None`, or the renderer's fingerprints as a pair — the
+                 canary drawn where the baseline was taken and the one drawn
+                 for this screenshot (`core/renderer.py`). v2 explains text
+                 re-rasterisation only when the two differ; v1 ignores it.
     """
     if engine != "v1":
         if engine != "v2":
@@ -79,7 +84,8 @@ def compare(
         from .v2 import compare as _compare_v2
 
         return _compare_v2(expected_rgb, actual_rgb, cfg=cfg, v2=v2, name=name,
-                           ignore_mask=ignore_mask, ai_hooks=ai_hooks)
+                           ignore_mask=ignore_mask, ai_hooks=ai_hooks,
+                           renderer=renderer)
     t0 = time.perf_counter()
     cfg = cfg or DiffConfig()
 

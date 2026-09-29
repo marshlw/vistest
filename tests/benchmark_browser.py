@@ -98,6 +98,7 @@ def run_vistest(manifest: dict, preset: str, *, ai: bool = True,
     cfg = VisTestConfig.preset_of(preset)
     hooks = AIPipeline(cfg.ai) if ai else None
     bases = {k: pngio.read(root / t["base"]) for k, t in manifest["templates"].items()}
+    canaries = fingerprints(manifest, root)
     if engine == "v1":
         tool = Tool(key=preset, title=f"VisTest {preset}" + ("" if ai else " (no AI)"),
                     group="VisTest", default=preset == "balanced")
@@ -112,10 +113,27 @@ def run_vistest(manifest: dict, preset: str, *, ai: bool = True,
         actual = pngio.read(root / c["actual"])
         t0 = time.perf_counter()
         r = compare(bases[c["template"]], actual, cfg=cfg.diff, name=c["name"],
-                    ai_hooks=hooks, engine=engine)
+                    ai_hooks=hooks, engine=engine, renderer=renderer_pair(c, canaries))
         tool.ms += (time.perf_counter() - t0) * 1000
         tool.failed[c["name"]] = r.verdict is Verdict.FAIL
     return tool
+
+
+def fingerprints(manifest: dict, root: Path = bc.CORPUS_DIR) -> dict[str, bytes]:
+    """Every canary of the corpus, by the key frames name it with."""
+    recs = (manifest.get("renderers") or {}).get("fingerprints") or {}
+    return {k: (root / r["file"]).read_bytes() for k, r in recs.items()}
+
+
+def renderer_pair(case: dict, canaries: dict[str, bytes]):
+    """`compare(renderer=...)` for a pair: the canaries its two frames name.
+
+    Taken from the frames' own record in the manifest — never from the
+    family's name or the label. A frame that names no canary gives `None`
+    on its side, and the engine hears «unknown».
+    """
+    ref = case.get("renderer") or {}
+    return (canaries.get(ref.get("expected")), canaries.get(ref.get("actual")))
 
 
 #: The two groups the pairs are read in, by how the browser that drew the
