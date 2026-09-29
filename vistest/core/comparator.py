@@ -57,6 +57,8 @@ def compare(
     name: str = "snapshot",
     ignore_mask: np.ndarray | None = None,
     ai_hooks=None,
+    engine: str = "v1",
+    v2=None,
 ) -> CompareResult:
     """Compare two RGB images (uint8, H×W×3).
 
@@ -65,7 +67,19 @@ def compare(
     ai_hooks:    object with optional methods
                  `refine(regions, exp, act)` and
                  `attribute(regions)`. See vistest.ai.pipeline.AIPipeline.
+    engine:      "v1" — this cascade, the default; "v2" — the path that
+                 catches every discernible difference first and takes out
+                 only what a named rule explains (`core/v2/`). Both stay, so
+                 both can be measured on the same pairs.
+    v2:          `core.v2.V2Config` for engine="v2"; ignored by v1.
     """
+    if engine != "v1":
+        if engine != "v2":
+            raise ValueError(f"engine must be 'v1' or 'v2', not {engine!r}")
+        from .v2 import compare as _compare_v2
+
+        return _compare_v2(expected_rgb, actual_rgb, cfg=cfg, v2=v2, name=name,
+                           ignore_mask=ignore_mask, ai_hooks=ai_hooks)
     t0 = time.perf_counter()
     cfg = cfg or DiffConfig()
 

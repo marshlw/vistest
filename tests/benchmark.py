@@ -82,6 +82,7 @@ class Score:
     signal_total: int = 0
     ms: float = 0.0
     per_case: dict[str, bool] = field(default_factory=dict)   # name -> failed
+    engine: str = "v1"        # which VisTest path made the row
 
     @property
     def false_fail_rate(self) -> float:
@@ -217,14 +218,22 @@ def load_native(path: str | Path, corpus_root: str | Path | None = None) -> dict
     return doc
 
 
+def _v2_title(cfg: VisTestConfig, ai: AIPipeline | None) -> str:
+    return f"VisTest v2 ({cfg.preset})" if ai else f"VisTest v2 ({cfg.preset}, no AI)"
+
+
 def score_vistest(cases: list[cp.Case], cfg: VisTestConfig,
                   *, artifacts_dir: Path | None = None,
-                  ai: AIPipeline | None = None) -> Score:
-    s = Score(title=_title(cfg, ai), note=_note(ai))
+                  ai: AIPipeline | None = None, engine: str = "v1") -> Score:
+    if engine == "v1":
+        s = Score(title=_title(cfg, ai), note=_note(ai))
+    else:
+        s = Score(title=_v2_title(cfg, ai), engine=engine,
+                  note="core/v2: ΔE00 above discernibility, explanations after")
     for c in cases:
         t0 = time.perf_counter()
         r = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name,
-                    ai_hooks=ai)
+                    ai_hooks=ai, engine=engine)
         s.ms += (time.perf_counter() - t0) * 1000
         s.add(c, r.verdict is Verdict.FAIL)
         wrong = (r.verdict is Verdict.FAIL) != c.expected_fail
@@ -270,11 +279,13 @@ def score_native(cases: list[cp.Case], native: dict, key: str,
 # --------------------------------------------------------------------------- #
 def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
                  artifacts_dir: Path | None,
-                 ai: AIPipeline | None = None, *, timing: bool = True) -> Score:
+                 ai: AIPipeline | None = None, *, timing: bool = True,
+                 engine: str = "v1") -> Score:
     w = max(24, *(len(c.name) for c in cases))
     header = (f"{'кейс':{w}s} {'ожид':6s} {'факт':6s} {'sev':>6s} {'изм%':>8s} "
               f"{'ΔE':>6s} {'SSIM':>7s} {'рег':>4s} {'мс':>5s}  итог")
-    print(f"\n=== VisTest benchmark (preset={cfg.preset}, "
+    title = "VisTest benchmark" if engine == "v1" else f"VisTest {engine} benchmark"
+    print(f"\n=== {title} (preset={cfg.preset}, "
           f"AI-слой {'вкл' if ai else 'выкл'}) ===")
     #  The environment goes to stderr, so stdout stays comparable byte for
     #  byte between machines.
@@ -284,14 +295,15 @@ def print_detail(cases: list[cp.Case], cfg: VisTestConfig,
     print(header)
     print("-" * len(header))
 
-    s = Score(title=_title(cfg, ai), note=_note(ai))
+    s = Score(title=_title(cfg, ai) if engine == "v1" else _v2_title(cfg, ai),
+              note=_note(ai))
     for group in ("NOISE", "SIGNAL"):
         expected = Verdict.PASS if group == "NOISE" else Verdict.FAIL
         print(f"\n[{group}]  ожидается {expected.value}")
         for c in (x for x in cases if x.group == group):
             t0 = time.perf_counter()
             r = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name,
-                        ai_hooks=ai)
+                        ai_hooks=ai, engine=engine)
             ms = (time.perf_counter() - t0) * 1000
             s.ms += ms
             failed = r.verdict is Verdict.FAIL
@@ -382,6 +394,28 @@ def vistest_settings(cfg: VisTestConfig, ai: AIPipeline | None) -> list[str]:
         ai_line,
         "политика: падение, если есть регион с `severity ≥ fail_severity`, "
         "или изменённая площадь выше порога, или изменился размер",
+    ]
+
+
+def v2_settings(cfg: VisTestConfig, ai: AIPipeline | None) -> list[str]:
+    """Every knob the v2 row ran with: all of V2Config, and what it reads of DiffConfig."""
+    from dataclasses import fields
+
+    from vistest.core.v2 import V2Config
+
+    v = V2Config()
+    own = ", ".join(f"`{f.name}={getattr(v, f.name)!r}`" for f in fields(v))
+    d = cfg.diff
+    return [
+        f"`V2Config`: {own} (`vistest/core/v2/settings.py`)",
+        f"from `DiffConfig` only the size policy and the memory limit: "
+        f"`fail_on_size_change={d.fail_on_size_change!r}`, "
+        f"`size_tolerance_px={d.size_tolerance_px!r}`, `max_pixels={d.max_pixels!r}`",
+        "no AI layer (`--no-ai`)" if ai is None else
+        "the AI layer as in the v1 row (`AIPipeline(AIConfig())`), on the regions "
+        "no rule explained",
+        "policy: fail when a region is left that no rule explained, or when the "
+        "size changed",
     ]
 
 
@@ -573,7 +607,9 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     for s in scores:
         L.append(f"**{s.title}**{'' if s.native else ' ⁽ᵖ⁾'}")
         L.append("")
-        if not s.key:
+        if not s.key and s.engine == "v2":
+            items = v2_settings(cfg, ai)
+        elif not s.key:
             items = vistest_settings(cfg, ai)
         else:
             if s.native and s.key in tools:
@@ -761,6 +797,12 @@ def main() -> int:
                          "re-published after it")
     ap.add_argument("--markdown", metavar="FILE",
                     help="записать таблицу в markdown")
+    ap.add_argument("--engine", choices=["v1", "v2", "both"], default=None,
+                    help="which VisTest path gets rows: v1 (the cascade), v2 "
+                         "(core/v2: catch first, explain after) or both. "
+                         "Default: v1 on the synthetic corpus — its output "
+                         "stays what it was byte for byte — and both on the "
+                         "browser corpus")
     ap.add_argument("--corpus", choices=["synthetic", "browser"], default="synthetic",
                     help="synthetic (default): tests/benchmark_corpus, drawn by "
                          "OpenCV. browser: tests/browser_corpus, drawn by "
@@ -829,13 +871,22 @@ def main() -> int:
               "bench_out/native.json")
         return 0
 
+    #  On this corpus v1 alone unless asked: the default output is the one
+    #  that has to stay the same byte for byte.
+    engines = {"v1": ("v1",), "v2": ("v2",), "both": ("v1", "v2")}[args.engine or "v1"]
+
     if not args.compare:
-        s = print_detail(cases, cfg, artifacts_dir, ai=ai, timing=timing)
+        ss = [print_detail(cases, cfg, artifacts_dir, ai=ai, timing=timing, engine=e)
+              for e in engines]
         if args.artifacts:
             print(f"Артефакты: {out.resolve()}")
+        #  The exit code is v1's while v1 is in the run: v2 on this corpus is
+        #  a row to read, not a gate.
+        s = ss[0]
         return 1 if s.correct != s.total else 0
 
-    scores = [score_vistest(cases, cfg, artifacts_dir=artifacts_dir, ai=ai)]
+    scores = [score_vistest(cases, cfg, artifacts_dir=artifacts_dir, ai=ai, engine=e)
+              for e in engines]
     ports: list[Score] = []
 
     for engine in bl.ENGINES:

@@ -49,6 +49,9 @@ import browser_corpus as bc  # noqa: E402
 
 NATIVE_DEFAULT = ROOT / "docs" / "benchmark_browser_native.json"
 PRESETS = ("strict", "balanced", "loose")
+#: `--engine`: which VisTest paths get rows. On this corpus both by default —
+#: the table exists to put v1, v2 and Playwright side by side.
+ENGINES = {"v1": ("v1",), "v2": ("v2",), "both": ("v1", "v2")}
 HALVES = (bc.CALIBRATION, bc.HELD_OUT)
 HALF_TITLE = {bc.CALIBRATION: "calibration", bc.HELD_OUT: "held out"}
 
@@ -85,7 +88,7 @@ def load(manifest_path: Path = bc.MANIFEST) -> tuple[dict, list[dict]]:
 
 
 def run_vistest(manifest: dict, preset: str, *, ai: bool = True,
-                root: Path = bc.CORPUS_DIR) -> Tool:
+                root: Path = bc.CORPUS_DIR, engine: str = "v1") -> Tool:
     from vistest.ai import AIPipeline
     from vistest.config import VisTestConfig
     from vistest.core import pngio
@@ -95,13 +98,19 @@ def run_vistest(manifest: dict, preset: str, *, ai: bool = True,
     cfg = VisTestConfig.preset_of(preset)
     hooks = AIPipeline(cfg.ai) if ai else None
     bases = {k: pngio.read(root / t["base"]) for k, t in manifest["templates"].items()}
-    tool = Tool(key=preset, title=f"VisTest {preset}" + ("" if ai else " (no AI)"),
-                group="VisTest", default=preset == "balanced")
+    if engine == "v1":
+        tool = Tool(key=preset, title=f"VisTest {preset}" + ("" if ai else " (no AI)"),
+                    group="VisTest", default=preset == "balanced")
+    else:
+        #  v2 reads the preset for its size policy only; its own numbers are
+        #  in core/v2/settings.py and do not change with the preset.
+        tool = Tool(key=engine, title=f"VisTest {engine} ({preset})"
+                    + ("" if ai else " (no AI)"), group="VisTest")
     for c in manifest["cases"]:
         actual = pngio.read(root / c["actual"])
         t0 = time.perf_counter()
         r = compare(bases[c["template"]], actual, cfg=cfg.diff, name=c["name"],
-                    ai_hooks=hooks)
+                    ai_hooks=hooks, engine=engine)
         tool.ms += (time.perf_counter() - t0) * 1000
         tool.failed[c["name"]] = r.verdict is Verdict.FAIL
     return tool
@@ -494,7 +503,12 @@ def main(args, *, python_env: str = "") -> int:
     if python_env:
         #  stderr, as for the synthetic corpus: stdout stays comparable.
         print(f"Run on: {python_env}", file=sys.stderr)
-    tools = [run_vistest(manifest, p, ai=not args.no_ai) for p in PRESETS]
+    engines = ENGINES[getattr(args, "engine", None) or "both"]
+    tools = []
+    if "v1" in engines:
+        tools += [run_vistest(manifest, p, ai=not args.no_ai) for p in PRESETS]
+    if "v2" in engines:
+        tools.append(run_vistest(manifest, "balanced", ai=not args.no_ai, engine="v2"))
     if native is not None:
         tools += playwright_tools(native, cases)
     sys.stdout.write(report(manifest, tools, timing=not args.no_timing, notes=notes))
