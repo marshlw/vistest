@@ -204,6 +204,27 @@ vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
   accept it with: pytest --vistest-update
 ```
 
+A result of the second engine (`compare(..., engine="v2")`; the library
+still compares with the first) also says, for each region that counts, what
+was measured on it — under `changed:` in this message (three of them, the
+rest counted) and in a column of the report:
+
+```
+  changed:  153x14 at (202, 242): ink colour: #1f2937 → #4d5666, ΔE00 14.8
+            145x14 at (202, 458): ink colour: #1f2937 → #4d5666, ΔE00 14.8
+            152x14 at (202, 170): ink colour: #1f2937 → #4d5666, ΔE00 14.8
+            ... and 31 more in the report
+```
+
+(table/text_color/de15 of the browser corpus: the text of the table drawn
+at ΔE00 15 from its colour. Others read «fill: #2563eb → #4d77ff, ΔE00 8.0»,
+«line added: 41×1 px, #2563eb», «block moved by +1 px along y».)
+
+Only what the engine measured: a block moved by whole pixels (both ways), a
+thin line in one frame only, the colour of the region's paper, the ink's
+colour and whether its shapes agree to a pixel. «Ink», not «text»: nothing
+there knows whether the strokes are letters.
+
 `expect_screenshot` takes a Playwright `Page` or `Locator`, PNG bytes, a
 `PIL.Image`, a numpy array, or a path to a PNG — so it works with a project's
 own page wrapper, and works with no browser at all. Playwright is never

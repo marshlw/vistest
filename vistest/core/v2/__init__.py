@@ -42,6 +42,11 @@ v2 turns the order round:
    is printed with them.
 3. **The AI layer**, when there is one, sees what no rule explained. A region
    it does not hand back is suppressed under its name, never dropped.
+4. **In words** (`describe.py`). Every region that counts gets one sentence
+   of what was measured on it — «ink colour: #1f2937 → #4d5666, ΔE00 14.8»,
+   «line added: 41×1 px», «fill: …, ΔE00 8.0», «block moved by +1 px along
+   y» — as the first of its annotations, for the report and the failure
+   message. It decides nothing.
 
 A region that no explanation takes out fails the comparison. There is no
 severity threshold between "found" and "failed": severity orders the report,

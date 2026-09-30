@@ -484,14 +484,38 @@ class BlockShift:
                 f"{self.changed} changed px left")
 
 
+def _surely_apart(l1: np.ndarray, l2: np.ndarray, jnd: float) -> np.ndarray:
+    """Pixels whose ΔE00 is above `jnd` on their L* alone, without computing it.
+
+    ΔE00² = (ΔL'/S_L)² + (ΔC'/S_C)² + (ΔH'/S_H)² + R_T·(ΔC'/S_C)·(ΔH'/S_H), and
+    |R_T| ≤ 2, so the last three terms add up to at least (|ΔC'/S_C| −
+    |ΔH'/S_H|)² ≥ 0 and ΔE00 ≥ |ΔL*| / S_L. A margin of 1e-4 covers the
+    float32 arithmetic of both.
+    """
+    d = l1 - l2
+    m = 0.5 * (l1 + l2) - 50.0
+    s_l = 1.0 + 0.015 * m * m / np.sqrt(20.0 + m * m)
+    return np.abs(d) / s_l > jnd * (1.0 + 1e-4)
+
+
 def block_shift(exp: np.ndarray, act: np.ndarray, lab_exp: np.ndarray,
                 lab_act: np.ndarray, where: np.ndarray, *, jnd: float, limit: float,
-                reach_px: int = SHIFT_REACH_PX) -> BlockShift:
-    """(e) over the region's changed pixels `where` (a full-frame mask)."""
-    ys, xs = np.nonzero(where)
+                reach_px: int = SHIFT_REACH_PX, pure_only: bool = False) -> BlockShift:
+    """(e) over the region's changed pixels `where` (a full-frame mask).
+
+    `pure_only`: the caller only asks whether the block moved — a move is
+    dropped as soon as the pixels it surely leaves (`_surely_apart`) are
+    more than `limit` of them, and when none stays under it the answer is
+    «no move» ((0, 0), every pixel left) rather than the closest one. The
+    move named, when there is one, is the one the full search names.
+
+    `where` is a full-frame mask, or the (ys, xs) of its pixels.
+    """
+    ys, xs = where if isinstance(where, tuple) else np.nonzero(where)
     n = len(ys)
     H, W = exp.shape[:2]
     best = (0, 0, n + 1)
+    allowed = limit * n if pure_only else float("inf")
     #  The shortest move first: of two moves that explain the block equally
     #  well (a regular pattern), the smaller is the one named.
     moves = sorted(((dx, dy) for dy in range(-reach_px, reach_px + 1)
@@ -501,19 +525,29 @@ def block_shift(exp: np.ndarray, act: np.ndarray, lab_exp: np.ndarray,
         sy, sx = ys - dy, xs - dx
         inside = (sy >= 0) & (sy < H) & (sx >= 0) & (sx < W)
         left = int((~inside).sum())
-        if left >= best[2]:
+        if left >= best[2] or left > allowed:
             continue
         py, px, qy, qx = ys[inside], xs[inside], sy[inside], sx[inside]
+        if pure_only:
+            #  What lightness alone proves apart first; ΔE00 for the rest only
+            #  while the move can still stay under the limit.
+            sure = _surely_apart(lab_act[py, px, 0], lab_exp[qy, qx, 0], jnd)
+            left += int(sure.sum())
+            if left > allowed or left >= best[2]:
+                continue
+            py, px, qy, qx = py[~sure], px[~sure], qy[~sure], qx[~sure]
         differ = np.any(act[py, px] != exp[qy, qx], axis=1)
         if differ.any():
             de = _color.delta_e_ciede2000(lab_act[py[differ], px[differ]][None],
                                           lab_exp[qy[differ], qx[differ]][None])[0]
             left += int((de > jnd).sum())
-        if left < best[2]:
+        if left < best[2] and left <= allowed:
             best = (dx, dy, left)
             if not left:
                 break
     dx, dy, left = best
+    if best[2] > n:
+        return BlockShift(dx=0, dy=0, left=n, changed=n, limit=limit)
     return BlockShift(dx=dx, dy=dy, left=min(left, n), changed=n, limit=limit)
 
 

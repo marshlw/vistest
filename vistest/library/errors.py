@@ -32,6 +32,29 @@ __all__ = ["BaselineMissing", "ScreenshotMismatch", "VisTestWarning",
 
 #: Suppressed regions spelled out in a failure message; the rest are counted.
 SUPPRESSED_SHOWN = 3
+#: Regions that count, said in words in a failure message; the rest are counted.
+CHANGED_SHOWN = 3
+
+
+def description(r) -> str:
+    """The engine's sentence of what it measured on a region, or ''.
+
+    Engine v2 writes one for every region that counts, as an annotation of
+    kind «description» (vistest/core/v2/describe.py); v1 writes none.
+    """
+    notes = r.get("annotations") if isinstance(r, dict) else getattr(r, "annotations", None)
+    for a in notes or ():
+        if isinstance(a, dict) and a.get("kind") == "description":
+            return str(a.get("text") or "")
+    return ""
+
+
+def changed_line(r) -> str:
+    """'97x12 at (219, 522): ink colour: #343649 → #586074, ΔE00 14.2'."""
+    def get(key):
+        return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
+
+    return f"{get('w')}x{get('h')} at ({get('x')}, {get('y')}): {description(r)}"
 
 
 def suppressed_line(r) -> str:
@@ -134,6 +157,12 @@ class ScreenshotMismatch(VisualCheckError):
             f"  baseline: {baseline}",
             f"  actual:   {actual}",
         ]
+        #  What changed, in the engine's words, before what was set aside.
+        said = [r for r in getattr(result, "regions", None) or () if description(r)]
+        for i, r in enumerate(said[:CHANGED_SHOWN]):
+            lines.append(("  changed:  " if i == 0 else "            ") + changed_line(r))
+        if len(said) > CHANGED_SHOWN:
+            lines.append(f"            ... and {len(said) - CHANGED_SHOWN} more in the report")
         suppressed = list(getattr(result, "suppressed", None) or ())
         if suppressed:
             from ..plugins.runtime import count_suppressed, say_suppressed
