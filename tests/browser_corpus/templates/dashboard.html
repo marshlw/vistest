@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sales dashboard</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; font-size: 13px; color: #1f2937; background: #f5f6fa; }
+  .layout { display: grid; grid-template-columns: 224px 1fr; height: 800px; }
+  .side { background: #ffffff; border-right: 1px solid #e6e8ef; padding: 16px 12px; }
+  .logo { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; margin: 2px 6px 20px; }
+  .logo i { width: 26px; height: 26px; border-radius: 7px; background: #6d28d9; display: inline-block; }
+  .side h6 { font-size: 10px; font-weight: 400; color: #9ca3af; letter-spacing: .06em; margin: 14px 8px 6px; }
+  .side a { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 7px; color: #4b5563; text-decoration: none; }
+  .side a svg { flex: none; }
+  .side a.on { background: #ede9fe; color: #5b21b6; }
+  .side a em { margin-left: auto; font-style: normal; font-size: 11px; background: #f3f4f6; color: #6b7280; padding: 0 7px; border-radius: 999px; line-height: 18px; }
+  .side a em.hot { background: #fee2e2; color: #b91c1c; }
+  .plan { margin: 22px 6px 0; padding: 12px; border-radius: 9px; background: #f5f3ff; color: #5b21b6; font-size: 12px; line-height: 17px; }
+  main { padding: 14px 24px; overflow: hidden; }
+  .top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .search { display: flex; align-items: center; gap: 8px; width: 300px; padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #9ca3af; }
+  .top .bell { margin-left: auto; position: relative; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: #fff; border: 1px solid #e5e7eb; }
+  .top .bell b { position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #ef4444; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: #c7d2fe; color: #3730a3; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .head h1 { margin: 0; font-size: 20px; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #dcfce7; color: #166534; }
+  .seg { margin-left: auto; display: flex; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 2px; }
+  .seg span { padding: 5px 11px; border-radius: 6px; color: #6b7280; }
+  .seg span.on { background: #f3f4f6; color: #111827; }
+  .btn { padding: 8px 14px; border-radius: 8px; font: inherit; border: 1px solid #e5e7eb; background: #fff; color: #374151; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.primary { background: #6d28d9; border-color: #6d28d9; color: #fff; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+  .kpi { background: #fff; border: 1px solid #eceef3; border-radius: 10px; padding: 12px 14px; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  .kpi .ico { grid-row: span 2; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; }
+  .kpi span { color: #6b7280; font-size: 12px; }
+  .kpi strong { font-size: 21px; letter-spacing: -.01em; }
+  .kpi .foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; margin-top: 8px; white-space: nowrap; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+  .pill.up { background: #dcfce7; color: #15803d; } .pill.down { background: #fee2e2; color: #b91c1c; }
+  .pill.flat { background: #f3f4f6; color: #4b5563; }
+  .kpi .foot svg { margin-left: auto; }
+  .grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .panel { background: #fff; border-radius: 10px; padding: 12px 14px; border: 1px solid #eceef3; }
+  .panel h2 { font-size: 14px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .panel h2 .sub { font-weight: 400; color: #9ca3af; font-size: 12px; }
+  .panel h2 svg { margin-left: auto; }
+  .legend { display: flex; gap: 14px; color: #6b7280; font-size: 12px; margin: 6px 0 2px; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  .note { color: #6b7280; font-size: 12px; line-height: 17px; margin: 6px 0 0; }
+  .channels div.row { display: grid; grid-template-columns: 18px 1fr auto; gap: 4px 9px; align-items: center; padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
+  .bar { grid-column: 2 / -1; height: 5px; border-radius: 3px; background: #f3f4f6; }
+  .bar i { display: block; height: 5px; border-radius: 3px; background: #8b5cf6; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { text-align: left; font-weight: 400; color: #9ca3af; font-size: 11px; padding: 5px 6px; border-bottom: 1px solid #eceef3; }
+  td { padding: 6px; border-bottom: 1px solid #f3f4f6; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .st { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
+  .st.paid { background: #dcfce7; color: #166534; } .st.pending { background: #fef3c7; color: #92400e; }
+  .st.refund { background: #e0e7ff; color: #3730a3; } .st.failed { background: #fee2e2; color: #991b1b; }
+  a.more { color: #6d28d9; text-decoration: none; font-weight: 400; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="logo"><i></i>Northwind</div>
+    <a class="on"><svg data-m="iconcolor" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 4v3h6V4z"/></svg>Dashboard</a>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6h15l-2 9H8zM6 6L5 3H2M9 20a1 1 0 1 0 0-.1M18 20a1 1 0 1 0 0-.1"/></svg>Orders<em class="hot">12</em></a>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5zM3 8v8l9 5 9-5V8"/></svg>Products</a>
+    <a data-m="weight"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 0 1 0 8M22 21c0-3-2-5-4-6"/></svg>Customers</a>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 15l4-4 3 3 6-7"/></svg>Analytics</a>
+    <h6>MARKETING</h6>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-8-8 18-2-8z"/></svg>Campaigns<em>3</em></a>
+    <a data-m="spacing"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8 8-9-9V3h8zM7.5 7.5h.01"/></svg>Discounts</a>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H8l-4 4z"/></svg>Reviews<em>48</em></a>
+    <h6>SYSTEM</h6>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Settings</a>
+    <a><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg>Help centre</a>
+    <div class="plan"><b>Pro plan</b> · renews on 12 Nov.<br>7 of 10 seats in use.</div>
+  </nav>
+  <main>
+    <div class="top">
+      <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search orders, customers…</div>
+      <span class="bell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg><b data-m="remove"></b></span>
+      <span class="avatar">AK</span>
+    </div>
+    <div class="head"><h1 data-m="fsize">Sales overview</h1><span class="chip" data-m="noborder">Live</span>
+      <span class="seg" data-m="order"><span class="on">7 days</span><span>30 days</span></span><span class="seg"><span>Quarter</span></span>
+      <button class="btn" data-m="focus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Filter</button>
+      <button class="btn primary" data-m="fill radius pad opacity">Export report</button></div>
+    <div class="kpis">
+      <div class="kpi" data-m="border"><span class="ico" style="background:#ede9fe"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="2"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><span>Revenue</span><strong>$84,210</strong>
+        <div class="foot"><span class="pill up">+12.4%</span><span>vs last week</span><svg width="54" height="22" viewBox="0 0 64 22" preserveAspectRatio="none" fill="none" stroke="#16a34a" stroke-width="1.5"><polyline points="0,18 8,15 16,16 24,11 32,12 40,8 48,9 56,4 64,5"/></svg></div></div>
+      <div class="kpi"><span class="ico" style="background:#dbeafe"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2"><path d="M6 6h15l-2 9H8zM6 6L5 3H2"/></svg></span><span>Orders</span><strong data-m="char" data-char="1,386">1,336</strong>
+        <div class="foot"><span class="pill up">+3.1%</span><span>vs last week</span><svg width="54" height="22" viewBox="0 0 64 22" preserveAspectRatio="none" fill="none" stroke="#16a34a" stroke-width="1.5"><polyline points="0,14 8,16 16,12 24,13 32,10 40,12 48,8 56,9 64,7"/></svg></div></div>
+      <div class="kpi"><span class="ico" style="background:#fee2e2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><span>Refund rate</span><strong>2.8%</strong>
+        <div class="foot"><span class="pill down">+0.6 pp</span><span>vs last week</span><svg width="54" height="22" viewBox="0 0 64 22" preserveAspectRatio="none" fill="none" stroke="#dc2626" stroke-width="1.5"><polyline points="0,16 8,15 16,17 24,13 32,14 40,10 48,11 56,7 64,8"/></svg></div></div>
+      <div class="kpi"><span class="ico" style="background:#fef3c7"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/></svg></span><span>New customers</span><strong>312</strong>
+        <div class="foot"><span class="pill flat">0.0%</span><span>vs last week</span><svg width="54" height="22" viewBox="0 0 64 22" preserveAspectRatio="none" fill="none" stroke="#6b7280" stroke-width="1.5"><polyline points="0,11 8,12 16,10 24,12 32,11 40,13 48,10 56,12 64,11"/></svg></div></div>
+    </div>
+    <div class="grid">
+      <div class="panel" data-m="shadow" style="box-shadow:0 4px 14px rgba(17,24,39,.08)">
+        <h2>Revenue <span class="sub">last 7 days, by channel</span><svg data-m="icon" data-icon="M4 4h16v16H4z" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></h2>
+        <div class="legend"><span><i style="background:#8b5cf6"></i>Online store</span><span><i style="background:#38bdf8"></i>Marketplace</span><span><i style="background:#f59e0b"></i>Retail</span></div>
+        <svg width="100%" height="176" viewBox="0 0 560 176" preserveAspectRatio="none">
+          <g stroke="#f1f2f6" stroke-width="1"><path d="M0 22h560M0 66h560M0 110h560M0 154h560"/></g>
+          <polygon points="0,120 80,104 160,110 240,76 320,84 400,52 480,60 560,34 560,154 0,154" fill="#ede9fe"/>
+          <polyline points="0,120 80,104 160,110 240,76 320,84 400,52 480,60 560,34" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+          <polyline points="0,134 80,128 160,122 240,118 320,110 400,112 480,98 560,94" fill="none" stroke="#38bdf8" stroke-width="2"/>
+          <polyline points="0,146 80,142 160,144 240,138 320,140 400,134 480,136 560,130" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 3"/>
+          <circle cx="400" cy="52" r="4" fill="#fff" stroke="#8b5cf6" stroke-width="2"/>
+        </svg>
+        <p class="note" data-m="lh">Marketplace fees are taken out before revenue is counted. Retail figures arrive from the point-of-sale sync once a day, so today's retail line is an estimate.</p>
+      </div>
+      <div class="panel channels">
+        <h2><span data-m="word" data-word="Top regions">Top channels</span> <a class="more" data-m="link underline" style="margin-left:auto">View report</a></h2>
+        <div data-m="text">
+          <div class="row"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Online store<b>$41,380</b><div class="bar"><i style="width:82%"></i></div></div>
+          <div class="row"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2"><path d="M3 9l2-5h14l2 5M3 9h18v11H3zM9 20v-6h6v6"/></svg>Marketplace<b>$22,905</b><div class="bar"><i style="width:46%;background:#38bdf8"></i></div></div>
+          <div class="row"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2"><path d="M4 7h16l-1 13H5zM9 7a3 3 0 0 1 6 0"/></svg>Retail<b>$13,470</b><div class="bar"><i style="width:27%;background:#f59e0b"></i></div></div>
+          <div class="row"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="M4 4h16v16H4zM4 10h16M10 10v10"/></svg>Wholesale<b>$6,455</b><div class="bar"><i style="width:13%;background:#22c55e"></i></div></div>
+        </div>
+        <p class="note">Four channels, 96% of revenue.</p>
+      </div>
+    </div>
+    <div class="panel" data-m="offset">
+      <h2>Recent orders <span class="sub">updated 2 minutes ago</span></h2>
+      <table>
+        <tr><th>Order</th><th>Customer</th><th>Channel</th><th>Status</th><th style="text-align:right">Total</th></tr>
+        <tr><td>#10482</td><td>Maya Lindqvist</td><td>Online store</td><td><span class="st paid">Paid</span></td><td class="num">$248.00</td></tr>
+        <tr><td>#10481</td><td>Oscar Brandt</td><td>Marketplace</td><td><span class="st pending">Pending</span></td><td class="num">$96.50</td></tr>
+        <tr><td>#10480</td><td>Lena Hoffmann</td><td>Retail</td><td><span class="st refund">Refunded</span></td><td class="num">$34.99</td></tr>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

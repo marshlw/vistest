@@ -82,6 +82,32 @@
   half is spent; misses 0/184 and 0/92 as before; other renderer and every
   other verdict unchanged. Synthetic corpus: v1 byte for byte as before, v2
   unchanged (12/16, 0/11).
+- **A new held-out half, sealed: held-out-2.** The old one is spent for the
+  page-shift rule, so the final acceptance of f5 and the figures of the
+  README in phase 3 are measured on two new templates, made where the
+  engine is weakest: `dashboard` (a light sales dashboard — a sidebar of
+  icons, number cards with sparklines, badges) and `settings` (a
+  preferences page — switches, checkboxes, radio buttons, selects, many
+  icons). Their pairs are the «same renderer» group: all 22 families at
+  every magnitude (opacity 0.98 NOISE, ΔE00 2 DISPUTED, as elsewhere) and
+  the stylesheet configurations — `shift_0.25px`, `shift_0.5px` (NOISE)
+  and `geometric_precision` (DISPUTED); no other renderer, no other
+  machine. 106 pairs, 10.2 MB, drawn once by `python
+  scripts/browser_corpus.py --capture-sealed` in the environment of the
+  corpus after the six baselines and the baseline's canary were redrawn to
+  their frozen pixels; every mutation changed pixels. Frozen like the rest:
+  sha256 of every frame in the manifest (`split: "held-out-2"`, a `sealed`
+  section with the rule), checked by `verify_files` and the drift test.
+  **Sealed:** `load_manifest()` leaves it out — what the benchmark, the
+  diagnostics and the engine tests read is the manifest as it was before,
+  to the byte — and `load_manifest(sealed=True)` is the whole file, for
+  what checks, redraws or rewrites the corpus (`write_manifest` refuses a
+  manifest read without it). `tests/benchmark.py --corpus browser` runs
+  and prints it only with `--final`, after the tables, which stay what they
+  are; `scripts/bench_playwright_grid.mjs` puts it in the digest and
+  compares it only with `--final`. Neither engine nor Playwright has been
+  run on it, and no table of it has been read. The corpus budget goes from
+  40 to 50 MiB (51.3 MB used).
 
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 

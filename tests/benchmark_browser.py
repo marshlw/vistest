@@ -32,6 +32,12 @@ this table says it means.
 
 `--no-timing` leaves out the only thing that changes from run to run; the
 rest of the output is the same byte for byte on the same engine and corpus.
+
+The sealed half, held-out-2 (`scripts/browser_corpus.py`), is neither run
+nor printed unless `--final` is given: then, after the tables above, which
+stay what they are, its own table — the same tools on its pairs alone. It is
+for the final acceptance of f5 and for the figures of the README, and for
+nothing before them. `--markdown` does not carry it.
 """
 
 from __future__ import annotations
@@ -83,6 +89,7 @@ class Row:
 #  Running
 # --------------------------------------------------------------------------- #
 def load(manifest_path: Path = bc.MANIFEST) -> tuple[dict, list[dict]]:
+    """The corpus the tables are made of: without the sealed half."""
     manifest = bc.load_manifest(manifest_path)
     return manifest, manifest["cases"]
 
@@ -441,6 +448,68 @@ def report(manifest: dict, tools: list[Tool], *, timing: bool, notes: list[str],
     return "\n".join(L) + "\n"
 
 
+def sealed_report(sealed: dict, tools: list[Tool], *, timing: bool,
+                  notes: list[str]) -> str:
+    """The table of the sealed half, printed after the others with `--final`.
+
+    `sealed` is `browser_corpus.sealed_only(...)`: its pairs alone, all of
+    them in the «same renderer» group by construction.
+    """
+    cases = sealed["cases"]
+    table = rows(sealed)
+    rule = sealed.get("sealed") or {}
+    count = {lab: sum(1 for c in cases if c["label"] == lab)
+             for lab in (bc.SIGNAL, bc.NOISE, bc.DISPUTED)}
+    L: list[str] = [""]
+    L.append(f"=== Sealed half: {', '.join(rule.get('templates') or sealed['templates'])} "
+             f"({bc.HELD_OUT_2}) — --final ===")
+    L.append(f"{len(cases)} pairs, all drawn by the baseline's renderer: "
+             f"{count[bc.SIGNAL]} SIGNAL, {count[bc.NOISE]} NOISE, "
+             f"{count[bc.DISPUTED]} DISPUTED (printed, not counted)")
+    if rule.get("why"):
+        L.append(f"Why sealed: {rule['why']}")
+    for n in notes:
+        L.append(n)
+    if not tools:
+        L.append("No tool to run.")
+        return "\n".join(L) + "\n"
+    L.append("")
+    w = max(len(t.title) for t in tools) + 2
+    head = f"{'tool':{w}s} | {'false':>12s} {'misses':>14s} | {'disputed':>8s} | {'ms':>7s}"
+    L.append(head)
+    L.append("-" * len(head))
+    for t in tools:
+        a = score(t, cases)
+        ms = f"{t.ms:7.0f}" if timing and t.ms else f"{'—':>7s}"
+        L.append(f"{t.title:{w}s} | {_frac(a.false, a.noise):>6s} {_pct(a.false, a.noise)} "
+                 f"{_frac(a.misses, a.signal):>8s} {_pct(a.misses, a.signal)} | "
+                 f"{_frac(a.disputed_failed, a.disputed):>8s} | {ms}")
+    for group in ("VisTest", "Playwright"):
+        members = [t for t in tools if t.group == group]
+        if not members:
+            continue
+        L.append("")
+        L.append(f"By family — {group}, sealed half (SIGNAL: misses, NOISE: false "
+                 "failures, DISPUTED: failures)")
+        cw = max(7, *(len(t.key) for t in members)) + 1
+        fw = max(len(r.key) for r in table) + 2
+        head = (f"{'family':{fw}s} {'label':8s} {'pairs':>5s} "
+                + " ".join(f"{t.key:>{cw}s}" for t in members))
+        L.append(head)
+        L.append("-" * len(head))
+        for r in table:
+            cells = [str(errors(t, r.names, r.label)) for t in members]
+            L.append(f"{r.key:{fw}s} {r.label:8s} {len(r.names):>5d} "
+                     + " ".join(f"{x:>{cw}s}" for x in cells))
+    L.append("")
+    L.append("Worst three families per tool, sealed half")
+    for t in tools:
+        wst = worst(t, table, cases)
+        text = "; ".join(f"{r.key} {r.label.lower()} {e}/{n}" for r, e, n in wst) or "none"
+        L.append(f"  {t.title}: {text}")
+    return "\n".join(L) + "\n"
+
+
 def markdown(manifest: dict, tools: list[Tool], native: dict | None,
              *, ai: bool) -> str:
     """The same tables for docs/benchmark_browser.md."""
@@ -559,8 +628,10 @@ def markdown(manifest: dict, tools: list[Tool], native: dict | None,
 # --------------------------------------------------------------------------- #
 def main(args, *, python_env: str = "") -> int:
     """Called by tests/benchmark.py when `--corpus browser` is given."""
-    manifest, cases = load()
-    problems = bc.verify_files(manifest)
+    whole = bc.load_manifest(sealed=True)
+    manifest = bc.unsealed(whole)
+    cases = manifest["cases"]
+    problems = bc.verify_files(whole)
     if problems:
         print("the browser corpus on disk does not match its manifest: "
               + "; ".join(problems[:5]), file=sys.stderr)
@@ -592,7 +663,26 @@ def main(args, *, python_env: str = "") -> int:
         tools.append(run_vistest(manifest, "balanced", ai=not args.no_ai, engine="v2"))
     if native is not None:
         tools += playwright_tools(native, cases)
-    sys.stdout.write(report(manifest, tools, timing=not args.no_timing, notes=notes))
+    out = report(manifest, tools, timing=not args.no_timing, notes=notes)
+    if getattr(args, "final", False):
+        sealed = bc.sealed_only(whole)
+        final: list[Tool] = []
+        if "v1" in engines:
+            final += [run_vistest(sealed, p, ai=not args.no_ai) for p in PRESETS]
+        if "v2" in engines:
+            final.append(run_vistest(sealed, "balanced", ai=not args.no_ai, engine="v2"))
+        final_notes: list[str] = []
+        if native is not None:
+            if all(c["name"] in native["results"] for c in sealed["cases"]):
+                final += playwright_tools(native, sealed["cases"])
+            else:
+                final_notes.append(
+                    f"{native_path.name} holds no result for this half: its "
+                    "Playwright rows are left out (node "
+                    "scripts/bench_playwright_grid.mjs --final > FILE writes "
+                    "them; then --native FILE).")
+        out += sealed_report(sealed, final, timing=not args.no_timing, notes=final_notes)
+    sys.stdout.write(out)
     if args.markdown:
         path = Path(args.markdown)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -35,6 +35,15 @@
  *
  * The corpus digest is the formula of scripts/browser_corpus.py::corpus_digest,
  * and tests/benchmark.py refuses a JSON computed on other files.
+ *
+ * The sealed half of the corpus (held-out-2, see scripts/browser_corpus.py)
+ * is in the digest but not compared, unless `--final` is given — for the
+ * final acceptance of f5 and the figures of the README, not before:
+ *
+ *     node scripts/bench_playwright_grid.mjs --final > bench_out/native_final.json
+ *     python tests/benchmark.py --corpus browser --final --native bench_out/native_final.json
+ *
+ * The committed docs/benchmark_browser_native.json is the run without it.
  */
 
 import { createHash } from 'node:crypto';
@@ -45,7 +54,9 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
-const root = resolve(process.argv[2] ?? join(repo, 'tests', 'browser_corpus'));
+const argv = process.argv.slice(2);
+const final = argv.includes('--final');
+const root = resolve(argv.find((a) => !a.startsWith('--')) ?? join(repo, 'tests', 'browser_corpus'));
 const manifestPath = join(root, 'manifest.json');
 
 function die(msg) {
@@ -94,18 +105,26 @@ for (const [key, t] of Object.entries(manifest.templates)) {
   lines.push(`${t.base} ${sha(bases[key])}\n`);
 }
 
+// The sealed half: its baselines and pairs are in the digest, compared only
+// with --final.
+const sealedSplit = manifest.sealed ? manifest.sealed.split : null;
+const isSealed = (c) => sealedSplit !== null && manifest.templates[c.template].split === sealedSplit;
+const compared = manifest.cases.filter((c) => final || !isSealed(c));
+for (const c of manifest.cases) {
+  lines.push(`${c.actual} ${sha(readFileSync(join(root, c.actual)))}\n`);
+}
+
 const SELF_CHECK_PAIRS = 12;
-const selfCheckEvery = Math.ceil(manifest.cases.length / SELF_CHECK_PAIRS);
+const selfCheckEvery = Math.ceil(compared.length / SELF_CHECK_PAIRS);
 let selfChecked = 0;
 const results = {};
-for (const [i, c] of manifest.cases.entries()) {
+for (const [i, c] of compared.entries()) {
   // The comparator makes a pngjs PNG for its diff, and a PNG holds its
   // whole frame until the event loop runs once. A loop that never yields
   // keeps every one of them — about 13 MB a pair; 462 pairs no longer fit
   // in 8 GB. So it yields, every ten pairs.
   if (i % 10 === 0) await new Promise((done) => setImmediate(done));
   const actual = readFileSync(join(root, c.actual));
-  lines.push(`${c.actual} ${sha(actual)}\n`);
   const expected = bases[c.template];
   const entry = { diff_pixels: {}, failed: {} };
   for (const threshold of THRESHOLDS) {
@@ -132,13 +151,16 @@ for (const [i, c] of manifest.cases.entries()) {
     }
   }
   results[c.name] = entry;
-  if ((i + 1) % 50 === 0) process.stderr.write(`${i + 1}/${manifest.cases.length}\n`);
+  if ((i + 1) % 50 === 0) process.stderr.write(`${i + 1}/${compared.length}\n`);
 }
 
 process.stdout.write(JSON.stringify({
   source: 'native',
   generator: 'scripts/bench_playwright_grid.mjs',
-  corpus: { sha256: sha(Buffer.from(lines.join(''), 'utf8')), cases: manifest.cases.length },
+  corpus: { sha256: sha(Buffer.from(lines.join(''), 'utf8')), cases: compared.length,
+            ...(sealedSplit === null ? {} : {
+              sealed: { split: sealedSplit, cases: manifest.cases.filter(isSealed).length,
+                        compared: final } }) },
   environment: {
     node: process.version,
     platform: `${process.platform} ${process.arch}`,

@@ -199,6 +199,8 @@ The table above is measured on pictures OpenCV drew — the raster the threshold
 
 **Its split is by template.** Calibration: table, form, cards, article. Held out: landing, dark. By template, never by pair: held-out templates never take part in choosing a threshold, a preset or any other constant of the engine; they are only measured once a choice has been made on the calibration half. The split is recorded per template and per pair in `tests/browser_corpus/manifest.json` (`split`).
 
+**A third half is sealed: held-out-2** (dashboard, settings — the «same renderer» group only). The held-out half above is spent for the page-shift rule of engine v2: its figures were seen while that rule was being made. The sealed half is for the final acceptance of f5 and the figures of the README; nothing is run on it before then, and `python tests/benchmark.py --corpus browser` prints it only with `--final`.
+
 ## Кейсы по инструментам
 
 | Кейс | Ожидание | VisTest (balanced) | absdiff (самопис) | pixelmatch 7.2.0 | Playwright 1.63.0 toHaveScreenshot() |

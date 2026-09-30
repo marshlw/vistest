@@ -166,6 +166,12 @@ def test_the_published_grid_is_of_this_corpus(manifest):
         for key, failed in entry["failed"].items():
             thr, mdp = key.split("/")
             assert failed == (entry["diff_pixels"][thr] > int(mdp)), (c["name"], key)
+    #  The sealed half is in the digest, and Playwright was not run on it.
+    sealed = bc.sealed_only(bc.load_manifest(sealed=True))["cases"]
+    assert doc["corpus"]["sealed"] == {"split": bc.HELD_OUT_2, "cases": len(sealed),
+                                       "compared": False}
+    assert not {c["name"] for c in sealed} & set(doc["results"])
+    assert doc["corpus"]["cases"] == len(manifest["cases"]) == len(doc["results"])
 
 
 def test_a_grid_of_other_files_is_refused(tmp_path):
@@ -247,3 +253,60 @@ def test_frames_from_another_machine_are_one_noise_row(manifest):
     assert "Also: os_windows: the baselines drawn on Windows 10.0.26100 AMD64" in text
     assert "table 1, dark 2, form 0" in text
     assert "Also:" not in bb.report(plain, [red], timing=False, notes=[])
+
+
+# --------------------------------------------------------------------------- #
+#  The sealed half: run and printed only with --final
+# --------------------------------------------------------------------------- #
+def _run_main(monkeypatch, capsys, *, final: bool):
+    """`benchmark_browser.main` with a stand-in for VisTest that runs nothing:
+    it records the pairs it is handed and passes them all."""
+    from types import SimpleNamespace
+
+    handed: list[str] = []
+
+    def stand_in(manifest, preset, *, ai=True, root=bc.CORPUS_DIR, engine="v1"):
+        handed.extend(c["name"] for c in manifest["cases"])
+        key = preset if engine == "v1" else engine
+        return bb.Tool(key=key, title=f"stand-in {key}", group="VisTest",
+                       failed={c["name"]: False for c in manifest["cases"]})
+
+    monkeypatch.setattr(bb, "run_vistest", stand_in)
+    monkeypatch.setattr(bb, "NATIVE_DEFAULT", ROOT / "docs" / "no-such-native.json")
+    args = SimpleNamespace(native=None, no_ai=True, engine="both", no_timing=True,
+                           markdown=None, final=final)
+    assert bb.main(args) == 0
+    return capsys.readouterr().out, handed
+
+
+def test_without_final_the_sealed_half_is_neither_run_nor_printed(monkeypatch, capsys):
+    whole = bc.load_manifest(sealed=True)
+    sealed = {c["name"] for c in bc.sealed_only(whole)["cases"]}
+    out, handed = _run_main(monkeypatch, capsys, final=False)
+    assert sealed and not sealed & set(handed)
+    assert set(handed) == {c["name"] for c in bc.unsealed(whole)["cases"]}
+    assert bc.HELD_OUT_2 not in out and "Sealed half" not in out
+    assert "dashboard/" not in out and "settings/" not in out
+    assert "dashboard" not in out
+
+
+def test_with_final_it_is_printed_after_the_tables_that_stay_what_they_are(
+        monkeypatch, capsys):
+    whole = bc.load_manifest(sealed=True)
+    sealed = [c["name"] for c in bc.sealed_only(whole)["cases"]]
+    plain, _ = _run_main(monkeypatch, capsys, final=False)
+    out, handed = _run_main(monkeypatch, capsys, final=True)
+    assert out.startswith(plain)
+    tail = out[len(plain):]
+    assert f"=== Sealed half: dashboard, settings ({bc.HELD_OUT_2}) — --final ===" in tail
+    assert f"{len(sealed)} pairs, all drawn by the baseline's renderer" in tail
+    assert "By family — VisTest, sealed half" in tail
+    assert "By family — Playwright" not in tail       # no native JSON here
+    #  Each tool once on the six templates, once on the sealed half.
+    assert handed.count(sealed[0]) == 4 and set(sealed) <= set(handed)
+
+
+def test_final_is_for_the_browser_corpus_only():
+    out = subprocess.run([sys.executable, str(ROOT / "tests" / "benchmark.py"), "--final"],
+                         capture_output=True, text=True)
+    assert out.returncode == 2 and "--final is for --corpus browser" in out.stderr

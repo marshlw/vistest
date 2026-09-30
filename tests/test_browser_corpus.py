@@ -40,13 +40,16 @@ def _template(key: str) -> str:
 # --------------------------------------------------------------------------- #
 #  Templates
 # --------------------------------------------------------------------------- #
-def test_there_are_six_templates_and_nothing_else():
+def test_there_are_six_templates_the_sealed_two_and_nothing_else():
     on_disk = sorted(p.stem for p in bc.TEMPLATE_DIR.glob("*.html"))
-    assert on_disk == sorted(t.key for t in bc.TEMPLATES)
+    assert on_disk == sorted(t.key for t in bc.ALL_TEMPLATES)
     assert len(bc.TEMPLATES) >= 6
+    assert [t.key for t in bc.SEALED_TEMPLATES] == ["dashboard", "settings"]
+    assert {t.split for t in bc.SEALED_TEMPLATES} == {bc.HELD_OUT_2}
+    assert not {t.split for t in bc.TEMPLATES} & set(bc.SEALED_SPLITS)
 
 
-@pytest.mark.parametrize("key", [t.key for t in bc.TEMPLATES])
+@pytest.mark.parametrize("key", [t.key for t in bc.ALL_TEMPLATES])
 def test_a_template_loads_nothing_from_the_network(key):
     html = _template(key)
     assert not _REMOTE.search(html), f"{key}.html references a remote resource"
@@ -56,7 +59,7 @@ def test_a_template_loads_nothing_from_the_network(key):
         assert (bc.TEMPLATE_DIR / url).is_file(), f"fonts.css: {url} is missing"
 
 
-@pytest.mark.parametrize("key", [t.key for t in bc.TEMPLATES])
+@pytest.mark.parametrize("key", [t.key for t in bc.ALL_TEMPLATES])
 def test_a_template_carries_every_mutation_target(key):
     """One element per kind of change, or a family silently loses a page."""
     tokens = set()
@@ -66,7 +69,7 @@ def test_a_template_carries_every_mutation_target(key):
     assert not missing, f"{key}.html has no data-m target for {missing}"
 
 
-@pytest.mark.parametrize("key", [t.key for t in bc.TEMPLATES])
+@pytest.mark.parametrize("key", [t.key for t in bc.ALL_TEMPLATES])
 def test_every_target_is_one_element(key):
     """A mutation changes exactly one element: its label is about that element."""
     counts: dict[str, int] = {}
@@ -106,7 +109,7 @@ def test_every_template_is_drawn_with_the_shipped_fonts_only(pw):
     """A system font here means a glyph fell outside the subset."""
     s = bc.Session(pw)
     try:
-        for t in bc.TEMPLATES:
+        for t in bc.ALL_TEMPLATES:
             _, fonts = s.frame(t.key, fonts=True)
             assert fonts, t.key
             system = [f for f in fonts if not f["custom"]]
@@ -119,7 +122,7 @@ def test_two_fresh_browsers_draw_the_same_pixels(pw):
     """The control the whole corpus stands on."""
     a, b = bc.Session(pw), bc.Session(pw)
     try:
-        for t in bc.TEMPLATES:
+        for t in bc.ALL_TEMPLATES:
             assert bc.differing_pixels(a.frame(t.key), b.frame(t.key)) == 0, t.key
     finally:
         a.close()
@@ -230,7 +233,9 @@ def test_the_noise_configurations_are_the_ones_asked_for():
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def manifest():
-    return bc.load_manifest()
+    """The whole file, the sealed half included: these checks read files and
+    labels, and run no engine."""
+    return bc.load_manifest(sealed=True)
 
 
 def test_the_frozen_files_are_what_the_manifest_says(manifest):
@@ -245,12 +250,12 @@ def test_the_budget_holds(manifest):
 
 def test_each_baseline_is_stored_once(manifest):
     bases = {t["base"] for t in manifest["templates"].values()}
-    assert len(bases) == len(bc.TEMPLATES)
+    assert len(bases) == len(bc.ALL_TEMPLATES)
     for c in manifest["cases"]:
         assert c["expected"] == manifest["templates"][c["template"]]["base"], c["name"]
         assert c["actual"] not in bases
     stored = sorted(p.name for p in bc.FRAMES_DIR.rglob("base.png"))
-    assert stored == ["base.png"] * len(bc.TEMPLATES)
+    assert stored == ["base.png"] * len(bc.ALL_TEMPLATES)
 
 
 def test_every_pair_says_what_it_is(manifest):
@@ -392,12 +397,82 @@ def test_the_split_is_by_template(manifest):
     split = manifest["split"]
     assert split[bc.CALIBRATION] == ["table", "form", "cards", "article"]
     assert split[bc.HELD_OUT] == ["landing", "dark"]
+    assert split[bc.HELD_OUT_2] == ["dashboard", "settings"]
     assert "never" in split["rule"] and "threshold" in split["rule"]
     for key, t in manifest["templates"].items():
         assert t["split"] == bc._split_of(key)
     for c in manifest["cases"]:
         assert c["split"] == manifest["templates"][c["template"]]["split"], c["name"]
     assert "never take part" in bc.__doc__
+
+
+# --------------------------------------------------------------------------- #
+#  The sealed half: held-out-2
+# --------------------------------------------------------------------------- #
+def test_the_sealed_half_is_frozen_with_the_sha256_of_every_frame(manifest):
+    """Its frames are checked here like every other — by sha256, without
+    running anything on them."""
+    sealed = [c for c in manifest["cases"] if c["split"] == bc.HELD_OUT_2]
+    assert sealed and {c["template"] for c in sealed} == {"dashboard", "settings"}
+    for key in ("dashboard", "settings"):
+        t = manifest["templates"][key]
+        assert t["split"] == bc.HELD_OUT_2 and t["renderer"] == bc.BASE_RENDERER
+        assert bc.sha256((bc.CORPUS_DIR / t["base"]).read_bytes()) == t["sha256"], key
+        assert t["fonts"] and all(f["custom"] for f in t["fonts"]), key
+    for c in sealed:
+        assert bc.sha256((bc.CORPUS_DIR / c["actual"]).read_bytes()) == c["sha256"], \
+            c["name"]
+    sec = manifest["sealed"]
+    assert sec["split"] == bc.HELD_OUT_2 and sec["why"] == bc.WHY_SEALED
+    assert sec["templates"] == ["dashboard", "settings"]
+
+
+def test_the_sealed_half_is_the_same_renderer_group_and_every_family(manifest):
+    """Every family at every magnitude, the stylesheet configurations; no
+    other renderer, no other machine."""
+    assert {c.key for c in bc.SEALED_CONFIGS} == {
+        "geometric_precision", "shift_0.25px", "shift_0.5px"}
+    assert all(not c.launch.args and not c.launch.channel for c in bc.SEALED_CONFIGS)
+    sec = manifest["sealed"]
+    assert set(sec["noise_configs"]) == {c.key for c in bc.SEALED_CONFIGS}
+    for key in sec["templates"]:
+        mine = [c for c in manifest["cases"] if c["template"] == key]
+        assert {c["kind"] for c in mine} == {"mutation", "render"}, key
+        drawn = {(c["family"], c["magnitude"]) for c in mine if c["kind"] == "mutation"}
+        left = {tuple(n.split("/")[1:]) for n in sec["no_pixel_change"]
+                if n.startswith(f"{key}/")}
+        assert drawn | left == {(f.key, m.key) for f in bc.FAMILIES for m in f.magnitudes}
+        render = {c["magnitude"] for c in mine if c["kind"] == "render"}
+        assert render == {k for k, v in sec["noise_configs"].items()
+                          if v["pixels_vs_baseline"][key]}
+        for c in mine:
+            assert c["renderer"]["expected"] == bc.BASE_RENDERER
+            assert c["renderer"]["actual"] == (bc.BASE_RENDERER if c["kind"] == "mutation"
+                                               else c["magnitude"])
+    labels = {c["label"] for c in manifest["cases"] if c["split"] == bc.HELD_OUT_2}
+    assert labels == {bc.SIGNAL, bc.NOISE, bc.DISPUTED}
+
+
+def test_without_sealed_the_manifest_holds_nothing_of_that_half(manifest):
+    """What the benchmark, the diagnostics and the engine tests read."""
+    view = bc.load_manifest()
+    assert view == bc.unsealed(manifest)
+    assert "sealed" not in view and bc.HELD_OUT_2 not in view["split"]
+    assert not {"dashboard", "settings"} & set(view["templates"])
+    assert all(c["split"] != bc.HELD_OUT_2 for c in view["cases"])
+    assert bc.HELD_OUT_2 not in json.dumps(view)
+    part = bc.sealed_only(manifest)
+    assert set(part["templates"]) == {"dashboard", "settings"}
+    assert {c["name"] for c in part["cases"]} | {c["name"] for c in view["cases"]} == \
+        {c["name"] for c in manifest["cases"]}
+
+
+def test_a_manifest_read_without_the_sealed_half_is_never_written_back(tmp_path):
+    path = tmp_path / "manifest.json"
+    path.write_bytes(bc.MANIFEST.read_bytes())
+    with pytest.raises(bc.CorpusError, match="sealed"):
+        bc.write_manifest(bc.load_manifest(path), path)
+    assert path.read_bytes() == bc.MANIFEST.read_bytes()
 
 
 def test_a_configuration_that_changed_nothing_has_no_pairs(manifest):
@@ -468,7 +543,7 @@ def _corpus_copy(tmp_path: Path) -> Path:
 
     root = tmp_path / "corpus"
     shutil.copytree(bc.CORPUS_DIR, root, ignore=shutil.ignore_patterns("templates"))
-    m = bc.load_manifest(root / "manifest.json")
+    m = bc.load_manifest(root / "manifest.json", sealed=True)
     for c in m["cases"]:
         if c["kind"] == "os":
             (root / c["actual"]).unlink()
@@ -497,6 +572,8 @@ def _fake_capture(tmp_path: Path, manifest: dict, *, os_name: str = "Windows",
     src.mkdir()
     templates = {}
     for key, t in manifest["templates"].items():
+        if t["split"] in bc.SEALED_SPLITS:
+            continue                    # never drawn on another machine
         arr = np.array(bc.pixels((bc.CORPUS_DIR / t["base"]).read_bytes()))
         if key in changed:
             arr[10:13, 20:30] = 255 - arr[10:13, 20:30]
@@ -543,12 +620,13 @@ def test_the_family_of_an_os_is_named_after_it():
 
 def test_imported_frames_are_one_noise_pair_per_changed_template(manifest, tmp_path):
     root = _corpus_copy(tmp_path)
-    before = bc.load_manifest(root / "manifest.json")
+    before = bc.load_manifest(root / "manifest.json", sealed=True)
     src = _fake_capture(tmp_path, manifest, changed=("table", "landing"))
     new = bc.import_os_noise(src, root=root, log=lambda *_: None)
 
     assert bc.verify_files(new, root) == []
-    assert bc.load_manifest(root / "manifest.json") == json.loads(
+    assert new["sealed"] == manifest["sealed"]
+    assert bc.load_manifest(root / "manifest.json", sealed=True) == json.loads(
         json.dumps(new, ensure_ascii=False))
     os_cases = [c for c in new["cases"] if c["kind"] == "os"]
     assert [c["name"] for c in os_cases] == ["table/os/windows", "landing/os/windows"]
@@ -659,7 +737,7 @@ def test_regenerate_keeps_other_machines_only_while_the_baselines_pair(manifest,
     import copy
 
     root = _corpus_copy(tmp_path)
-    plain = bc.load_manifest(root / "manifest.json")
+    plain = bc.load_manifest(root / "manifest.json", sealed=True)
     old = bc.import_os_noise(_fake_capture(tmp_path, manifest), root=root,
                              log=lambda *_: None)
     fresh = copy.deepcopy(plain)                # what a redraw of the same pixels gives
