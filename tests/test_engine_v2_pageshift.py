@@ -16,8 +16,11 @@ the move — the page is proven to have moved and every region is explained.
 Then what the move must not explain: a card moved by a whole pixel (the
 proof fails on the edges), words redrawn with nothing else moved (no edge
 moved at all), a recoloured card on a moved page, words moved against the
-page's direction. Then the numbers chosen on the calibration half, replayed
-on the pairs they were measured on.
+page's direction. Then an icon the rasteriser draws again at the fraction,
+by coverage: the move misses most of it, its coverage moments keep it (f5);
+and what they must not keep: the same icon in another ink, or at another
+fraction. Then the numbers chosen on the calibration half, replayed on the
+pairs they were measured on.
 """
 
 from __future__ import annotations
@@ -37,6 +40,8 @@ from vistest.core.v2.settings import (
     MOVE_TOLERANCE,
     PAGE_SHIFT_COVER,
     PAGE_SHIFT_MOVED,
+    SHIFT_CENTROID_PX,
+    SHIFT_MASS_CHANGE,
     SHIFT_REGION_MISS,
 )
 from vistest.models import ChangeKind, Verdict
@@ -207,7 +212,8 @@ def test_recoloured_words_on_a_moved_page_are_not_the_move():
     assert len(notes) == len(r.regions) == 1
     assert notes[0]["text"].startswith("not the page's move (+0.25, +0.25) px — the move "
                                        "misses ")
-    assert "and it is not text redrawn: text redrawn at the new position: (a) ink " \
+    assert "; not the drawing moved (M0 B/A " in notes[0]["text"]
+    assert ", and not text redrawn: text redrawn at the new position: (a) ink " \
            in notes[0]["text"]
 
 
@@ -233,6 +239,76 @@ def test_without_the_proof_no_region_is_looked_at():
     assert rec["holds"] is False and rec["regions"] == []
     assert not any(n["kind"] == ps.RULE for g in r.regions for n in g.annotations)
     assert not any("by the page's move" in n for n in r.notes)
+
+
+# --------------------------------------------------------------------------- #
+#  Coverage moments: a drawing the rasteriser drew again at the fraction
+# --------------------------------------------------------------------------- #
+ICON_INK = (55, 65, 81)
+
+
+def _ring(img, x, y, dx=0.0, dy=0.0, ink=ICON_INK, r=5.0, k=8, size=16):
+    """A 1 px ring drawn the way a rasteriser draws a path: the coverage of
+    each pixel (k×k samples), blended with the paper in 8-bit sRGB."""
+    yy, xx = np.mgrid[0:size * k, 0:size * k]
+    cx, cy = (size / 2 + dx) * k, (size / 2 + dy) * k
+    dist = np.hypot(xx + 0.5 - cx, yy + 0.5 - cy) / k
+    cover = ((dist >= r - 0.5) & (dist <= r + 0.5)).reshape(size, k, size, k).mean((1, 3))
+    paper = img[y:y + size, x:x + size].astype(float)
+    img[y:y + size, x:x + size] = np.rint(
+        paper + cover[..., None] * (np.array(ink, float) - paper)).astype(np.uint8)
+    return img
+
+
+def _page_with_icon(**icon):
+    """The moved page of `_page_and_moved`, with an icon in the third card that
+    the rasteriser drew again at (dx, dy) — by default at the page's move."""
+    base, moved = _page_and_moved(0, 1)
+    base = _ring(base, 100, 126)
+    moved[126:142, 100:116] = CARD
+    return base, _ring(moved, 100, 126, **{"dx": 0.25, "dy": 0.25, **icon})
+
+
+def test_coverage_keeps_its_mass_and_its_centre_moves_by_the_move():
+    a = _ring(np.full((16, 16, 3), 255, np.uint8), 0, 0)
+    b = _ring(np.full((16, 16, 3), 255, np.uint8), 0, 0, dx=0.25, dy=0.25)
+    mo = ps.moments(a, b, (0, 0, 16, 16), (0.25, 0.25), pad=0)
+    assert mo.mass_change < 0.005
+    assert mo.centroid_miss < 0.01
+    assert mo.text().startswith("M0 B/A ")
+
+
+def test_an_icon_drawn_again_at_the_fraction_is_the_move():
+    base, moved = _page_with_icon()
+    r = compare(base, moved, engine="v2")
+    assert r.verdict is Verdict.PASS
+    rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
+    assert rec["missed"] > SHIFT_REGION_MISS.value and rec["how"] == ps.MOMENTS
+    assert rec["mass_change"] <= SHIFT_MASS_CHANGE.value
+    assert rec["centroid_miss"] <= SHIFT_CENTROID_PX.value
+    said = next(s.suppressed_by for s in r.suppressed if s.y > 120)
+    assert "this region: the drawing moved with the page: (b) shape within 1 px" in said
+    assert "; M0 B/A " in said and "px from the page's (+0.25, +0.25)" in said
+
+
+def test_the_icon_in_another_ink_is_not_the_move():
+    base, moved = _page_with_icon(ink=(70, 80, 100))
+    r = compare(base, moved, engine="v2")
+    assert r.verdict is Verdict.FAIL
+    rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
+    assert rec["how"] == "" and rec["mass_change"] > SHIFT_MASS_CHANGE.value
+    assert rec["centroid_miss"] <= SHIFT_CENTROID_PX.value
+
+
+def test_the_icon_at_another_fraction_is_not_the_drawing_moved():
+    """Its centre lands half a pixel from the page's move. (The older test for
+    text redrawn at the new position still takes it — see f5's report.)"""
+    base, moved = _page_with_icon(dx=0.75)
+    r = compare(base, moved, engine="v2")
+    rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
+    assert rec["how"] != ps.MOMENTS
+    assert rec["mass_change"] <= SHIFT_MASS_CHANGE.value
+    assert rec["centroid_miss"] > SHIFT_CENTROID_PX.value
 
 
 def test_v1_does_not_have_the_rule():
@@ -313,8 +389,65 @@ def test_move_tolerance_noise_side_is_where_it_was_measured(corpus):
     assert round(p95, 2) == MOVE_TOLERANCE.noise < MOVE_TOLERANCE.value < MOVE_TOLERANCE.signal
 
 
+def _region_record(corpus, name, box):
+    a, b, _ = corpus(name)
+    r = compare(a, b, engine="v2")
+    return r, next(x for x in r.maps["v2_page_shift"]["regions"] if list(x["box"]) == box)
+
+
+def _as_if_moved(corpus, name, box, move):
+    """A region of a pair measured as if the page had moved by `move`: the
+    actual frame moved by it, (b), (c) and the moments against it."""
+    from vistest.core.v2 import rerender as rr
+
+    a, b, _ = corpus(name)
+    la, lb = color.srgb_to_lab(a), color.srgb_to_lab(b)
+    _, cand = v2base.candidates(la, lb, v2base.differs(a, b), 1.0)
+    labels, groups = v2base.group(cand, V2Config().group_px)
+    g = next(g for g in groups if [g.x, g.y, g.w, g.h] == box)
+    moved = _warp.to_uint8(_warp.shift(b, *move))
+    crop = rr.crop(a, moved, labels, g.label, (g.x, g.y, g.w, g.h), V2Config().group_px)
+    held = rr.shape_within(crop).holds() and rr.background_unchanged(crop).holds(1.0)
+    return held, ps.moments(a, moved, (g.x, g.y, g.w, g.h), move)
+
+
+def test_shift_mass_change_is_where_it_was_measured(corpus):
+    _, noise = _region_record(corpus, "article/render/shift_0.25px", [1142, 243, 10, 9])
+    assert round(noise["mass_change"], 4) == SHIFT_MASS_CHANGE.noise
+    assert noise["how"] == ps.MOMENTS
+    held, signal = _as_if_moved(corpus, "table/word_swap@full_chromium/one",
+                                [202, 135, 63, 9], (0.25, 0.25))
+    assert held and signal.follows(SHIFT_CENTROID_PX.value)
+    assert round(signal.mass_change, 4) == SHIFT_MASS_CHANGE.signal
+    assert SHIFT_MASS_CHANGE.noise < SHIFT_MASS_CHANGE.value < SHIFT_MASS_CHANGE.signal
+
+
+def test_shift_centroid_px_is_where_it_was_measured(corpus):
+    _, noise = _region_record(corpus, "cards/render/shift_0.25px", [1100, 178, 14, 20])
+    assert round(noise["centroid_miss"], 3) == SHIFT_CENTROID_PX.noise
+    assert noise["how"] == ps.MOMENTS
+    held, signal = _as_if_moved(corpus, "form/border_radius/plus2px", [988, 589, 8, 8],
+                                (0.25, 0.25))
+    assert held and signal.conserved(SHIFT_MASS_CHANGE.value)
+    assert round(signal.centroid_miss, 3) == SHIFT_CENTROID_PX.signal
+    assert SHIFT_CENTROID_PX.noise < SHIFT_CENTROID_PX.value < SHIFT_CENTROID_PX.signal
+
+
+def test_the_bookmark_is_kept_by_its_moments_and_the_checkbox_is_not(corpus):
+    """article/render/shift_0.25px: the bookmark icon the move missed by 39 %
+    is the drawing moved. form/render/shift_0.5px: the native checkbox sticks
+    to the pixel grid — it loses a fifth of its coverage and stays red."""
+    r, bookmark = _region_record(corpus, "article/render/shift_0.25px", [278, 141, 10, 13])
+    assert bookmark["how"] == ps.MOMENTS and r.verdict is Verdict.PASS
+    r, checkbox = _region_record(corpus, "form/render/shift_0.5px", [288, 498, 17, 17])
+    assert not checkbox["explained"] and r.verdict is Verdict.FAIL
+    assert round(checkbox["mass_change"], 2) == 0.20
+
+
 def test_the_config_takes_the_numbers():
     v2 = V2Config()
     assert (v2.page_shift_moved, v2.page_shift_cover, v2.move_tolerance,
             v2.shift_region_miss) == (PAGE_SHIFT_MOVED.value, PAGE_SHIFT_COVER.value,
                                       MOVE_TOLERANCE.value, SHIFT_REGION_MISS.value)
+    assert (v2.shift_mass_change, v2.shift_centroid_px) == (SHIFT_MASS_CHANGE.value,
+                                                           SHIFT_CENTROID_PX.value)

@@ -329,11 +329,16 @@ def _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act, can
         where = np.zeros(cand.shape, bool)
         where[g.y:g.y + g.h, g.x:g.x + g.w] = labels[g.y:g.y + g.h, g.x:g.x + g.w] == g.label
         crop = _rerender.crop(exp, act, labels, g.label, box, v2.group_px)
-        rs = _pageshift.region(ps, where & cand, crop, exp, act, lab_exp, lab_act,
+        rs = _pageshift.region(ps, where & cand, box, crop, exp, act, lab_exp, lab_act,
                                limit=v2.shift_region_miss, ink_limit=v2.ink_delta_e,
-                               jnd=v2.jnd_delta_e)
-        record["regions"].append({"box": box, "pixels": g.pixels, "missed": rs.missed_share,
-                                  "explained": rs.explained})
+                               jnd=v2.jnd_delta_e, mass_limit=v2.shift_mass_change,
+                               centroid_limit_px=v2.shift_centroid_px)
+        mo = rs.moments
+        record["regions"].append({
+            "box": box, "pixels": g.pixels, "missed": rs.missed_share,
+            "explained": rs.explained, "how": rs.how,
+            "mass_change": None if mo is None else mo.mass_change,
+            "centroid_miss": None if mo is None else mo.centroid_miss})
         if rs.explained:
             r.suppressed_by = (f"{_pageshift.RULE}: {ps.text()}; this region: {rs.text()} "
                                f"(was {r.kind.value})")

@@ -174,11 +174,78 @@ MOVE_TOLERANCE = Gap(
 #: red — a move that misses a third of a region does not reproduce it. Signal:
 #: none; no SIGNAL pair of the corpus passes the page's proof, so none reaches
 #: this test. 0.10 is the smallest round share above the noise side.
+#:
+#: f5, step A: kept. It was to be replaced by the coverage moments below; of
+#: the 71 calibration regions that pass through it, the moments explain 4.
+#: The other 67 are not one drawing moved by the page's move: 39 fail M1
+#: alone — text snapped to whole pixels and box edges at the fraction in one
+#: region, whose centre moves by neither — 8 fail (c), 20 fail more than one
+#: property; 5 fail M0 as well: the form checkbox at a quarter pixel (0.094),
+#: two form buttons (0.047, 0.048), a 1 px line in a form field (0.031), a
+#: strip of cards (0.011). The moments come after it, not instead of it.
 SHIFT_REGION_MISS = Gap(
     value=0.10,
     noise=0.082, noise_at="form/render/shift_0.25px (288, 498, 16, 16)",
     signal=1.0, signal_at="none: no SIGNAL pair passes the page's proof",
     sample=CALIBRATION_SAMPLE, measured="2026-09-29")
+
+#: f5, step A — coverage moments (pageshift.moments). A region the move does
+#: not reproduce is still the move when it is one drawing drawn again at the
+#: new position: its shape within a pixel (b), on the same paper (c), with
+#: its coverage kept (M0, this number) and its centre moved by the page's
+#: move (M1, SHIFT_CENTROID_PX). M0 per channel, the change as a share of
+#: the strongest channel's M0 in the baseline.
+#: Noise: the shift-pair regions not reproduced by the move whose (b) and
+#: (c) hold and whose centre follows within SHIFT_CENTROID_PX — icons and
+#: glyph groups at the fraction; the largest change this value keeps is
+#: 0.0060 (article/render/shift_0.25px (1142, 243, 10, 9)); above it, and
+#: left to the other two tests, a form icon at 0.0107, three native
+#: checkboxes at 0.028 and an 8 px speck at 0.056.
+#: Signal: every region of every calibration SIGNAL pair, as if the page had
+#: moved by each of the moves fitted on the shift pairs — (0.25, 0.25),
+#: (0.125, 0.25), (0.625, 0.5), (0.5, 0.5): the actual frame moved by it
+#: (warp.shift), the four properties measured against it. On the other
+#: renderer only the regions that touch the mutation count (the rest of such
+#: a pair is the renderer's noise). The smallest change among those whose
+#: (b), (c) hold and whose centre follows: 0.0081, the column header of
+#: table/word_swap@full_chromium/one (202, 135, 63, 9) as if moved by
+#: (0.25, 0.25) — the swapped word re-laid the table's columns and moved
+#: letters of the header by up to a pixel, the other renderer drew them
+#: otherwise as well, and one region of 63 px keeps its mass with its
+#: centre 0.09 px from where it was. On the same renderer the nearest is
+#: 0.0207 (table/word_swap/one (256, 135, 9, 9), letters of that header,
+#: centre 0.48 px over); a colour change of ΔE00 4 changes M0 by 0.054 and
+#: more. ×1.16 apart: the thinnest gap of v2, and the other renderer sets it.
+#: The reviewer saw these measures on the held-out half before this value
+#: was fixed; it was chosen on the calibration half only.
+SHIFT_MASS_CHANGE = Gap(
+    value=0.007,
+    noise=0.0060, noise_at="article/render/shift_0.25px (1142, 243, 10, 9)",
+    signal=0.0081, signal_at="table/word_swap@full_chromium/one (202, 135, 63, 9) "
+                             "as if moved by (0.25, 0.25)",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-30")
+
+#: … and how far (px) the centre of the coverage may land from where the
+#: page's move puts it. Noise: 0.141, an icon of cards/render/shift_0.25px
+#: (1100, 178, 14, 20) — the page moved by (0.25, 0.25), the fit found
+#: (0.125, 0.25): the fit's eighth-pixel grid is most of it; the icons of
+#: cards miss by 0.115–0.141, the others by 0.002–0.024. Above it the next
+#: shift-pair region is a mixture (form, a row of 349×35 px: snapped text
+#: and a box edge at the fraction) at 0.163. Signal: 0.302, the corner of
+#: form/border_radius/plus2px (988, 589, 8, 8) as if moved by (0.25, 0.25) —
+#: the smallest miss among signal regions whose (b), (c) hold and whose M0
+#: stays within SHIFT_MASS_CHANGE (a radius two pixels larger keeps the
+#: corner's mass and moves its centre by 0.04 px). Glyphs of another word
+#: (table/word_swap/one) miss by 0.19–0.45, letter-spacing +0.2 px by 0.49
+#: and more. The geometric middle is 0.206; the value is 0.2. The reviewer
+#: saw these measures on the held-out half before this value was fixed; it
+#: was chosen on the calibration half only.
+SHIFT_CENTROID_PX = Gap(
+    value=0.2,
+    noise=0.141, noise_at="cards/render/shift_0.25px (1100, 178, 14, 20)",
+    signal=0.302, signal_at="form/border_radius/plus2px (988, 589, 8, 8) "
+                            "as if moved by (0.25, 0.25)",
+    sample=CALIBRATION_SAMPLE, measured="2026-09-30")
 
 
 @dataclass(frozen=True)
@@ -224,3 +291,8 @@ class V2Config:
     move_tolerance: float = MOVE_TOLERANCE.value
     #: … the share of a region's changed pixels the move may miss; SHIFT_REGION_MISS.
     shift_region_miss: float = SHIFT_REGION_MISS.value
+    #: f5: a region the move misses is the drawing moved when its coverage
+    #: changes by at most this share (SHIFT_MASS_CHANGE) …
+    shift_mass_change: float = SHIFT_MASS_CHANGE.value
+    #: … and its centre lands this close (px) to the page's move (SHIFT_CENTROID_PX).
+    shift_centroid_px: float = SHIFT_CENTROID_PX.value

@@ -5,6 +5,55 @@
 
 ## [Unreleased]
 
+### f5: engine v2 by default
+
+- **Step A: coverage moments in page-shift** (`pageshift.moments`,
+  `pageshift.region`). A vector path is drawn by coverage and blended with
+  the paper linearly in the frame's own 8-bit sRGB values, so a drawing the
+  rasteriser draws again a fraction of a pixel over keeps, in a box that
+  holds it (the region's box + 3 px), the sum of (pixel − paper) per channel
+  (M0), and the centre of that sum (M1) moves by exactly the move. A region
+  the page's move does not reproduce is now also explained as «the drawing
+  moved with the page» when (b) its shape agrees to a pixel, (c) the paper
+  is the same, M0 changes by at most 0.7 % of the strongest channel's M0
+  (`SHIFT_MASS_CHANGE`) and M1 lands within 0.2 px of the page's move
+  (`SHIFT_CENTROID_PX`); `suppressed_by` gives the ratios and the centre's
+  move. Both are `Gap`s from the calibration half. Noise: the shift-pair
+  regions not reproduced by the move whose (b) and (c) hold — icons and
+  glyph groups at the fraction; M0 up to 0.0060 kept (article, an icon),
+  the centre up to 0.141 px off (cards, where the fit lands 0.125 px from
+  the page's move). Signal: every region of every calibration SIGNAL pair,
+  as if the page had moved by each of the four moves fitted on the shift
+  pairs (the actual frame moved by it with `warp.shift`); on the other
+  renderer, the regions that touch the mutation. None passes. What sets the
+  numbers: the column header of table/word_swap@full_chromium/one — the
+  swapped word re-laid the table and moved letters of the header by up to a
+  pixel, the other renderer drew them otherwise too — one 63 px region that
+  keeps M0 to 0.0081 with its centre 0.116 px off; the corner of form/border_radius/plus2px keeps M0 to 0.0059
+  with its centre 0.302 px off. ×1.16 on M0 — the thinnest gap of v2, and
+  the other renderer sets it: on the same renderer alone the nearest signal
+  is at 0.0207, and a ΔE00 4 colour changes M0 by 0.054. **The reviewer saw
+  these measures on the held-out half before the thresholds were fixed; the
+  thresholds were chosen on the calibration half only.** The 10 % that a
+  region may leave unreproduced (`SHIFT_REGION_MISS`) stays: of the 71
+  calibration regions that pass through it the moments explain 4 — 39 fail
+  M1 alone (snapped text and box edges at the fraction in one region, whose
+  centre moves by neither), 8 fail (c), 20 more than one property. The
+  moments come after the 10 %, before the test for text redrawn at the new
+  position, which stays too: without it six of the eight calibration shift
+  pairs turn red. Both still take changes a pixel close to the old ink: a
+  ring drawn half a pixel larger, or at another fraction, passes the text
+  test (`test_the_icon_at_another_fraction_is_not_the_drawing_moved` shows
+  the moments refusing it). The native checkbox of form/render/shift_0.5px
+  loses a fifth of its coverage (M0 ratio 0.80) — it sticks to the pixel
+  grid — and stays red. Browser corpus (OpenCV 4.13.0): same renderer,
+  calibration 2/12 → 1/12 false (article/render/shift_0.25px turns green:
+  its bookmark icon, missed by 39 %, keeps M0 to 0.26 % and its centre
+  moves 0.024 px from the page's move), held out 3/6 → 3/6; misses 0/184
+  and 0/92 as before; other renderer unchanged; no other verdict moved.
+  Held out, the icon of dark/render/shift_* keeps M0 to 0.83–0.88 % — over
+  0.7 % — and stays red. Synthetic corpus: v1 byte for byte as before, v2
+  unchanged (12/16, 0/11).
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 
 - **Where v1 loses the browser corpus, as a script.**
