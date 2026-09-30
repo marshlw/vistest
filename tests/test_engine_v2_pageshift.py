@@ -328,7 +328,7 @@ def test_the_moments_are_asked_only_when_the_renderer_is_the_same(renderer):
 
 def test_v1_does_not_have_the_rule():
     base, moved = _page_and_moved()
-    assert "v2_page_shift" not in compare(base, moved).maps
+    assert "v2_page_shift" not in compare(base, moved, engine="v1").maps
 
 
 # --------------------------------------------------------------------------- #

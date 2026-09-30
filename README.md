@@ -204,10 +204,10 @@ vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
   accept it with: pytest --vistest-update
 ```
 
-A result of the second engine (`compare(..., engine="v2")`; the library
-still compares with the first) also says, for each region that counts, what
-was measured on it — under `changed:` in this message (three of them, the
-rest counted) and in a column of the report:
+A result of engine v2 — the default everywhere `compare()` runs; v1 stays
+for one release behind `engine: v1` — also says, for each region that
+counts, what was measured on it — under `changed:` in this message (three of
+them, the rest counted) and in a column of the report:
 
 ```
   changed:  153x14 at (202, 242): ink colour: #1f2937 → #4d5666, ΔE00 14.8
@@ -535,7 +535,17 @@ VISTEST_BASE_IMAGE=<mirror>/playwright/python:v1.47.0-jammy \
 
 ## Configuration
 
-Everything lives in `vistest.yaml`. Three presets:
+Everything lives in `vistest.yaml`.
+
+**The engine.** v2 is the default: what no rule explains fails, and a
+threshold you set (`threshold=`, a snapshot's passport,
+`diff.fail_severity`, an override in the interface) lets regions below it
+through — listed, never dropped, with where the threshold came from. v1, the
+cascade below, stays for one release: `engine: v1` in vistest.yaml,
+`VISTEST_ENGINE=v1`, or `engine="v1"` in the call. The presets tune v1 only;
+v2 has none (docs/GUIDE.md, «The engine»).
+
+Three presets, for v1:
 
 | Preset | ΔE00 | fail_severity | Use for |
 |---|---|---|---|

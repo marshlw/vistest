@@ -49,8 +49,11 @@ v2 turns the order round:
    message. It decides nothing.
 
 A region that no explanation takes out fails the comparison. There is no
-severity threshold between "found" and "failed": severity orders the report,
-it does not decide the verdict.
+severity threshold between "found" and "failed" unless a person sets one
+(`threshold=`, a snapshot's passport, vistest.yaml, an override in the
+interface): then a region below it is listed apart, with its description and
+where the threshold came from, and does not fail the check on its own. A
+preset's `fail_severity` is v1's and is not applied (`core/engines.py`).
 """
 
 from .engine import compare

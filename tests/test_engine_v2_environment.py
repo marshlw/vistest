@@ -175,7 +175,7 @@ def test_there_is_no_caret_rule(raster):
     up in no region, which is how v1 also loses an underline. v2 keeps it.
     The library hides the caret when it captures (`caret="hide"`)."""
     a, b = _pair("caret" + raster)
-    v1 = compare(a, b)
+    v1 = compare(a, b, engine="v1")
     assert v1.verdict is Verdict.PASS and not v1.regions and not v1.suppressed
     assert v1.unassigned_pixels == v1.changed_pixels > 0
     v2 = compare(a, b, engine="v2")

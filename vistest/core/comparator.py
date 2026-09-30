@@ -19,6 +19,7 @@ from . import align as _align
 from . import antialias as _aa
 from . import classify as _cls
 from . import color as _color
+from . import engines as _engines
 from . import explain as _explain
 from . import recolour as _recolour
 from . import segment as _seg
@@ -57,7 +58,7 @@ def compare(
     name: str = "snapshot",
     ignore_mask: np.ndarray | None = None,
     ai_hooks=None,
-    engine: str = "v1",
+    engine: str | None = None,
     v2=None,
     renderer=None,
 ) -> CompareResult:
@@ -68,26 +69,40 @@ def compare(
     ai_hooks:    object with optional methods
                  `refine(regions, exp, act)` and
                  `attribute(regions)`. See vistest.ai.pipeline.AIPipeline.
-    engine:      "v1" — this cascade, the default; "v2" — the path that
+    engine:      `None` — the one `cfg.engine` names, "v2" unless somebody
+                 chose otherwise (`core/engines.py`); "v2" — the path that
                  catches every discernible difference first and takes out
-                 only what a named rule explains (`core/v2/`). Both stay, so
-                 both can be measured on the same pairs.
+                 only what a named rule explains (`core/v2/`); "v1" — this
+                 cascade, deprecated for one release. A v1 result says so
+                 in its notes; a v2 result under a preset other than
+                 balanced says that the preset does not act on it.
     v2:          `core.v2.V2Config` for engine="v2"; ignored by v1.
     renderer:    `None`, or the renderer's fingerprints as a pair — the
                  canary drawn where the baseline was taken and the one drawn
                  for this screenshot (`core/renderer.py`). v2 explains text
                  re-rasterisation only when the two differ; v1 ignores it.
     """
-    if engine != "v1":
-        if engine != "v2":
-            raise ValueError(f"engine must be 'v1' or 'v2', not {engine!r}")
+    cfg = cfg or DiffConfig()
+    engine = cfg.engine if engine is None else _engines.check(engine)
+    if engine == _engines.V2:
         from .v2 import compare as _compare_v2
 
-        return _compare_v2(expected_rgb, actual_rgb, cfg=cfg, v2=v2, name=name,
-                           ignore_mask=ignore_mask, ai_hooks=ai_hooks,
-                           renderer=renderer)
+        res = _compare_v2(expected_rgb, actual_rgb, cfg=cfg, v2=v2, name=name,
+                          ignore_mask=ignore_mask, ai_hooks=ai_hooks,
+                          renderer=renderer)
+        if cfg.preset != "balanced":
+            res.notes.append(_engines.preset_note(cfg.preset))
+        return res
+    res = _cascade(expected_rgb, actual_rgb, cfg=cfg, name=name,
+                   ignore_mask=ignore_mask, ai_hooks=ai_hooks)
+    res.notes.append(_engines.V1_DEPRECATED)
+    return res
+
+
+def _cascade(expected_rgb: np.ndarray, actual_rgb: np.ndarray, *, cfg: DiffConfig,
+             name: str, ignore_mask: np.ndarray | None, ai_hooks) -> CompareResult:
+    """Engine v1: the cascade. Reached through `compare(..., engine="v1")`."""
     t0 = time.perf_counter()
-    cfg = cfg or DiffConfig()
 
     # Before the first allocation: further down the cascade a refusal is late.
     _check_size(expected_rgb, "the baseline", cfg.max_pixels)

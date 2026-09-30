@@ -29,7 +29,7 @@ CFG = VisTestConfig.preset_of("balanced").diff
 
 
 def _c(exp, act, cfg: DiffConfig | None = None):
-    return compare(exp, act, cfg=cfg or CFG, name="t")
+    return compare(exp, act, cfg=cfg or CFG, name="t", engine="v1")
 
 
 @pytest.fixture(scope="module")
@@ -84,7 +84,7 @@ def test_dynamic_clock_suppressed_by_stability_mask(base):
     assert mask.any(), "маска нестабильности должна поймать часы"
 
     r = compare(frames[0], syn.add_clock(base, "13:02:55"),
-                cfg=CFG, name="clock", ignore_mask=mask)
+                cfg=CFG, name="clock", ignore_mask=mask, engine="v1")
     assert r.verdict is Verdict.PASS, r.summary()
 
 

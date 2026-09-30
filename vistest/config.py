@@ -24,6 +24,8 @@ import os
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
+from .core import engines as _engines
+from .core import thresholds as _thresholds
 from .core.settings import (
     AIConfig,
     AuthConfig,
@@ -123,7 +125,9 @@ class VisTestConfig:
 
     # ---------------- factories ----------------
     @classmethod
-    def preset_of(cls, name: str) -> VisTestConfig:
+    def preset_of(cls, name: str, *, engine: str | None = None) -> VisTestConfig:
+        """The preset's numbers. `engine` keeps a choice already made — a
+        preset tunes v1's cascade and never chooses the engine."""
         cfg = cls(preset=name)
         if name == "strict":
             cfg.diff = replace(
@@ -148,6 +152,8 @@ class VisTestConfig:
             )
         elif name != "balanced":
             raise ValueError(f"Unknown preset: {name!r} (strict|balanced|loose)")
+        cfg.diff = replace(cfg.diff, preset=name,
+                           **({"engine": engine} if engine is not None else {}))
         return cfg
 
     @classmethod
@@ -186,7 +192,7 @@ class VisTestConfig:
             if key not in raw or raw[key] is None:
                 continue
             current = getattr(cfg, key)
-            known = {f.name for f in fields(klass)}
+            known = {f.name for f in fields(klass)} - _DERIVED.get(key, set())
             patch = {}
             for k, v in raw[key].items():
                 if k not in known:
@@ -197,6 +203,23 @@ class VisTestConfig:
                 setattr(cfg, key, replace(current, **patch))
             except ConfigError as e:
                 raise ConfigError(f"{path}: {e}") from None
+
+        #  A threshold written into the file is a threshold a person chose:
+        #  engine v2 applies it and names it (core/engines.py). A preset's
+        #  number is not one.
+        if (raw.get("diff") or {}).get("fail_severity") is not None:
+            cfg.diff = replace(cfg.diff, threshold_source=_thresholds.SOURCE_YAML)
+
+        #  The engine: top level, because it is not a tuning of the diff but
+        #  the choice of what makes it. `diff.engine` is the same field and
+        #  is accepted; the two may not disagree.
+        if raw.get("engine") is not None:
+            engine = _engines.check(raw["engine"], f"{path}: engine")
+            inner = (raw.get("diff") or {}).get("engine")
+            if inner is not None and _engines.check(inner, f"{path}: diff.engine") != engine:
+                raise ConfigError(f"{path}: engine is {engine!r} and diff.engine is "
+                                  f"{inner!r} — keep one")
+            cfg.diff = replace(cfg.diff, engine=engine)
 
         if raw.get("plugins") is not None:
             cfg.plugins = _plugins_section(raw["plugins"], path)
@@ -245,6 +268,9 @@ class VisTestConfig:
             cfg.plugins = replace(cfg.plugins, fail_on=v).validated("VISTEST_FAIL_ON")
         if env_flag("VISTEST_PERCEPTUAL"):
             cfg.ai = replace(cfg.ai, perceptual_enabled=True)
+        #  Over vistest.yaml, under the call — like every other setting here.
+        if v := env_text("VISTEST_ENGINE"):
+            cfg.diff = replace(cfg.diff, engine=_engines.check(v, "VISTEST_ENGINE"))
 
         # The engine's memory limit. A `DiffConfig` field like any other, so
         # the only thing that happens here is what happens to every environment
@@ -282,6 +308,11 @@ class VisTestConfig:
                 patch[name] = validate(name, raw)
             except ThresholdError as e:
                 raise ConfigError(f"{variable}: {e}") from None
+        if "fail_severity" in patch:
+            #  Set by the service for a connected project's run it names the
+            #  override it carries; set by hand it is this variable.
+            patch["threshold_source"] = (env_text(_thresholds.SOURCE_VARIABLE)
+                                         or _thresholds.SOURCE_ENV)
         if patch:
             cfg.diff = replace(cfg.diff, **patch)
 
@@ -357,6 +388,11 @@ def _plugins_section(raw, path) -> PluginsConfig:
                 "%s: plugins.%s is not a setting VisTest knows and no installed "
                 "plugin is called %r; it is kept and ignored", path, key, key)
     return PluginsConfig(**patch, options=options).validated(f"{path}: plugins")
+
+
+#: Fields of a section that are derived, never written in vistest.yaml:
+#: where the threshold came from, and the preset — both said by the loader.
+_DERIVED: dict[str, set[str]] = {"diff": {"threshold_source", "preset"}}
 
 
 def _find_config() -> Path | None:

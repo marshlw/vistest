@@ -183,11 +183,26 @@ class CompareResult:
     maps: dict[str, Any] = field(default_factory=dict, repr=False,
                                  compare=False)
 
+    #  Engine v2 under a threshold a person set (`DiffConfig.threshold_source`):
+    #  the regions nothing explained whose severity is below it. They do not
+    #  fail the check, and they are listed here rather than dropped;
+    #  `threshold` says the value, where it came from and what it let through.
+    #  Both stay empty/None otherwise, and `to_dict` then leaves them out.
+    below_threshold: list[DiffRegion] = field(default_factory=list)
+    threshold: dict[str, Any] | None = None
+
     @property
     def failed(self) -> bool:
         return self.verdict is Verdict.FAIL
 
     def to_dict(self) -> dict[str, Any]:
+        out = self._as_dict()
+        if self.threshold is not None:
+            out["threshold"] = dict(self.threshold)
+            out["below_threshold"] = [r.to_dict() for r in self.below_threshold]
+        return out
+
+    def _as_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "verdict": self.verdict.value,
@@ -261,6 +276,10 @@ class CompareResult:
                 f"    [{r.kind.value:9s}] sev={r.severity:5.1f} "
                 f"@({r.x},{r.y}) {r.w}x{r.h} ΔE={r.de_mean:.1f}{tail}"
             )
+        for r in self.below_threshold[:10]:
+            lines.append(
+                f"    [below    ] sev={r.severity:5.1f} "
+                f"@({r.x},{r.y}) {r.w}x{r.h} ΔE={r.de_mean:.1f}")
         for n in self.notes:
             lines.append(f"  note: {n}")
         return "\n".join(lines)

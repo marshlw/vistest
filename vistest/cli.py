@@ -28,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("actual")
     c.add_argument("-o", "--out", default="vistest-diff")
     c.add_argument("--preset", choices=["strict", "balanced", "loose"], default="balanced")
+    c.add_argument("--engine", choices=["v1", "v2"],
+                   help="the comparison engine; by default the one vistest.yaml "
+                        "and VISTEST_ENGINE choose, v2 when nobody does (v1 is "
+                        "deprecated and goes in the next release)")
     c.add_argument("--json", action="store_true", help="print result.json to stdout")
 
     ch = sub.add_parser(
@@ -556,7 +560,10 @@ def _compare(args) -> int:
     from .core.comparator import compare, strip_internal
     from .render.artifacts import render_all
 
-    cfg = VisTestConfig.preset_of(args.preset)
+    #  The preset tunes v1's cascade; the engine is chosen where every other
+    #  setting is — the flag, VISTEST_ENGINE, vistest.yaml, the default.
+    cfg = VisTestConfig.preset_of(
+        args.preset, engine=args.engine or VisTestConfig.load().diff.engine)
     res = compare(read_png(args.expected), read_png(args.actual),
                   cfg=cfg.diff, name=Path(args.actual).stem)
     res.artifacts.update(render_all(res, args.out, cfg=cfg.render))
@@ -588,7 +595,11 @@ def _check(args) -> int:
     from .capture.playwright_capture import read_png
     from .service import CheckService
 
-    cfg = VisTestConfig.preset_of(args.preset) if args.preset else VisTestConfig.load()
+    cfg = VisTestConfig.load()
+    if args.preset:
+        #  A preset tunes v1's cascade; it does not undo the engine chosen in
+        #  vistest.yaml or VISTEST_ENGINE (`--set engine=v1` chooses per call).
+        cfg = VisTestConfig.preset_of(args.preset, engine=cfg.diff.engine)
     run_dir = cfg.runs_path() / (args.run_key or "cli")
     svc = CheckService(cfg, platform=args.platform, browser=args.browser,
                        run_dir=run_dir)

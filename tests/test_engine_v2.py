@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 
 from vistest.core import compare
+from vistest.core.settings import DiffConfig
 from vistest.core.v2 import V2Config
 from vistest.core.v2 import base as v2base
 from vistest.models import Verdict
@@ -46,15 +47,20 @@ def _accounted(r) -> None:
 # --------------------------------------------------------------------------- #
 #  The door
 # --------------------------------------------------------------------------- #
-def test_v1_is_the_default_and_an_unknown_engine_is_refused():
+def test_v2_is_the_default_and_an_unknown_engine_is_refused():
+    """Step C of f5: v2 by default, v1 by name for one more release."""
     a = _page()
     b = a.copy()
     b[10:20, 10:20] = (0, 0, 0)
     one = compare(a, b)
-    two = compare(a, b, engine="v1")
+    two = compare(a, b, engine="v2")
     assert [r.bbox for r in one.regions] == [r.bbox for r in two.regions]
-    assert one.verdict is two.verdict
-    assert not any(n.startswith("Engine v2") for n in one.notes)
+    assert one.verdict is two.verdict and one.notes == two.notes
+    assert any(n.startswith("Engine v2") for n in one.notes)
+    old = compare(a, b, engine="v1")
+    assert not any(n.startswith("Engine v2") for n in old.notes)
+    assert old.notes[-1].startswith("engine v1 is deprecated")
+    assert compare(a, b, cfg=DiffConfig(engine="v1")).notes == old.notes
     with pytest.raises(ValueError, match="engine must be"):
         compare(a, b, engine="v3")
 
@@ -204,7 +210,7 @@ def corpus():
                                   "table/fill/de8", "table/border_removed/gone"])
 def test_the_base_catches_what_v1_lost(corpus, name):
     exp, act = corpus(name)
-    assert compare(exp, act).verdict is Verdict.PASS          # v1, as diagnosed
+    assert compare(exp, act, engine="v1").verdict is Verdict.PASS          # v1, as diagnosed
     r = compare(exp, act, engine="v2")
     assert r.verdict is Verdict.FAIL
     _accounted(r)

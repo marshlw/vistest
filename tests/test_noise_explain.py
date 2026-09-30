@@ -41,7 +41,7 @@ CFG = VisTestConfig.preset_of("balanced").diff
 
 def _c(exp, act, **kw):
     cfg = replace(CFG, **kw)
-    return compare(exp, act, cfg=cfg, name="t")
+    return compare(exp, act, cfg=cfg, name="t", engine="v1")
 
 
 @pytest.fixture(scope="module")
@@ -92,7 +92,7 @@ def test_an_isolated_speck_is_still_removed():
 ])
 def test_the_text_regressions_the_old_order_missed_are_found(cases, name):
     c = cases[name]
-    r = compare(c.expected, c.actual, cfg=CFG, name=name)
+    r = compare(c.expected, c.actual, cfg=CFG, name=name, engine="v1")
     assert r.verdict is Verdict.FAIL, r.summary()
     assert any(x.kind in (ChangeKind.TEXT, ChangeKind.CONTENT, ChangeKind.COLOR)
                for x in r.regions), r.summary()
@@ -103,7 +103,7 @@ def test_the_text_regressions_the_old_order_missed_are_found(cases, name):
 # --------------------------------------------------------------------------- #
 def test_no_false_failure_on_the_corpus_without_a_model(cases):
     wrong = [c.name for c in cases.values() if c.group == "NOISE"
-             and compare(c.expected, c.actual, cfg=CFG).verdict is Verdict.FAIL]
+             and compare(c.expected, c.actual, cfg=CFG, engine="v1").verdict is Verdict.FAIL]
     assert not wrong, wrong
 
 
@@ -111,7 +111,8 @@ def test_no_false_failure_on_the_corpus_without_a_model(cases):
 def test_fewer_than_three_misses_on_the_corpus_without_a_model(cases, render):
     missed = [c.name for c in cases.values()
               if c.group == "SIGNAL" and c.render == render
-              and compare(c.expected, c.actual, cfg=CFG).verdict is not Verdict.FAIL]
+              and compare(c.expected, c.actual, cfg=CFG,
+                          engine="v1").verdict is not Verdict.FAIL]
     assert len(missed) < 3, missed
 
 
@@ -128,7 +129,7 @@ def test_fewer_than_three_misses_on_the_corpus_without_a_model(cases, render):
 ])
 def test_each_noise_the_new_order_exposes_is_explained_by_its_own_test(cases, name, rule):
     c = cases[name]
-    on = compare(c.expected, c.actual, cfg=CFG)
+    on = compare(c.expected, c.actual, cfg=CFG, engine="v1")
     assert on.verdict is Verdict.PASS, on.summary()
     assert rule in _rules(on), (rule, [r.suppressed_by for r in on.suppressed])
     assert any("Noise explained" in n for n in on.notes), on.notes
@@ -148,13 +149,13 @@ def test_without_the_stage_the_new_order_would_fail_them(cases, name):
     still differ in exactly that. The jpeg rule is still asserted above.
     """
     c = cases[name]
-    off = compare(c.expected, c.actual, cfg=replace(CFG, explain_noise=False))
+    off = compare(c.expected, c.actual, cfg=replace(CFG, explain_noise=False), engine="v1")
     assert off.verdict is Verdict.FAIL, off.summary()
 
 
 def test_a_suppressed_region_says_what_it_was(cases):
     c = cases["scrollbar"]
-    r = compare(c.expected, c.actual, cfg=CFG)
+    r = compare(c.expected, c.actual, cfg=CFG, engine="v1")
     assert r.suppressed
     for x in r.suppressed:
         assert x.kind is ChangeKind.NOISE and x.severity == 0.0
@@ -170,7 +171,7 @@ def test_the_model_sees_only_what_the_open_engine_left(cases):
             return regions
 
     c = cases["scrollbar"]
-    compare(c.expected, c.actual, cfg=CFG, ai_hooks=Spy())
+    compare(c.expected, c.actual, cfg=CFG, ai_hooks=Spy(), engine="v1")
     assert not seen, [r.suppressed_by for r in seen]
 
 
@@ -198,8 +199,8 @@ def test_a_regression_under_noise_still_fails(cases, name, noise):
     explanation hid it.
     """
     c = cases[name]
-    clean = compare(c.expected, c.actual, cfg=CFG)
-    noisy = compare(c.expected, _NOISES[noise](c.actual), cfg=CFG)
+    clean = compare(c.expected, c.actual, cfg=CFG, engine="v1")
+    noisy = compare(c.expected, _NOISES[noise](c.actual), cfg=CFG, engine="v1")
     assert clean.verdict is not Verdict.FAIL or noisy.verdict is Verdict.FAIL, \
         noisy.summary()
 
@@ -248,13 +249,13 @@ def test_a_scrollbar_on_the_bottom_edge_is_recognised(base):
 
 def test_a_real_change_does_not_look_like_jpeg(cases):
     c = cases["button color"]
-    r = compare(c.expected, c.actual, cfg=CFG)
+    r = compare(c.expected, c.actual, cfg=CFG, engine="v1")
     assert explain.detect_jpeg(r.maps["expected"], r.maps["aligned_actual"],
                                r.regions, r.maps["mask"]) is None
 
 
 def test_the_stage_is_skipped_when_the_size_changed(cases):
     c = cases["page taller +160"]
-    r = compare(c.expected, c.actual, cfg=CFG)
+    r = compare(c.expected, c.actual, cfg=CFG, engine="v1")
     assert r.verdict is Verdict.FAIL
     assert not _rules(r)

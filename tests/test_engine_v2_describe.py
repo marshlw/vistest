@@ -128,7 +128,7 @@ def test_the_sentence_is_the_first_annotation_of_every_region_that_counts():
         note = g.annotations[0]
         assert note["kind"] == ds.KIND and note["source"] == "engine v2"
     assert not any(n["kind"] == ds.KIND for s in r.suppressed for n in s.annotations)
-    assert not any(n["kind"] == ds.KIND for g in compare(a, b).regions
+    assert not any(n["kind"] == ds.KIND for g in compare(a, b, engine="v1").regions
                    for n in g.annotations)
 
 
@@ -169,7 +169,7 @@ def test_v1_says_what_it_said_before(tmp_path):
     a[40:80, 40:160] = (52, 120, 246)
     b = _page()
     b[40:80, 40:160] = (154, 160, 170)
-    r = compare(a, b)
+    r = compare(a, b, engine="v1")
     assert r.verdict is Verdict.FAIL
     assert "changed:" not in _mismatch(r, tmp_path)
 

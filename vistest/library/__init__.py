@@ -123,6 +123,7 @@ def expect_screenshot(
     store: SnapshotStore | None = None,
     scale: str = "css",
     stable_timeout_ms: int | None = None,
+    engine: str | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -144,7 +145,15 @@ def expect_screenshot(
 
     `threshold` is the severity at which this check fails, or a mapping for the
     full form. It is the innermost layer: config, then the project, then the
-    snapshot's own passport, then this.
+    snapshot's own passport, then this. Under engine v2, the default, a region
+    no rule explained fails the check whatever its severity unless a threshold
+    was set by one of those layers — a preset's number is v1's — and then a
+    region below it is listed in the result, the report and the failure
+    message, with where the threshold came from, and does not fail it.
+
+    `engine` is "v2" or "v1" for this one check; left out, it is the one
+    vistest.yaml (`engine:`) or `VISTEST_ENGINE` chose, and v2 when nobody
+    did. v1 is deprecated and goes in the next release.
 
     `mask` takes locators and CSS selectors — painted out during capture, as
     Playwright does it — and boxes `(x, y, w, h)`, which are not painted at all
@@ -235,6 +244,7 @@ def expect_screenshot(
 
         passport = store.meta(key)
         cfg = ctx.config.diff.merged(
+            engine=engine,
             **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
                         call=call_patch))
 
@@ -297,8 +307,7 @@ def expect_screenshot(
         from ..report.library import describe
 
         reason = _with(said, describe(result))
-        limits = {"fail_severity": cfg.fail_severity,
-                  "max_changed_area_pct": cfg.max_changed_area_pct}
+        limits = _limits(cfg)
         images = {"baseline": str(baseline_path), "actual": str(actual_path)}
 
         diff_path = None
@@ -356,6 +365,21 @@ def expect_screenshot(
 # --------------------------------------------------------------------------- #
 #  Bits the function above would only make longer
 # --------------------------------------------------------------------------- #
+def _limits(cfg) -> dict:
+    """The thresholds this check ran under, as the report and the message say them.
+
+    For v2 `fail_severity` is the threshold it applied — 0 unless a person set
+    one, and then `threshold_source` says who; a preset's number is v1's.
+    """
+    v2 = cfg.engine == "v2"
+    out = {"engine": cfg.engine,
+           "fail_severity": cfg.v2_threshold if v2 else cfg.fail_severity,
+           "max_changed_area_pct": cfg.max_changed_area_pct}
+    if cfg.threshold_source:
+        out["threshold_source"] = cfg.threshold_source
+    return out
+
+
 def _ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
@@ -575,6 +599,15 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         entry["suppressed_count"] = len(suppressed)
         entry["suppressed_by_reason"] = count_suppressed(suppressed)
         entry["suppressed"] = [_region_row(r) for r in suppressed[:MAX_LISTED]]
+        #  What a threshold a person set let through (engine v2): listed, with
+        #  the sentence the failure message and the API carry.
+        if result.threshold is not None:
+            from ..core.engines import below_line
+
+            entry["threshold"] = dict(result.threshold)
+            entry["below_threshold"] = [_region_row(r)
+                                        for r in list(result.below_threshold)[:MAX_LISTED]]
+            entry["below_line"] = below_line(result)
     try:
         write_part(ctx.parts_dir, entry)
     except OSError as e:  # pragma: no cover - a report row is not the verdict

@@ -94,7 +94,7 @@ def probed(cases):
     try:
         for c in cases:
             residuals.clear()
-            res = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name)
+            res = compare(c.expected, c.actual, cfg=cfg.diff, name=c.name, engine="v1")
             de_map = res.maps.get("de_map")
             assert de_map is not None, "the comparator no longer returns its ΔE map"
             out[c.name] = (c, de_map, list(residuals))
@@ -245,10 +245,10 @@ def test_below_the_area_threshold_explain_still_stands():
     default = VisTestConfig.preset_of(cp.METRICS_PRESET).diff
     lowered = replace(default, flat_recolour_min_area_pct=0.25)
 
-    quiet = compare(base, actual, cfg=default, name="scrollbar, default")
+    quiet = compare(base, actual, cfg=default, name="scrollbar, default", engine="v1")
     assert not any("flat recolour" in n for n in quiet.notes), quiet.notes
 
-    r = compare(base, actual, cfg=lowered, name="scrollbar, area threshold 0.25 %")
+    r = compare(base, actual, cfg=lowered, name="scrollbar, area threshold 0.25 %", engine="v1")
     assert any("flat recolour" in n for n in r.notes), (
         "the rule did not fire on the scroll bar with the threshold below it: "
         "this test no longer tests anything")

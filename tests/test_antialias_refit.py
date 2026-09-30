@@ -267,7 +267,7 @@ def test_the_identity_is_never_beaten_by_a_worse_candidate():
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_a_changed_digit_is_no_longer_erased_by_the_per_pixel_filter(raster):
     base, act = _pair("price changed", raster)
-    r = compare(base, act, cfg=CFG)
+    r = compare(base, act, cfg=CFG, engine="v1")
     assert r.verdict is Verdict.FAIL, r.summary()
     assert any("overruled" in n for n in r.notes), r.notes
 
@@ -283,7 +283,7 @@ _OLD_VETO_PASSES = {"": False, ", thin glyphs": True}
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_the_old_veto_kept_nothing_where_the_strokes_are_thin(raster):
     base, act = _pair("price changed", raster)
-    legacy = compare(base, act, cfg=replace(CFG, explain_noise=False))
+    legacy = compare(base, act, cfg=replace(CFG, explain_noise=False), engine="v1")
     erased = _OLD_VETO_PASSES[raster]
     assert (legacy.verdict is Verdict.PASS) is erased, legacy.summary()
     assert bool(legacy.regions) is not erased, [x.kind.value for x in legacy.regions]
@@ -293,7 +293,7 @@ def test_the_old_veto_kept_nothing_where_the_strokes_are_thin(raster):
 def test_the_old_veto_would_have_erased_it(raster):
     """Pixel by pixel, on every raster: the filter says yes to the new glyph."""
     base, act = _pair("price changed", raster)
-    lab = compare(base, act, cfg=CFG)
+    lab = compare(base, act, cfg=CFG, engine="v1")
 
     def lightness(rgb: np.ndarray) -> np.ndarray:
         return np.clip(color.srgb_to_lab(rgb)[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
@@ -313,7 +313,7 @@ def test_the_old_veto_would_have_erased_it(raster):
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_a_re_rendered_page_passes_and_every_erasure_is_named(raster, amount):
     base = _page(raster)
-    r = compare(base, _resampled(base, amount), cfg=CFG)
+    r = compare(base, _resampled(base, amount), cfg=CFG, engine="v1")
     assert r.verdict is Verdict.PASS, r.summary()
     aa = [s for s in r.suppressed if s.suppressed_by.startswith("antialias:")]
     assert aa, [s.suppressed_by for s in r.suppressed]
@@ -328,7 +328,7 @@ def test_a_re_rendered_page_passes_and_every_erasure_is_named(raster, amount):
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_the_sentence_carries_the_residual_that_decided(raster):
     base = _page(raster)
-    r = compare(base, _resampled(base, 0.4), cfg=CFG)
+    r = compare(base, _resampled(base, 0.4), cfg=CFG, engine="v1")
     for s in r.suppressed:
         if not s.suppressed_by.startswith("antialias:"):
             continue
@@ -339,7 +339,7 @@ def test_the_sentence_carries_the_residual_that_decided(raster):
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_groups_are_reported_as_regions_not_as_pixels(raster):
     base = _page(raster)
-    r = compare(base, _resampled(base, 0.4), cfg=CFG)
+    r = compare(base, _resampled(base, 0.4), cfg=CFG, engine="v1")
     aa = [s for s in r.suppressed if s.suppressed_by.startswith("antialias:")]
     # A page of text re-rendered is a few dozen lines, not hundreds of specks.
     assert len(aa) < 40, len(aa)
@@ -354,7 +354,7 @@ def test_groups_are_reported_as_regions_not_as_pixels(raster):
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_a_flat_colour_change_is_never_asked(raster):
     base, act = _pair("button color", raster)
-    r = compare(base, act, cfg=CFG)
+    r = compare(base, act, cfg=CFG, engine="v1")
     assert r.verdict is Verdict.FAIL
     assert not any(s.suppressed_by.startswith("antialias:") for s in r.suppressed)
 
@@ -362,7 +362,7 @@ def test_a_flat_colour_change_is_never_asked(raster):
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)
 def test_without_the_explanations_the_filter_is_the_old_one(raster):
     base = _page(raster)
-    r = compare(base, _resampled(base, 0.4), cfg=replace(CFG, explain_noise=False))
+    r = compare(base, _resampled(base, 0.4), cfg=replace(CFG, explain_noise=False), engine="v1")
     assert not any((s.suppressed_by or "").startswith("antialias:") for s in r.suppressed)
 
 
@@ -385,7 +385,7 @@ def test_the_failure_message_spells_out_what_was_suppressed(tmp_path, raster):
     # `text overflow`: a real regression on a page that also carries noise the
     # filter took out, so the message has both a failure and an "also:".
     base, act = _pair("text overflow", raster)
-    r = compare(base, act, cfg=CFG)
+    r = compare(base, act, cfg=CFG, engine="v1")
     assert r.verdict is Verdict.FAIL and r.suppressed
     err = ScreenshotMismatch.build(
         name="checkout", platform="", result=r, reason="test",

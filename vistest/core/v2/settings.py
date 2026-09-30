@@ -14,12 +14,13 @@ half (landing, dark) is measured after the choice and never consulted for it:
 a number moved after looking at it stops meaning what the table says.
 
 What v2 reads of `DiffConfig` is listed in `DIFFCONFIG_READ`: the size
-policy, the memory limit, the kinds a user asked to ignore, and the two
-fields severity is weighted with (severity orders the report and decides
-nothing in v2). Every other field — the v1 thresholds, consensus, SSIM,
-morphology, alignment, `fail_severity`, the area policy, the presets built
-from them — has no effect on v2. `tests/test_engine_v2.py` holds that list
-against the code.
+policy, the memory limit, the kinds a user asked to ignore, the two fields
+severity is weighted with, and — only when a person set it, which
+`threshold_source` says — the threshold `fail_severity` with the share of
+the frame `max_changed_area_pct` (step C of f5). Every other field — the v1
+thresholds, consensus, SSIM, morphology, alignment, a preset's own
+`fail_severity` — has no effect on v2. `tests/test_engine_v2.py` holds that
+list against the code.
 """
 
 from __future__ import annotations
@@ -38,7 +39,11 @@ DIFFCONFIG_READ = (
     "fail_on_size_change", "size_tolerance_px",   # the size policy, as in v1
     "max_pixels",                                  # the memory guard
     "ignore_kinds",                                # kinds a user set aside
-    "above_fold_px", "above_fold_weight",          # severity, which orders only
+    "above_fold_px", "above_fold_weight",          # severity
+    #  A threshold a person set (core/engines.py): regions below it are
+    #  listed apart, and the share of the frame they cover can still fail.
+    #  With `threshold_source` empty the other two are not read.
+    "threshold_source", "fail_severity", "max_changed_area_pct",
 )
 
 #: (d) of the re-rasterisation rule: the share of the page's ink clusters that

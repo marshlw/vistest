@@ -14,9 +14,12 @@ so every consumer of the engine reads it without knowing which path made it.
 What differs is what the fields promise:
 
 * `changed_pixels` is the candidate mask (ΔE00 above `jnd_delta_e`), and
-  `region_pixels + suppressed_pixels == changed_pixels`: nothing unassigned;
+  `region_pixels + suppressed_pixels` plus the pixels below a threshold a
+  person set make `changed_pixels`: nothing unassigned;
 * a region in `regions` is one nothing explained, and any such region fails
-  the comparison — severity orders them, it does not decide;
+  the comparison — severity orders them, it does not decide, unless a person
+  set a threshold: then one below it is in `below_threshold`, said and not
+  failed on (`_apply_threshold`);
 * a region in `suppressed` names in `suppressed_by` the rule that took it out
   and the numbers that rule measured.
 """
@@ -31,6 +34,7 @@ from ...models import ChangeKind, CompareResult, DiffRegion, Verdict
 from .. import align as _align
 from .. import classify as _cls
 from .. import color as _color
+from .. import engines as _engines
 from .. import explain as _explain
 from .. import renderer as _renderer
 from .. import structure as _struct
@@ -169,7 +173,9 @@ def compare(
         (res.suppressed if r.suppressed_by else res.regions).append(r)
     res.regions.sort(key=lambda r: (-r.severity, r.y, r.x))
     _describe_regions(res.regions, group_of, labels, exp, act, lab_exp, lab_act, v2)
-    res.max_severity = max((r.severity for r in res.regions), default=0.0)
+    _apply_threshold(res, cfg)
+    res.max_severity = max((r.severity for r in (*res.regions, *res.below_threshold)),
+                           default=0.0)
     _account(res)
     res.notes.insert(0, f"Engine {ENGINE}: ΔE00 > {v2.jnd_delta_e:g} per pixel, grouped "
                         f"within {v2.group_px} px; {len(groups)} region(s), "
@@ -425,12 +431,34 @@ def _region(g: _base.Group, gray_exp, gray_act, de, cand, total, cfg) -> DiffReg
         above_fold_px=cfg.above_fold_px, above_fold_weight=cfg.above_fold_weight)
 
 
+def _apply_threshold(res: CompareResult, cfg: DiffConfig) -> None:
+    """A threshold a person set: what no rule explained, below it, is listed apart.
+
+    Without one (`DiffConfig.v2_threshold` is 0 — a preset's `fail_severity`
+    is v1's) nothing happens here: every region no rule explained fails. With
+    one, a region whose severity is below it moves to `below_threshold`,
+    keeps its description, and does not fail the check on its own — the
+    share of the frame they cover together still can (`_verdict`).
+    """
+    threshold = cfg.v2_threshold
+    if threshold <= 0:
+        return
+    below = [r for r in res.regions if r.severity < threshold]
+    res.regions = [r for r in res.regions if r.severity >= threshold]
+    res.below_threshold = below
+    res.threshold = {"value": threshold, "source": cfg.threshold_source,
+                     "regions": len(below),
+                     "pixels": int(sum(r.pixel_count for r in below))}
+
+
 def _account(res: CompareResult) -> None:
-    """Membership by group, not by box: every candidate pixel is in one region."""
+    """Membership by group, not by box: every candidate pixel is in one region
+    — one that counts, one explained, or one below a threshold a person set."""
+    below = int(sum(r.pixel_count for r in res.below_threshold))
     res.region_pixels = int(sum(r.pixel_count for r in res.regions))
     res.suppressed_pixels = int(sum(r.pixel_count for r in res.suppressed))
     res.unassigned_pixels = int(res.changed_pixels - res.region_pixels
-                                - res.suppressed_pixels)
+                                - res.suppressed_pixels - below)
     res.region_area_pct = 100.0 * res.region_pixels / max(res.total_pixels, 1)
 
 
@@ -441,9 +469,29 @@ def _verdict(res: CompareResult, cfg: DiffConfig) -> Verdict:
         dh = abs(res.size_actual[1] - res.size_expected[1])
         if max(dw, dh) > cfg.size_tolerance_px:
             reasons.append(f"size changed by {dw}×{dh}px")
+    threshold = res.threshold
     if res.regions:
         reasons.append(f"{len(res.regions)} region(s) no rule explained "
-                       f"({res.region_pixels} px)")
+                       f"({res.region_pixels} px)"
+                       + (f", at or above the threshold {threshold['value']:g} "
+                          f"({threshold['source']})" if threshold else ""))
+    elif res.below_threshold:
+        #  As in v1: a share of the frame that is enough on its own, whatever
+        #  the severity. Only what no rule explained counts; under the default
+        #  threshold of 0 every such region fails anyway, so this adds nothing.
+        area = 100.0 * threshold["pixels"] / max(res.total_pixels, 1)
+        if area >= cfg.max_changed_area_pct:
+            reasons.append(
+                f"{len(res.below_threshold)} region(s) below the threshold "
+                f"{threshold['value']:g} ({threshold['source']}) cover {area:.2f}% "
+                f"of the frame together, at least max_changed_area_pct "
+                f"{cfg.max_changed_area_pct:g}%")
+            res.regions, res.below_threshold = res.below_threshold, []
+            threshold.update(regions=0, pixels=0, area_pct=round(area, 4))
+            _account(res)
+    line = _engines.below_line(res)
+    if line:
+        res.notes.append(line)
     if reasons:
         res.notes.append("Reason for the failure: " + "; ".join(reasons))
         return Verdict.FAIL

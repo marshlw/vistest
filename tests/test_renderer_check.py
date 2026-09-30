@@ -66,9 +66,9 @@ def test_v1_ignores_the_renderer():
     a = np.full((40, 60, 3), 255, np.uint8)
     b = a.copy()
     b[10:20, 10:30] = 0
-    plain = compare(a, b)
+    plain = compare(a, b, engine="v1")
     for renderer in ((a, a), (a, b), None):
-        r = compare(a, b, renderer=renderer)
+        r = compare(a, b, renderer=renderer, engine="v1")
         assert r.verdict == plain.verdict and r.notes == plain.notes
         assert "renderer" not in r.maps
 
