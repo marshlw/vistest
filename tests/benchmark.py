@@ -810,8 +810,16 @@ def main() -> int:
                          "Chromium — VisTest's three presets and the native "
                          "Playwright comparator on a threshold × maxDiffPixels "
                          "grid, by family and by half (tests/benchmark_browser.py)")
+    ap.add_argument("--final", action="store_true",
+                    help="with --corpus browser: also run and print the sealed "
+                         "half, held-out-2 — only for the final acceptance of "
+                         "f5 and the figures of the README; without it that "
+                         "half is neither run nor printed")
     args = ap.parse_args()
 
+    if args.final and args.corpus != "browser":
+        ap.error("--final is for --corpus browser: the sealed half is a part of "
+                 "the browser corpus")
     if args.corpus == "browser":
         from tests import benchmark_browser
 

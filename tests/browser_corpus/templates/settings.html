@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preferences</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; font-size: 13px; color: #1e293b; background: #f8fafc; }
+  .layout { display: grid; grid-template-columns: 240px 1fr; height: 800px; }
+  .nav { border-right: 1px solid #e2e8f0; padding: 20px 14px; background: #fff; }
+  .nav .back { display: flex; align-items: center; gap: 6px; color: #64748b; margin: 0 8px 18px; }
+  .nav a { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 6px; color: #475569; text-decoration: none; margin-bottom: 1px; }
+  .nav a.on { background: #eff6ff; color: #1d4ed8; box-shadow: inset 2px 0 0 #2563eb; }
+  .nav a small { margin-left: auto; font-size: 10px; color: #64748b; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 4px; }
+  main { padding: 18px 30px; overflow: hidden; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: #64748b; margin: 0 0 14px; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px 18px; margin-bottom: 12px; }
+  .card h2 { font-size: 11px; color: #64748b; letter-spacing: .06em; margin: 12px 0 2px; font-weight: 400; }
+  .item { display: grid; grid-template-columns: 30px 1fr auto; gap: 0 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid #f1f5f9; }
+  .item:last-child { border-bottom: 0; }
+  .item .ico { width: 30px; height: 30px; border-radius: 8px; background: #f1f5f9; display: grid; place-items: center; }
+  .item b { font-weight: 400; color: #0f172a; }
+  .item p { margin: 1px 0 0; color: #64748b; font-size: 12px; }
+  .switch { width: 34px; height: 20px; border-radius: 999px; background: #cbd5e1; position: relative; display: inline-block; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.3); }
+  .switch.on { background: #2563eb; }
+  .switch.on::after { left: 16px; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #92400e; margin-left: 6px; }
+  .tag.rec { background: #dcfce7; color: #166534; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .radios { display: flex; gap: 10px; padding: 6px 0 10px; }
+  .radios label { flex: 1; display: flex; align-items: center; gap: 7px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 9px; }
+  .radios label.on { border-color: #93c5fd; background: #eff6ff; }
+  input[type=radio], input[type=checkbox] { margin: 0; width: 15px; height: 15px; accent-color: #2563eb; }
+  .field { display: grid; grid-template-columns: 1fr 170px; align-items: center; gap: 8px; padding: 7px 0; }
+  select { font: inherit; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; }
+  .checks label { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+  .checks svg { margin-left: auto; }
+  .muted { color: #64748b; font-size: 12px; line-height: 18px; margin: 4px 0 10px; }
+  a.link { color: #2563eb; text-decoration: none; }
+  .actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+  .btn { padding: 8px 16px; border-radius: 7px; font: inherit; border: 1px solid #cbd5e1; background: #fff; color: #334155; }
+  .btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .saved { margin-right: auto; display: flex; align-items: center; gap: 6px; color: #16a34a; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="nav">
+    <div class="back"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>Back to workspace</div>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Profile</a>
+    <a class="on"><svg data-m="iconcolor" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Preferences</a>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg>Notifications</a>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Security</a>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>Privacy</a>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0zM12 17v4"/></svg>Integrations<small>API</small></a>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>Billing</a>
+    <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="7" cy="7" r="1"/></svg>Advanced</a>
+  </nav>
+  <main>
+    <h1 data-m="fsize">Preferences</h1>
+    <p class="lead">These settings apply to your account on every device you sign in from.</p>
+    <div class="card">
+      <h2 data-m="spacing">NOTIFICATIONS</h2>
+      <div class="item"><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M4 4h16v12H8l-4 4z"/></svg></span><div><b data-m="weight">Direct messages</b><p>A notification for every message sent to you.</p></div><span class="switch on" data-m="focus"></span></div>
+      <div class="item"><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><path d="M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-4 7.5"/></svg></span><div><b>Mentions</b><span class="tag rec" data-m="remove">Recommended</span><p>When someone mentions you or your team.</p></div><span class="switch on"></span></div>
+      <div class="item"><span class="ico"><svg data-m="icon" data-icon="M4 4h16v16H4z" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><div><b>Daily digest</b><p data-m="word" data-word="Sent at 8:00 every weekday.">Sent at 8:00 every morning.</p></div><span class="switch"></span></div>
+      <div class="item"><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></span><div><b>Incident alerts</b><span class="tag" data-m="noborder">Beta</span><p>Push and email when a monitor you follow goes down.</p></div><span class="switch on"></span></div>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h2>APPEARANCE</h2>
+        <div class="radios" data-m="order">
+          <label class="on"><input type="radio" name="theme" checked><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/></svg>Light</label>
+          <label><input type="radio" name="theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z"/></svg>Dark</label>
+        </div>
+        <div class="radios">
+          <label><input type="radio" name="theme"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Match system</label>
+        </div>
+        <div class="field"><span>Density</span><select data-m="border"><option>Comfortable</option></select></div>
+        <div class="field"><span>Start page</span><select><option>Last opened project</option></select></div>
+        <div class="field"><span>Language</span><select><option>English (US)</option></select></div>
+      </div>
+      <div class="card" data-m="shadow" style="box-shadow:0 3px 10px rgba(15,23,42,.08)">
+        <h2>EMAIL</h2>
+        <div class="checks" data-m="text">
+          <label><input type="checkbox" checked>Weekly summary<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M4 6h16v12H4zM4 7l8 6 8-6"/></svg></label>
+          <label><input type="checkbox" checked>Comments on my tasks<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M4 4h16v12H8l-4 4z"/></svg></label>
+          <label><input type="checkbox">Product news<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M4 11v2l12 5V6zM16 9a3 3 0 0 1 0 6"/></svg></label>
+          <label><input type="checkbox" checked>Billing receipts<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg></label>
+        </div>
+        <div class="field"><span>Quiet hours</span><select><option>22:00 – 07:00</option></select></div>
+        <div class="item"><span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M9 5v14M15 5v14"/></svg></span><div><b>Pause all email</b><p>Until you turn it back on.</p></div><span class="switch"></span></div>
+        <p class="muted" data-m="lh offset">We keep sent emails for <b data-m="char" data-char="80" style="font-weight:400">90</b> days. <a class="link" data-m="link underline">Learn about data retention</a>, or turn every email off from the link at the bottom of any message.</p>
+      </div>
+    </div>
+    <div class="actions">
+      <span class="saved"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5 9-10"/></svg>All changes saved</span>
+      <button class="btn">Reset to defaults</button>
+      <button class="btn primary" data-m="fill radius pad opacity">Save preferences</button>
+    </div>
+  </main>
+</div>
+</body>
+</html>

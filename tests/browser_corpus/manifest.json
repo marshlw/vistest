@@ -49,6 +49,10 @@
   "held_out": [
    "landing",
    "dark"
+  ],
+  "held-out-2": [
+   "dashboard",
+   "settings"
   ]
  },
  "labels": {
@@ -185,6 +189,48 @@
      "postscript": "DejaVuSans-Bold",
      "custom": true,
      "glyphs": 46
+    }
+   ],
+   "renderer": "base"
+  },
+  "dashboard": {
+   "title": "light sales dashboard: a sidebar of icons, number cards with sparklines, badges",
+   "split": "held-out-2",
+   "base": "frames/dashboard/base.png",
+   "sha256": "49bef2710dfaf91d50ff950bd1add8d8d9c63c518befe577fc2f7ec68e9ec7f1",
+   "fonts": [
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans",
+     "custom": true,
+     "glyphs": 832
+    },
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans-Bold",
+     "custom": true,
+     "glyphs": 146
+    }
+   ],
+   "renderer": "base"
+  },
+  "settings": {
+   "title": "preferences page: switches, checkboxes, radio buttons, selects, many icons",
+   "split": "held-out-2",
+   "base": "frames/settings/base.png",
+   "sha256": "c5e486f83a918a742b8e9bd4660904839d75e19799322f61ccb45b4a924dc869",
+   "fonts": [
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans",
+     "custom": true,
+     "glyphs": 892
+    },
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans-Bold",
+     "custom": true,
+     "glyphs": 11
     }
    ],
    "renderer": "base"
@@ -14331,6 +14377,2974 @@
     "expected": "base",
     "actual": "os_windows"
    }
+  },
+  {
+   "name": "dashboard/fill/de2",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de2",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side (≈1 is the just-noticeable difference). Kept in the corpus as DISPUTED: every tool's verdict is printed, none is counted as a false failure or a miss.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/fill--de2.png",
+   "sha256": "c13c786fa521ae38c9bbaf69080ee8123a57ce3b7eb494a63cbf5ed119688d21",
+   "changed": {
+    "pixels": 3469,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#6d28d9",
+    "after": "#742fe0",
+    "delta_e00": 2.03
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/fill/de4",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/fill--de4.png",
+   "sha256": "65f2507a2bc607d1949f28e59f063e24b1b5c654bdeadbb3a0b12955ba68bc0f",
+   "changed": {
+    "pixels": 3475,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#6d28d9",
+    "after": "#7b35e7",
+    "delta_e00": 4.03
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/fill/de8",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/fill--de8.png",
+   "sha256": "5f0aa97405d7ea3596318289ab842cb2f594f5279a91b02ac7759ac3f646a6cb",
+   "changed": {
+    "pixels": 3481,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#6d28d9",
+    "after": "#8841f3",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/fill/de15",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/fill--de15.png",
+   "sha256": "e95a105193564bd433e1b59e57e837d5fe9cb2c765073352b5b8be14d61887dd",
+   "changed": {
+    "pixels": 3488,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#6d28d9",
+    "after": "#9f56ff",
+    "delta_e00": 15.06
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/text_color/de2",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de2",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side (≈1 is the just-noticeable difference). Kept in the corpus as DISPUTED: every tool's verdict is printed, none is counted as a false failure or a miss.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/text_color--de2.png",
+   "sha256": "38a7468a801e1be9e50ea5db108683b2e8c68d3196d4007a1aa69baf7acc68ae",
+   "changed": {
+    "pixels": 2887,
+    "box": [
+     907,
+     254,
+     334,
+     127
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1f2937",
+    "after": "#252f3e",
+    "delta_e00": 1.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/text_color/de4",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/text_color--de4.png",
+   "sha256": "5cbd58afee947ab82902af0dbc45cddaec4d0b3d42880c7b4f9abc303af2b064",
+   "changed": {
+    "pixels": 3100,
+    "box": [
+     906,
+     254,
+     335,
+     127
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1f2937",
+    "after": "#2c3544",
+    "delta_e00": 3.93
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/text_color/de8",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/text_color--de8.png",
+   "sha256": "890b4d11d57a11dfd8f0898942045b71aa9964a9df8cd4551863583d495dd9ca",
+   "changed": {
+    "pixels": 3132,
+    "box": [
+     906,
+     254,
+     335,
+     127
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1f2937",
+    "after": "#384251",
+    "delta_e00": 8.05
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/text_color/de15",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/text_color--de15.png",
+   "sha256": "cf60f9c70948ae5e91c734551eeb801b9fd1e386b36ca083cbffd3cf6e8e72d6",
+   "changed": {
+    "pixels": 3272,
+    "box": [
+     906,
+     254,
+     336,
+     127
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1f2937",
+    "after": "#4d5666",
+    "delta_e00": 14.89
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/link_color/de2",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de2",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side (≈1 is the just-noticeable difference). Kept in the corpus as DISPUTED: every tool's verdict is printed, none is counted as a false failure or a miss.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/link_color--de2.png",
+   "sha256": "2133364667ca9da6d3c7fc5e6e0ea12bd255fae11717c49ef10bc1c6455556ed",
+   "changed": {
+    "pixels": 396,
+    "box": [
+     1171,
+     233,
+     70,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#6d28d9",
+    "after": "#742fe0",
+    "delta_e00": 2.03
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/link_color/de4",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/link_color--de4.png",
+   "sha256": "70e1742315867df32e32f0e34cf10b08e5baa1a04742c733f1f13f73fbfcc628",
+   "changed": {
+    "pixels": 404,
+    "box": [
+     1171,
+     233,
+     70,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#6d28d9",
+    "after": "#7b35e7",
+    "delta_e00": 4.03
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/link_color/de8",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/link_color--de8.png",
+   "sha256": "3e0d2d5cfb375ec03b2dd8b550e4f2470e322f6053ff39e10f7dd90db9d7d015",
+   "changed": {
+    "pixels": 422,
+    "box": [
+     1171,
+     233,
+     71,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#6d28d9",
+    "after": "#8841f3",
+    "delta_e00": 8.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/link_color/de15",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/link_color--de15.png",
+   "sha256": "6839f3d92d40605e70f237b6a3791ffeffa89d633018dece42b845d277c26dc2",
+   "changed": {
+    "pixels": 422,
+    "box": [
+     1171,
+     233,
+     71,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#6d28d9",
+    "after": "#9f56ff",
+    "delta_e00": 15.06
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/icon_color/de4",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "icon_color",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/icon_color--de4.png",
+   "sha256": "d5fb8140337b146a794972c493ac643033b5e30ece1ac8fc1639115d1d4996b0",
+   "changed": {
+    "pixels": 128,
+    "box": [
+     22,
+     73,
+     13,
+     13
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#5b21b6",
+    "after": "#6a2ec4",
+    "delta_e00": 3.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/icon_color/de8",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "icon_color",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/icon_color--de8.png",
+   "sha256": "1901c47194bcb4032900fba478e7d912279c6c506cf16f4acad6cfd019460183",
+   "changed": {
+    "pixels": 128,
+    "box": [
+     22,
+     73,
+     13,
+     13
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#5b21b6",
+    "after": "#773bd1",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/icon_color/de15",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "icon_color",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/icon_color--de15.png",
+   "sha256": "fcbb65775fce32eafa0e322fb1f1dcd1e4b52df03a3a9c1f3cb9e505e6915806",
+   "changed": {
+    "pixels": 128,
+    "box": [
+     22,
+     73,
+     13,
+     13
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#5b21b6",
+    "after": "#8d4fe7",
+    "delta_e00": 15.07
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/border_added/light",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "border_added",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "an outline that was not there is drawn around the element",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/border_added--light.png",
+   "sha256": "e7865fadc94498dcfe0051932586200a28570e65995fdf3a7387f22f5cce0fa4",
+   "changed": {
+    "pixels": 1203,
+    "box": [
+     428,
+     61,
+     360,
+     31
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/border_added/strong",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "border_added",
+   "magnitude": "strong",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "an outline that was not there is drawn around the element",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/border_added--strong.png",
+   "sha256": "b683d2ce0d2756f13c388f63c071a5307896022a24b8515b628a00c7d3ddde80",
+   "changed": {
+    "pixels": 1204,
+    "box": [
+     428,
+     61,
+     360,
+     31
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/border_removed/gone",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "border_removed",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the outline of the element disappears",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/border_removed--gone.png",
+   "sha256": "3400f67e2d88f31c7dd4285b9afa97f642589458b02f2a074fa5029debce7a05",
+   "changed": {
+    "pixels": 710,
+    "box": [
+     248,
+     107,
+     243,
+     98
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/underline/on",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "underline",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a line appears under the text",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/underline--on.png",
+   "sha256": "d055555e09581be42584d234f80af60524df2a6d6f1936cfe2f37ae9a5f201e2",
+   "changed": {
+    "pixels": 66,
+    "box": [
+     1172,
+     243,
+     69,
+     1
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/border_radius/plus2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "border_radius",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corners change shape",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/border_radius--plus2px.png",
+   "sha256": "6789b7580990f06fb6c7ccaafc518fcc1e4e1d9498986c19f0b6b52689cf7bf9",
+   "changed": {
+    "pixels": 106,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/border_radius/plus4px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "border_radius",
+   "magnitude": "plus4px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corners change shape",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/border_radius--plus4px.png",
+   "sha256": "d52a8122fdfa9c4c7abf80f1c76100e4d570a44f4470617d5e9f901617231934",
+   "changed": {
+    "pixels": 153,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/border_radius/plus8px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "border_radius",
+   "magnitude": "plus8px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corners change shape",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/border_radius--plus8px.png",
+   "sha256": "13cc7eebbd8d098bff277656d5d6b6ea51ed4e415490399450b7411c64da3e5d",
+   "changed": {
+    "pixels": 282,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/padding/minus2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "minus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button changes size and its text moves",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/padding--minus2px.png",
+   "sha256": "63e9d4698995d371ac75c9089776616984267dfa84cdef13c4ebb07b1cccd103",
+   "changed": {
+    "pixels": 3885,
+    "box": [
+     643,
+     60,
+     613,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/padding/minus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "minus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/padding--minus1px.png",
+   "sha256": "a610f8414d3c123c146a86a9af12c3cbdca3c130e5221c94b04566eab02cfa08",
+   "changed": {
+    "pixels": 3063,
+    "box": [
+     643,
+     60,
+     613,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/padding/plus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/padding--plus1px.png",
+   "sha256": "90b6d35ac3bd20af9bbb5e24fcdda0412183c3f39c48c8e866bdaf319932c6b4",
+   "changed": {
+    "pixels": 104266,
+    "box": [
+     237,
+     60,
+     1019,
+     610
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/padding/plus2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button changes size and its text moves",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/padding--plus2px.png",
+   "sha256": "b3f595065f60d08af8d6dac78d21e316f0289a9f73dc961f9081ebc745761b6d",
+   "changed": {
+    "pixels": 136056,
+    "box": [
+     237,
+     60,
+     1019,
+     612
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/offset/plus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "offset",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/offset--plus1px.png",
+   "sha256": "d7d65a64195a51cd9beb054c4ced925d340bfb22c12f574d5bdeaa484db91cbd",
+   "changed": {
+    "pixels": 18551,
+    "box": [
+     248,
+     527,
+     1008,
+     142
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/offset/plus2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "offset",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the block and everything under it move",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/offset--plus2px.png",
+   "sha256": "6d1d29305e891558b22ae302b18fafc6360ee02621f74383f44b187213001fb3",
+   "changed": {
+    "pixels": 21621,
+    "box": [
+     248,
+     527,
+     1008,
+     143
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/offset/plus4px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "offset",
+   "magnitude": "plus4px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the block and everything under it move",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/offset--plus4px.png",
+   "sha256": "b6e309d06c8de8bd500541eadaa4b7536eebb7b593e688ff31ace2e4eab2c6e9",
+   "changed": {
+    "pixels": 26635,
+    "box": [
+     248,
+     527,
+     1008,
+     145
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/font_size/minus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "font_size",
+   "magnitude": "minus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the heading is drawn at another size",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/font_size--minus1px.png",
+   "sha256": "5bc4b7dea275a9ace79bf77ae6d72fcd79b9d797ce0fafd3e021a712a16767ef",
+   "changed": {
+    "pixels": 3504,
+    "box": [
+     248,
+     61,
+     539,
+     31
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/font_size/plus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "font_size",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the heading is drawn at another size",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/font_size--plus1px.png",
+   "sha256": "ae2d8c2fbf48af798325b7d948d3bd7a079e9fed9c25b820d3560f536844f0a2",
+   "changed": {
+    "pixels": 3286,
+    "box": [
+     248,
+     61,
+     542,
+     31
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/font_weight/bold",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "font_weight",
+   "magnitude": "bold",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the glyphs are drawn heavier",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/font_weight--bold.png",
+   "sha256": "1a708e6549edde667f66154cd2c9fd5ad6aaa13c40b98dade3131b0fb4f27b96",
+   "changed": {
+    "pixels": 538,
+    "box": [
+     47,
+     169,
+     79,
+     9
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/letter_spacing/plus0.2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "letter_spacing",
+   "magnitude": "plus0.2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: +0.2px per letter is invisible in one glyph and adds up to several pixels over a line — the line got longer. SIGNAL.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/letter_spacing--plus0.2px.png",
+   "sha256": "7820dd6b4cd2cfd3df9db80e3b1e8354705adb05b60e2b056ef92f5eb8d7416a",
+   "changed": {
+    "pixels": 291,
+    "box": [
+     68,
+     294,
+     45,
+     9
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/letter_spacing/plus0.5px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "letter_spacing",
+   "magnitude": "plus0.5px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the text gets wider",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/letter_spacing--plus0.5px.png",
+   "sha256": "179d6dd63a1ba0eb2b423277977cbbda646db6ca01e455286efb869647def14e",
+   "changed": {
+    "pixels": 410,
+    "box": [
+     57,
+     293,
+     58,
+     10
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/letter_spacing/plus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "letter_spacing",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the text gets wider",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/letter_spacing--plus1px.png",
+   "sha256": "a0074c3976a42be0af384fabf792d071caa5bc55d60fe60fee615a2626846db6",
+   "changed": {
+    "pixels": 423,
+    "box": [
+     57,
+     293,
+     62,
+     10
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/line_height/plus1px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "line_height",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/line_height--plus1px.png",
+   "sha256": "709e04e720d524af59ea1f2d30b307b1d831ce33f2801c08a18c77a96aeee077",
+   "changed": {
+    "pixels": 40863,
+    "box": [
+     237,
+     455,
+     1019,
+     215
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/line_height/plus2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "line_height",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "every line after the first moves",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/line_height--plus2px.png",
+   "sha256": "4c2b019a2ed8814e0a2560416a91618af15101570d10e814349a9444d951b92b",
+   "changed": {
+    "pixels": 49132,
+    "box": [
+     237,
+     455,
+     1019,
+     217
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/line_height/plus4px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "line_height",
+   "magnitude": "plus4px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "every line after the first moves",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/line_height--plus4px.png",
+   "sha256": "05e1a8c27e9cdda556a3ad6a57b6a4e7c6722146714a016aa0d3c77897f0040e",
+   "changed": {
+    "pixels": 64286,
+    "box": [
+     237,
+     455,
+     1019,
+     221
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/icon_swap/swapped",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "icon_swap",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a different picture in the same place",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/icon_swap--swapped.png",
+   "sha256": "b7d59eaa90248fdf7ed6ff434d29832b1b06ef033f65a2c9328eed8447ce9f55",
+   "changed": {
+    "pixels": 100,
+    "box": [
+     824,
+     232,
+     12,
+     12
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/one_char/one",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "one_char",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the number is different",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/one_char--one.png",
+   "sha256": "0291270a9acbf19ac7c841c40e7095376239d6d369e749478ca85a6dd3d5956c",
+   "changed": {
+    "pixels": 146,
+    "box": [
+     599,
+     140,
+     14,
+     15
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/word_swap/one",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "word_swap",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the text is different",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/word_swap--one.png",
+   "sha256": "4c949deeb7c7e863b0c7f5f8c18c798d31e6de572078e17fe4ad420be7622596",
+   "changed": {
+    "pixels": 547,
+    "box": [
+     913,
+     232,
+     71,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/element_removed/gone",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "element_removed",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the element is gone and its neighbours close the gap",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/element_removed--gone.png",
+   "sha256": "d0b8f75e334967a4577ee6094863764fdd296fc78c121947e12441ccb7d65c17",
+   "changed": {
+    "pixels": 49,
+    "box": [
+     1198,
+     20,
+     7,
+     7
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/order_swap/swapped",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "order_swap",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the two elements are in each other's place",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/order_swap--swapped.png",
+   "sha256": "7c515b7e7e2a43bf282e16a94fd23f7c09fd2d62b97ce7f7e8948be62c513b61",
+   "changed": {
+    "pixels": 3210,
+    "box": [
+     646,
+     64,
+     138,
+     25
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/opacity/0.98",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.98",
+   "label": "NOISE",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: opacity 0.98 on these backgrounds stays under ΔE00 1 — nobody sees it, so failing on it is a false failure. NOISE, although the DOM changed.",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/opacity--0.98.png",
+   "sha256": "5cd3bc44731e8b4fb4e8e2dbaf987d357a8a0465b8a09e16f0127f2a2dc9e157",
+   "changed": {
+    "pixels": 3714,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/opacity/0.9",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.9",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button is visibly paler",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/opacity--0.9.png",
+   "sha256": "8d8b03992bc4edd36c48dd97a982a2f15f07d46af4f8899b4e8e07261e26b4dc",
+   "changed": {
+    "pixels": 3738,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/opacity/0.8",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button is visibly paler",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/opacity--0.8.png",
+   "sha256": "56d40253ccf5ad18629f5727ac8ec1f94ede515df7162e4dab076874b0380e2a",
+   "changed": {
+    "pixels": 3751,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/opacity/0.6",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.6",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button is visibly paler",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/opacity--0.6.png",
+   "sha256": "f52898deafa7ed9598537429f8d98e1212476a8fc1e6267dedf9b1f4b82be8a9",
+   "changed": {
+    "pixels": 3755,
+    "box": [
+     1141,
+     60,
+     115,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/shadow/removed",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "shadow",
+   "magnitude": "removed",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the card's edge is drawn differently",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/shadow--removed.png",
+   "sha256": "e9b9eee810f1b575963b9bbc26b5643f20ea0f92fec5b90452a48e10c618c6ff",
+   "changed": {
+    "pixels": 19615,
+    "box": [
+     237,
+     210,
+     627,
+     305
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/shadow/heavier",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "shadow",
+   "magnitude": "heavier",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the card's edge is drawn differently",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/shadow--heavier.png",
+   "sha256": "209a3126cf1ba50c95563e72318db690bc26be3369955932acbd7718a7e3af6d",
+   "changed": {
+    "pixels": 44360,
+    "box": [
+     224,
+     198,
+     655,
+     337
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/focus_ring/2px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "focus_ring",
+   "magnitude": "2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a ring is drawn around the control",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/focus_ring--2px.png",
+   "sha256": "fbe97a79cabf9a32b431245296619ef52c99da144db8a5268055823d9a837946",
+   "changed": {
+    "pixels": 548,
+    "box": [
+     1045,
+     56,
+     90,
+     41
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/fill/de2",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de2",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side (≈1 is the just-noticeable difference). Kept in the corpus as DISPUTED: every tool's verdict is printed, none is counted as a false failure or a miss.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/fill--de2.png",
+   "sha256": "253a1ac75ef5cdffbdbed31b654242c3061566348930142236d7ce6c935fd017",
+   "changed": {
+    "pixels": 4449,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#2563eb",
+    "after": "#3068f1",
+    "delta_e00": 2.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/fill/de4",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/fill--de4.png",
+   "sha256": "d14eb7f9d0c7cd0c7ae1feda83b2f4c528d7a68cc0e9f047492984e71f0eb7e8",
+   "changed": {
+    "pixels": 4458,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#2563eb",
+    "after": "#3a6df6",
+    "delta_e00": 3.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/fill/de8",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/fill--de8.png",
+   "sha256": "63f2bed6a19167ea35e80141e99e3046f556d00e26bf98693832a5c1e41e4d13",
+   "changed": {
+    "pixels": 4463,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#2563eb",
+    "after": "#4d77ff",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/fill/de15",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "fill",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/fill--de15.png",
+   "sha256": "277cf5563d7ec227cf6df82e13373bd3094efd98abe3a8ca63d835c4e6433885",
+   "changed": {
+    "pixels": 4465,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "detail": {
+    "property": "background-color",
+    "before": "#2563eb",
+    "after": "#6c8dff",
+    "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/text_color/de2",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de2",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side (≈1 is the just-noticeable difference). Kept in the corpus as DISPUTED: every tool's verdict is printed, none is counted as a false failure or a miss.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/text_color--de2.png",
+   "sha256": "c11b8da6257e195ad02094111bbb2d7c155b0ef4c37a1907d34933c8cd25fce3",
+   "changed": {
+    "pixels": 2731,
+    "box": [
+     807,
+     357,
+     156,
+     89
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1e293b",
+    "after": "#242f42",
+    "delta_e00": 1.94
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/text_color/de4",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/text_color--de4.png",
+   "sha256": "14f348b868be6cae225b3bfa4e3532d11d7eb3f25a3725251487e7e26a4af32a",
+   "changed": {
+    "pixels": 2731,
+    "box": [
+     807,
+     357,
+     156,
+     89
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1e293b",
+    "after": "#2b3548",
+    "delta_e00": 3.9
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/text_color/de8",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/text_color--de8.png",
+   "sha256": "3a0618feb0e3031afcf843268351e9d19f052e626ac6eeeb024b06043c42b488",
+   "changed": {
+    "pixels": 2731,
+    "box": [
+     807,
+     357,
+     156,
+     89
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1e293b",
+    "after": "#374255",
+    "delta_e00": 8.04
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/text_color/de15",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "text_color",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/text_color--de15.png",
+   "sha256": "7ffc5f441961908dbff4270268e1277b378ad44c2e1f2c91676155989974d44e",
+   "changed": {
+    "pixels": 2734,
+    "box": [
+     807,
+     357,
+     156,
+     89
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1e293b",
+    "after": "#4c566b",
+    "delta_e00": 14.91
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/link_color/de2",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de2",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side (≈1 is the just-noticeable difference). Kept in the corpus as DISPUTED: every tool's verdict is printed, none is counted as a false failure or a miss.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/link_color--de2.png",
+   "sha256": "1545a746432e7c9d004d5619307fc0928b084315215d20ef7beb04d09099dbce",
+   "changed": {
+    "pixels": 913,
+    "box": [
+     988,
+     552,
+     163,
+     10
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#2563eb",
+    "after": "#3068f1",
+    "delta_e00": 2.0
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/link_color/de4",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/link_color--de4.png",
+   "sha256": "7dad842fbd27f8486867757aa1ccee4d81c762e8d38b79bdbd9fba8933820444",
+   "changed": {
+    "pixels": 923,
+    "box": [
+     988,
+     552,
+     163,
+     10
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#2563eb",
+    "after": "#3a6df6",
+    "delta_e00": 3.98
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/link_color/de8",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/link_color--de8.png",
+   "sha256": "ac32f61ec9e94a43be75b8a2a75f387a52abc9b4e763a15cd137de3679985e09",
+   "changed": {
+    "pixels": 950,
+    "box": [
+     988,
+     552,
+     163,
+     10
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#2563eb",
+    "after": "#4d77ff",
+    "delta_e00": 7.96
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/link_color/de15",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "link_color",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/link_color--de15.png",
+   "sha256": "b5031bc153598be50856437017c025a2ed3013dade1735e90b3e72d0c585e4e8",
+   "changed": {
+    "pixels": 960,
+    "box": [
+     988,
+     552,
+     163,
+     10
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#2563eb",
+    "after": "#6c8dff",
+    "delta_e00": 14.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/icon_color/de4",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "icon_color",
+   "magnitude": "de4",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/icon_color--de4.png",
+   "sha256": "0d3551e2281709fae4efe8e9b4c4a98972624e604504362e28109a51ea2eb998",
+   "changed": {
+    "pixels": 96,
+    "box": [
+     25,
+     93,
+     12,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1d4ed8",
+    "after": "#3658e5",
+    "delta_e00": 3.92
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/icon_color/de8",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "icon_color",
+   "magnitude": "de8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/icon_color--de8.png",
+   "sha256": "2bb0c8ec46e4eebba2a9888d1abb7b379fab484a88671cb9fffdd904db78fc49",
+   "changed": {
+    "pixels": 96,
+    "box": [
+     25,
+     93,
+     12,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1d4ed8",
+    "after": "#4763f1",
+    "delta_e00": 8.09
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/icon_color/de15",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "icon_color",
+   "magnitude": "de15",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour in the stylesheet changed; at ΔE00 ≥ 4 the change is visible side by side, so a tool that stays green missed it",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/icon_color--de15.png",
+   "sha256": "9ff7c03d278f8ae368a314d266c6ee172fa70c15829376c57494164ee6431a9c",
+   "changed": {
+    "pixels": 96,
+    "box": [
+     25,
+     93,
+     12,
+     12
+    ]
+   },
+   "detail": {
+    "property": "color",
+    "before": "#1d4ed8",
+    "after": "#6274ff",
+    "delta_e00": 14.91
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/border_added/light",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "border_added",
+   "magnitude": "light",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "an outline that was not there is drawn around the element",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/border_added--light.png",
+   "sha256": "994a61536289f43c6255cf9f1b45eacaf7987e3bb0ef42272dcc4087cfe5f622",
+   "changed": {
+    "pixels": 268,
+    "box": [
+     428,
+     264,
+     37,
+     15
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/border_added/strong",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "border_added",
+   "magnitude": "strong",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "an outline that was not there is drawn around the element",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/border_added--strong.png",
+   "sha256": "ef0f31d30d7480cd02dfe54bb8c8549bc12ddace1a36b975f865a6a36de67e2b",
+   "changed": {
+    "pixels": 268,
+    "box": [
+     428,
+     264,
+     37,
+     15
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/border_removed/gone",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "border_removed",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the outline of the element disappears",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/border_removed--gone.png",
+   "sha256": "1681523fc930728ccf83143a292a52e806d92fbb7514e61c55dd830e78b0fb7a",
+   "changed": {
+    "pixels": 414,
+    "box": [
+     565,
+     456,
+     170,
+     31
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/underline/on",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "underline",
+   "magnitude": "on",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a line appears under the text",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/underline--on.png",
+   "sha256": "207cb0d10ef679ec64145513102496044de3bcf2403a7e3182278c613ba5bebe",
+   "changed": {
+    "pixels": 163,
+    "box": [
+     988,
+     563,
+     163,
+     1
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/border_radius/plus2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "border_radius",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corners change shape",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/border_radius--plus2px.png",
+   "sha256": "069d9508d09e61eb0503ef10aa00876cb7b4b2315bbd087946c965dbbf5e56b2",
+   "changed": {
+    "pixels": 94,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/border_radius/plus4px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "border_radius",
+   "magnitude": "plus4px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corners change shape",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/border_radius--plus4px.png",
+   "sha256": "939dcf9acc56af5dccd021f61b304b2550610211201b771ea6ed1f2b892bdb4e",
+   "changed": {
+    "pixels": 142,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/border_radius/plus8px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "border_radius",
+   "magnitude": "plus8px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corners change shape",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/border_radius--plus8px.png",
+   "sha256": "d2385294706b0ede7c4f5f5c2e560fa4c933c780b129d50c018191f0bb06c58f",
+   "changed": {
+    "pixels": 254,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/padding/minus2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "minus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button changes size and its text moves",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/padding--minus2px.png",
+   "sha256": "77295b3ee0952185a06cd0372f28f2878a2b7d56f1b2956da73c5d944feb1462",
+   "changed": {
+    "pixels": 2826,
+    "box": [
+     949,
+     616,
+     301,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/padding/minus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "minus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/padding--minus1px.png",
+   "sha256": "4b3fa94cf32e22db7c084c4b725ecc67da1c5c9cb06ea1e15bc7bfe54135b9f6",
+   "changed": {
+    "pixels": 2224,
+    "box": [
+     949,
+     616,
+     301,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/padding/plus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/padding--plus1px.png",
+   "sha256": "5c5d203aafabc40452a2cb03bad9d7ba9e48748e97fe0b00411b3b9704f3b334",
+   "changed": {
+    "pixels": 3755,
+    "box": [
+     272,
+     616,
+     978,
+     35
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/padding/plus2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "padding",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button changes size and its text moves",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/padding--plus2px.png",
+   "sha256": "35edcf0b186e7871a61344c4cb2b4c629acc6ae9f3d3e962935d5b5f14d34b34",
+   "changed": {
+    "pixels": 4847,
+    "box": [
+     272,
+     616,
+     978,
+     37
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/offset/plus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "offset",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/offset--plus1px.png",
+   "sha256": "8ab12affebe0ad09ce37365923b2aa9816f725185e6fd0e0f5b3811292784255",
+   "changed": {
+    "pixels": 14476,
+    "box": [
+     270,
+     552,
+     988,
+     98
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/offset/plus2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "offset",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the block and everything under it move",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/offset--plus2px.png",
+   "sha256": "1d720c5f89c7fc962ea485623ec03ef563c2897c9835a56f45db4fee54fea81f",
+   "changed": {
+    "pixels": 17759,
+    "box": [
+     270,
+     552,
+     988,
+     99
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/offset/plus4px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "offset",
+   "magnitude": "plus4px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the block and everything under it move",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/offset--plus4px.png",
+   "sha256": "63f74dc42f989ba2f0c12695788cc33a9b8019b11cf9428fdeb194f9d9e6e664",
+   "changed": {
+    "pixels": 22901,
+    "box": [
+     270,
+     552,
+     988,
+     101
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/font_size/minus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "font_size",
+   "magnitude": "minus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the heading is drawn at another size",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/font_size--minus1px.png",
+   "sha256": "32340ce1b0605158fe76797ae096e26f63b1fe6364c302dcfed9b570eda70092",
+   "changed": {
+    "pixels": 75090,
+    "box": [
+     269,
+     22,
+     989,
+     627
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/font_size/plus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "font_size",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the heading is drawn at another size",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/font_size--plus1px.png",
+   "sha256": "5f4dbdb86540798fb5593296f9864b70b0b2f220d8fb1ce9b5d63c987ac349b4",
+   "changed": {
+    "pixels": 974,
+    "box": [
+     271,
+     21,
+     139,
+     16
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/font_weight/bold",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "font_weight",
+   "magnitude": "bold",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the glyphs are drawn heavier",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/font_weight--bold.png",
+   "sha256": "3aba6269a7f3eff4114c85aaa2d26fdaf58fec682d80a4bb7d9cad94e9a1c620",
+   "changed": {
+    "pixels": 890,
+    "box": [
+     329,
+     118,
+     123,
+     13
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/letter_spacing/plus0.2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "letter_spacing",
+   "magnitude": "plus0.2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: +0.2px per letter is invisible in one glyph and adds up to several pixels over a line — the line got longer. SIGNAL.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/letter_spacing--plus0.2px.png",
+   "sha256": "0b126d9ebadc78f47e94217635962c2b1e0526a58eb19094d0ce34e0a1e95b63",
+   "changed": {
+    "pixels": 479,
+    "box": [
+     306,
+     94,
+     78,
+     8
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/letter_spacing/plus0.5px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "letter_spacing",
+   "magnitude": "plus0.5px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the text gets wider",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/letter_spacing--plus0.5px.png",
+   "sha256": "0b9bae95149bfd568a03a927b5f0517130ab0c4aaf8d8cdea94f9ea26cb01060",
+   "changed": {
+    "pixels": 561,
+    "box": [
+     306,
+     94,
+     82,
+     8
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/letter_spacing/plus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "letter_spacing",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the text gets wider",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/letter_spacing--plus1px.png",
+   "sha256": "c39396cee3794db6434b45f6313a0b67068d5a0a4a2131445a2f7577b621e710",
+   "changed": {
+    "pixels": 675,
+    "box": [
+     297,
+     94,
+     97,
+     8
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/line_height/plus1px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "line_height",
+   "magnitude": "plus1px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: a layout that moved by one pixel is a layout that changed. SIGNAL, like the larger steps.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/line_height--plus1px.png",
+   "sha256": "b6d678436548a2cc7270c968c99adafd2971c240649610132c3a477ebbc81af2",
+   "changed": {
+    "pixels": 14563,
+    "box": [
+     270,
+     570,
+     988,
+     81
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/line_height/plus2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "line_height",
+   "magnitude": "plus2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "every line after the first moves",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/line_height--plus2px.png",
+   "sha256": "7be865f02e4fbf7f5e72d06b019179402c8306018f5e437f2559d6b47f8d487b",
+   "changed": {
+    "pixels": 21415,
+    "box": [
+     270,
+     552,
+     988,
+     101
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/line_height/plus4px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "line_height",
+   "magnitude": "plus4px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "every line after the first moves",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/line_height--plus4px.png",
+   "sha256": "c6f556c3a99363f3b2a9df9cd0efa6557293c6eb854d5914f75e2671d1a545aa",
+   "changed": {
+    "pixels": 29093,
+    "box": [
+     270,
+     552,
+     988,
+     105
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/icon_swap/swapped",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "icon_swap",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a different picture in the same place",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/icon_swap--swapped.png",
+   "sha256": "13278eabec968e577c143b4c2f6fd830b6b4d07933e758c55ded61f45cbd04e0",
+   "changed": {
+    "pixels": 128,
+    "box": [
+     297,
+     222,
+     14,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/one_char/one",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "one_char",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the number is different",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/one_char--one.png",
+   "sha256": "c2c7b41acab93abf0defb4cc271ba480b075a7fd71786fb9c1558b9bafa20a88",
+   "changed": {
+    "pixels": 66,
+    "box": [
+     932,
+     553,
+     8,
+     9
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/word_swap/one",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "word_swap",
+   "magnitude": "one",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the text is different",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/word_swap--one.png",
+   "sha256": "78fcb8bb362fdcb42652e0ea6db33a168fb613f2cbad5ef42f4dd221a3bf4b08",
+   "changed": {
+    "pixels": 396,
+    "box": [
+     445,
+     231,
+     55,
+     13
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/element_removed/gone",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "element_removed",
+   "magnitude": "gone",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the element is gone and its neighbours close the gap",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/element_removed--gone.png",
+   "sha256": "05cf0077ac990b03b140ba5a97d1bf7f5e00ee3f37017632f2a232beb372679f",
+   "changed": {
+    "pixels": 1127,
+    "box": [
+     394,
+     167,
+     87,
+     13
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/order_swap/swapped",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "order_swap",
+   "magnitude": "swapped",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the two elements are in each other's place",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/order_swap--swapped.png",
+   "sha256": "e1c24c8ff26b3e197d6107c6e969900c5ae848143adce7955380d862d1445d47",
+   "changed": {
+    "pixels": 14230,
+    "box": [
+     289,
+     357,
+     446,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/opacity/0.98",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.98",
+   "label": "NOISE",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: opacity 0.98 on these backgrounds stays under ΔE00 1 — nobody sees it, so failing on it is a false failure. NOISE, although the DOM changed.",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/opacity--0.98.png",
+   "sha256": "36a74597785b0d067efd3662c29f8bd3f8b6ef09ff9b9abbe29ab6bd6e2122e1",
+   "changed": {
+    "pixels": 4726,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/opacity/0.9",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.9",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button is visibly paler",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/opacity--0.9.png",
+   "sha256": "5405ae0f68f31ff851889dd8558d7d9b5f46f1c15c140f086d4e427abcdbe8d9",
+   "changed": {
+    "pixels": 4815,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/opacity/0.8",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.8",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button is visibly paler",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/opacity--0.8.png",
+   "sha256": "cabfa0535756d5666a05ba5c48c3c21eb8ddf9c5e7397308442c9d84fd73c959",
+   "changed": {
+    "pixels": 4817,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/opacity/0.6",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "opacity",
+   "magnitude": "0.6",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the button is visibly paler",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/opacity--0.6.png",
+   "sha256": "0a8a23e98461f70632f9204b2a0b9ef4b042a34c075e8ce7d48d53d5059b80ed",
+   "changed": {
+    "pixels": 4819,
+    "box": [
+     1103,
+     616,
+     147,
+     33
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/shadow/removed",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "shadow",
+   "magnitude": "removed",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the card's edge is drawn differently",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/shadow--removed.png",
+   "sha256": "ee8dc54581695b4efdf9e1c21c9920d32c7565c2c8d875332336f4c683839db2",
+   "changed": {
+    "pixels": 12204,
+    "box": [
+     758,
+     314,
+     500,
+     297
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/shadow/heavier",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "shadow",
+   "magnitude": "heavier",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the card's edge is drawn differently",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/shadow--heavier.png",
+   "sha256": "d7e43c68e694f33d2d971ccb72d3f22ff474b5cfe4932e26cf2f8c5db59e22bb",
+   "changed": {
+    "pixels": 37413,
+    "box": [
+     739,
+     300,
+     538,
+     335
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "settings/focus_ring/2px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "focus_ring",
+   "magnitude": "2px",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a ring is drawn around the control",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/focus_ring--2px.png",
+   "sha256": "17742f399f880d2bea3d40a34c4d282b1743f9c279d979fdac4a84ada2f67a0b",
+   "changed": {
+    "pixels": 307,
+    "box": [
+     1193,
+     117,
+     42,
+     28
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "dashboard/render/geometric_precision",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "render:geometric_precision",
+   "magnitude": "geometric_precision",
+   "label": "DISPUTED",
+   "kind": "render",
+   "why": "decided by the maintainer on 2026-09-29: `text-rendering: geometricPrecision` is the page's stylesheet, not the renderer — the canary proved it (drawn without the page's CSS, it is the baseline's to the pixel), and in real life text-rendering changes only when somebody edits the styles. A change of the page's typography that stays within a pixel: DISPUTED, printed, never counted. It was NOISE until step 2b of E1; figures of its group moved with the label, not with the engine",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/noise--geometric_precision.png",
+   "sha256": "161b1ed75e2100d5dcf8fbabc0408639c6daca830ac1608a4814e9610e368ac9",
+   "changed": {
+    "pixels": 70007,
+    "box": [
+     20,
+     24,
+     1236,
+     645
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
+   }
+  },
+  {
+   "name": "settings/render/geometric_precision",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "render:geometric_precision",
+   "magnitude": "geometric_precision",
+   "label": "DISPUTED",
+   "kind": "render",
+   "why": "decided by the maintainer on 2026-09-29: `text-rendering: geometricPrecision` is the page's stylesheet, not the renderer — the canary proved it (drawn without the page's CSS, it is the baseline's to the pixel), and in real life text-rendering changes only when somebody edits the styles. A change of the page's typography that stays within a pixel: DISPUTED, printed, never counted. It was NOISE until step 2b of E1; figures of its group moved with the label, not with the engine",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/noise--geometric_precision.png",
+   "sha256": "9478879b32ba1ff6e0d1d2c0262bad643d9056600e7acb4404466ebf8d248561",
+   "changed": {
+    "pixels": 39211,
+    "box": [
+     42,
+     21,
+     1192,
+     619
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "geometric_precision"
+   }
+  },
+  {
+   "name": "dashboard/render/shift_0.25px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "render:shift_0.25px",
+   "magnitude": "shift_0.25px",
+   "label": "NOISE",
+   "kind": "render",
+   "why": "the DOM is the template's, untouched; only the way Chromium was asked to render it differs — nobody changed the page (the whole page moved by transform: translate(0.25px, 0.25px))",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/noise--shift_0.25px.png",
+   "sha256": "4c476e5bc11446502c0557e50336a2319b51417c37d0a363249d0b8006a8a91a",
+   "changed": {
+    "pixels": 63270,
+    "box": [
+     0,
+     0,
+     1257,
+     800
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
+   }
+  },
+  {
+   "name": "settings/render/shift_0.25px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "render:shift_0.25px",
+   "magnitude": "shift_0.25px",
+   "label": "NOISE",
+   "kind": "render",
+   "why": "the DOM is the template's, untouched; only the way Chromium was asked to render it differs — nobody changed the page (the whole page moved by transform: translate(0.25px, 0.25px))",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/noise--shift_0.25px.png",
+   "sha256": "28be025cde38a816c83935965df9bac9a6371b8197a8b00a2b6df023e7b175b7",
+   "changed": {
+    "pixels": 40838,
+    "box": [
+     0,
+     0,
+     1259,
+     800
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.25px"
+   }
+  },
+  {
+   "name": "dashboard/render/shift_0.5px",
+   "template": "dashboard",
+   "split": "held-out-2",
+   "family": "render:shift_0.5px",
+   "magnitude": "shift_0.5px",
+   "label": "NOISE",
+   "kind": "render",
+   "why": "the DOM is the template's, untouched; only the way Chromium was asked to render it differs — nobody changed the page (the whole page moved by transform: translate(0.5px, 0.5px))",
+   "expected": "frames/dashboard/base.png",
+   "actual": "frames/dashboard/noise--shift_0.5px.png",
+   "sha256": "e8731521b847abc0127859f51f835b04a80cc8cdedea3e8aca23de1130da4566",
+   "changed": {
+    "pixels": 109240,
+    "box": [
+     0,
+     0,
+     1257,
+     800
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
+   }
+  },
+  {
+   "name": "settings/render/shift_0.5px",
+   "template": "settings",
+   "split": "held-out-2",
+   "family": "render:shift_0.5px",
+   "magnitude": "shift_0.5px",
+   "label": "NOISE",
+   "kind": "render",
+   "why": "the DOM is the template's, untouched; only the way Chromium was asked to render it differs — nobody changed the page (the whole page moved by transform: translate(0.5px, 0.5px))",
+   "expected": "frames/settings/base.png",
+   "actual": "frames/settings/noise--shift_0.5px.png",
+   "sha256": "3e9b724f9d6f26693cde279bf57a2da7ec75768982d6b1cb564727765f0f8111",
+   "changed": {
+    "pixels": 83749,
+    "box": [
+     0,
+     0,
+     1259,
+     800
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "shift_0.5px"
+   }
   }
- ]
+ ],
+ "sealed": {
+  "split": "held-out-2",
+  "why": "decided by the maintainer on 2026-09-30: the held-out half (landing, dark) is spent for the page-shift rule of engine v2 — the reviewer and the author have both seen its figures while that rule was being made. This half replaces it for the final acceptance of f5 and for the figures of the README in phase 3. No engine and no comparator is run on it, and no table of it is read, before then: tests/benchmark.py prints it only with --final",
+  "templates": [
+   "dashboard",
+   "settings"
+  ],
+  "pairs": "every family of `families` at every magnitude, and the rendering configurations in `noise_configs` below — the «same renderer» group; no other renderer, no other machine",
+  "noise_configs": {
+   "geometric_precision": {
+    "pixels_vs_baseline": {
+     "dashboard": 70007,
+     "settings": 39211
+    }
+   },
+   "shift_0.25px": {
+    "pixels_vs_baseline": {
+     "dashboard": 63270,
+     "settings": 40838
+    }
+   },
+   "shift_0.5px": {
+    "pixels_vs_baseline": {
+     "dashboard": 109240,
+     "settings": 83749
+    }
+   }
+  },
+  "no_pixel_change": [],
+  "read": "tests/benchmark.py --corpus browser --final; node scripts/bench_playwright_grid.mjs --final",
+  "control": "drawn in the environment of the corpus (`environment`), after the six baselines and the baseline's canary were redrawn to their frozen pixels"
+ }
 }

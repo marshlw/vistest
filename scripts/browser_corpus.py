@@ -96,6 +96,29 @@ rest: a dark theme, and a landing page with large type, a gradient and a
 chart — the half where a threshold fitted on dense light UI would fail
 first if it is going to.
 
+The sealed half: held-out-2
+---------------------------
+
+The held-out half is spent for the page-shift rule of engine v2: the
+reviewer and the author have both seen its figures while that rule was
+being made (f5, step A). A third half replaces it for the final acceptance
+of f5 and for the figures of the README in phase 3: **held-out-2**, two
+templates made where the engine is weakest — a light sales dashboard
+(a sidebar of icons, number cards with sparklines, badges) and a
+preferences page (switches, checkboxes, radio buttons, selects, many
+icons). Its pairs are those of the «same renderer» group: every family at
+every magnitude, and the rendering configurations that are the page's
+stylesheet (`SEALED_CONFIGS`); no other renderer, no other machine.
+
+It is sealed: drawn, frozen and checked like the rest, but no engine and
+no comparator is run on it, and no table of it is read, before the final
+acceptance. `load_manifest()` leaves it out; `load_manifest(sealed=True)`
+is the whole file, for what checks, redraws or rewrites the corpus.
+`tests/benchmark.py --corpus browser` prints it only with `--final`, and
+`scripts/bench_playwright_grid.mjs` compares its pairs only with `--final`.
+
+    python scripts/browser_corpus.py --capture-sealed   # once: draw it into place
+
 Frozen, like tests/benchmark_corpus
 ----------------------------------
 
@@ -196,12 +219,37 @@ SPLIT_RULE = (
     "choosing a threshold, a preset or any other constant of the engine; they "
     "are only measured once a choice has been made on the calibration half")
 
+#: The sealed half — see the module docstring. Not in `TEMPLATES`: whatever
+#: iterates the six templates (the rendering configurations of another
+#: renderer, real changes drawn by another renderer, noise from another
+#: machine) leaves it alone by construction.
+HELD_OUT_2 = "held-out-2"
+SEALED_SPLITS: tuple[str, ...] = (HELD_OUT_2,)
+SEALED_TEMPLATES: tuple[Template, ...] = (
+    Template("dashboard", "light sales dashboard: a sidebar of icons, number "
+             "cards with sparklines, badges", HELD_OUT_2),
+    Template("settings", "preferences page: switches, checkboxes, radio "
+             "buttons, selects, many icons", HELD_OUT_2),
+)
+ALL_TEMPLATES: tuple[Template, ...] = TEMPLATES + SEALED_TEMPLATES
+
+WHY_SEALED = (
+    "decided by the maintainer on 2026-09-30: the held-out half (landing, "
+    "dark) is spent for the page-shift rule of engine v2 — the reviewer and "
+    "the author have both seen its figures while that rule was being made. "
+    "This half replaces it for the final acceptance of f5 and for the "
+    "figures of the README in phase 3. No engine and no comparator is run on "
+    "it, and no table of it is read, before then: tests/benchmark.py prints "
+    "it only with --final")
+
 #: The frozen corpus.
 MANIFEST = CORPUS_DIR / "manifest.json"
 FRAMES_DIR = CORPUS_DIR / "frames"
 
-#: What the frozen PNGs may weigh together.
-BUDGET_BYTES = 40 * 1024 * 1024
+#: What the frozen PNGs may weigh together. 40 MiB until 2026-09-30, raised
+#: to 50 by the maintainer for the sealed half; what does not fit is cut in
+#: magnitudes, never in families.
+BUDGET_BYTES = 50 * 1024 * 1024
 
 #: The `data-m` tokens every template must carry: one element per kind of
 #: change the corpus makes. A template without one of them would silently lose
@@ -1047,6 +1095,19 @@ NOISE_CONFIGS: tuple[NoiseConfig, ...] = (
 WHY_NOISE = ("the DOM is the template's, untouched; only the way Chromium was "
              "asked to render it differs — nobody changed the page")
 
+#: The rendering configurations of the sealed half: those of the «same
+#: renderer» group — a stylesheet of the page, the browser started the way
+#: the baseline's was (geometric_precision, DISPUTED; the two fractional
+#: shifts, NOISE).
+SEALED_CONFIGS: tuple[NoiseConfig, ...] = tuple(
+    c for c in NOISE_CONFIGS if not c.launch.args and not c.launch.channel)
+
+
+def configs_of(template: str) -> tuple[NoiseConfig, ...]:
+    """The rendering configurations a template is drawn in."""
+    return SEALED_CONFIGS if template in {t.key for t in SEALED_TEMPLATES} \
+        else NOISE_CONFIGS
+
 
 # --------------------------------------------------------------------------- #
 #  The renderer's fingerprint
@@ -1124,7 +1185,8 @@ CROSS_DISPUTED: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: keeping the harder 8 (4); the second border, keeping the lighter (1);
 #: the link colour, which is text colour on another element and tests the
 #: same property (1). Left in: 10 magnitudes, 120 pairs. To put the rest
-#: back: raise BUDGET_BYTES to 64 MiB, empty this set, --regenerate.
+#: back: raise BUDGET_BYTES to 72 MiB (64 before the sealed half took
+#: 10.2 MB of the 50), empty this set, --regenerate.
 CROSS_LEFT_OUT: frozenset[tuple[str, str]] = frozenset(
     [(k, m) for k, mags in CROSS_DISPUTED for m in mags]
     + [(k, "de15") for k in ("text_color", "link_color", "icon_color", "fill")]
@@ -1323,6 +1385,92 @@ def capture_all(out: Path, *, log=print) -> dict:
 
         # ---- real changes drawn by another renderer ----------------------- #
         doc["cases"] += capture_cross(pw, bases, write, log=log)
+
+        # ---- the sealed half ---------------------------------------------- #
+        doc["sealed"] = capture_sealed(pw, write, log=log)
+    return doc
+
+
+def capture_sealed(pw, write, *, log=print) -> dict:
+    """The sealed half: its baselines, every mutation, `SEALED_CONFIGS`.
+
+    Drawn the way the rest is — every frame twice, in two browsers started
+    the same way, which must agree to the pixel. Returns the record
+    `sealed_section` and `build_manifest` read; the PNGs go through `write`.
+    Nothing here compares a frame with anything but its baseline and its twin.
+    """
+    doc: dict = {"templates": {}, "cases": [], "no_pixel_change": [],
+                 "noise_configs": {}}
+    bases: dict[str, bytes] = {}
+    first, second = Session(pw), Session(pw)
+    try:
+        for t in SEALED_TEMPLATES:
+            base, fonts = first.frame(t.key, fonts=True)
+            n = differing_pixels(base, second.frame(t.key))
+            if n:
+                raise CorpusError(f"{t.key}: a second browser drew {n} different "
+                                  "pixels of the unchanged template — stop")
+            bases[t.key] = base
+            write(frame_file(t.key, "base"), base)
+            doc["templates"][t.key] = {"title": t.title, "fonts": fonts,
+                                       "base": frame_file(t.key, "base")}
+            made = 0
+            for fam in FAMILIES:
+                for mag in fam.magnitudes:
+                    name = case_name(t.key, fam.key, mag.key)
+                    mutation, detail = plan_mutation(first, t.key, fam, mag)
+                    png = first.frame(t.key, mutation)
+                    n = differing_pixels(png, second.frame(t.key, mutation))
+                    if n:
+                        raise CorpusError(f"{name}: a second browser started the "
+                                          f"same way drew {n} different pixels — stop")
+                    changed = _changed_box(base, png)
+                    if not changed["pixels"]:
+                        doc["no_pixel_change"].append(name)
+                        log(f"  {name}: no pixel changed, left out")
+                        continue
+                    rel = frame_file(t.key, f"{fam.key}--{mag.key}")
+                    write(rel, png)
+                    made += 1
+                    doc["cases"].append({
+                        "name": name, "template": t.key, "family": fam.key,
+                        "magnitude": mag.key, "label": mag.label,
+                        "kind": "mutation", "actual": rel, "changed": changed,
+                        **({"detail": detail} if detail else {}),
+                    })
+            log(f"{t.key} (sealed): base and {made} mutations")
+    finally:
+        first.close()
+        second.close()
+    for cfg in SEALED_CONFIGS:
+        a, b = Session(pw, cfg.launch), Session(pw, cfg.launch)
+        pixels_of: dict[str, int] = {}
+        try:
+            for t in SEALED_TEMPLATES:
+                png = a.frame(t.key)
+                n = differing_pixels(png, b.frame(t.key))
+                if n:
+                    raise CorpusError(f"noise config {cfg.key}, {t.key}: a second "
+                                      f"browser started the same way drew {n} "
+                                      "different pixels — stop")
+                changed = _changed_box(bases[t.key], png)
+                pixels_of[t.key] = changed["pixels"]
+                if not changed["pixels"]:
+                    continue
+                rel = frame_file(t.key, f"noise--{cfg.key}")
+                write(rel, png)
+                doc["cases"].append({
+                    "name": case_name(t.key, "render", cfg.key),
+                    "template": t.key, "family": f"render:{cfg.key}",
+                    "magnitude": cfg.key, "label": cfg.label, "kind": "render",
+                    "actual": rel, "changed": changed,
+                })
+        finally:
+            a.close()
+            b.close()
+        doc["noise_configs"][cfg.key] = {"pixels": pixels_of}
+        log(f"noise {cfg.key} (sealed): " + ", ".join(
+            f"{k} {n} px" for k, n in pixels_of.items()))
     return doc
 
 
@@ -1412,7 +1560,7 @@ def capture_cross(pw, bases: dict[str, bytes], write, *, log=print,
 #  Freezing
 # --------------------------------------------------------------------------- #
 def _split_of(template: str) -> str:
-    return next(t.split for t in TEMPLATES if t.key == template)
+    return next(t.split for t in ALL_TEMPLATES if t.key == template)
 
 
 def _case_why(case: dict) -> str:
@@ -1470,24 +1618,8 @@ def build_manifest(doc: dict, root: Path) -> dict:
     fingerprints = renderers["fingerprints"]
     templates = {}
     for t in TEMPLATES:
-        rec = doc["templates"][t.key]
-        templates[t.key] = {
-            "title": rec["title"], "split": t.split, "base": rec["base"],
-            "sha256": sha256((root / rec["base"]).read_bytes()), "fonts": rec["fonts"],
-            "renderer": BASE_RENDERER}
-    cases = []
-    for c in doc["cases"]:
-        cases.append({
-            "name": c["name"], "template": c["template"],
-            "split": _split_of(c["template"]), "family": c["family"],
-            "magnitude": c["magnitude"], "label": c["label"], "kind": c["kind"],
-            "why": _case_why(c),
-            "expected": templates[c["template"]]["base"], "actual": c["actual"],
-            "sha256": sha256((root / c["actual"]).read_bytes()),
-            "changed": c["changed"], **({"detail": c["detail"]} if "detail" in c else {}),
-            "renderer": {"expected": BASE_RENDERER,
-                         "actual": _renderer_of(c, fingerprints)},
-        })
+        templates[t.key] = _template_record(t, doc["templates"][t.key], root)
+    cases = [_case_record(c, templates, fingerprints, root) for c in doc["cases"]]
     configs = {}
     for cfg in NOISE_CONFIGS:
         rec = doc["noise_configs"][cfg.key]
@@ -1502,7 +1634,7 @@ def build_manifest(doc: dict, root: Path) -> dict:
             "control_pixels": rec["control_pixels"],
             **({"label": cfg.label, "why": cfg.why} if cfg.label != NOISE else {}),
         }
-    return {
+    manifest = {
         "format": 1,
         "about": "Browser corpus of VisTest: frames rendered by Chromium from "
                  "tests/browser_corpus/templates, labels known before the "
@@ -1529,19 +1661,114 @@ def build_manifest(doc: dict, root: Path) -> dict:
         "no_pixel_change": doc["no_pixel_change"],
         "cases": cases,
     }
+    if doc.get("sealed"):
+        manifest = with_sealed(manifest, doc["sealed"], root)
+    return manifest
+
+
+def _template_record(t: Template, rec: dict, root: Path) -> dict:
+    return {"title": rec["title"], "split": t.split, "base": rec["base"],
+            "sha256": sha256((root / rec["base"]).read_bytes()), "fonts": rec["fonts"],
+            "renderer": BASE_RENDERER}
+
+
+def _case_record(c: dict, templates: dict, fingerprints: dict, root: Path) -> dict:
+    return {
+        "name": c["name"], "template": c["template"],
+        "split": _split_of(c["template"]), "family": c["family"],
+        "magnitude": c["magnitude"], "label": c["label"], "kind": c["kind"],
+        "why": _case_why(c),
+        "expected": templates[c["template"]]["base"], "actual": c["actual"],
+        "sha256": sha256((root / c["actual"]).read_bytes()),
+        "changed": c["changed"], **({"detail": c["detail"]} if "detail" in c else {}),
+        "renderer": {"expected": BASE_RENDERER,
+                     "actual": _renderer_of(c, fingerprints)},
+    }
+
+
+def with_sealed(manifest: dict, sealed: dict, root: Path) -> dict:
+    """The manifest with the sealed half: `capture_sealed`'s record, frozen.
+
+    Its baselines join `templates` and its pairs join `cases`, so that every
+    check of the files (`verify_files`, `corpus_digest`, `drift`) covers them
+    as it covers the rest; its split joins `split`; what only it has — the
+    rule it is kept under, its rendering configurations, the mutations that
+    drew no pixel — goes into a `sealed` section of its own. The six
+    templates' sections are left as they were.
+    """
+    fingerprints = manifest["renderers"]["fingerprints"]
+    templates = dict(manifest["templates"])
+    for t in SEALED_TEMPLATES:
+        templates[t.key] = _template_record(t, sealed["templates"][t.key], root)
+    cases = [c for c in manifest["cases"] if c["split"] not in SEALED_SPLITS]
+    cases += [_case_record(c, templates, fingerprints, root) for c in sealed["cases"]]
+    split = {k: v for k, v in manifest["split"].items() if k not in SEALED_SPLITS}
+    split[HELD_OUT_2] = [t.key for t in SEALED_TEMPLATES]
+    section = {
+        "split": HELD_OUT_2,
+        "why": WHY_SEALED,
+        "templates": [t.key for t in SEALED_TEMPLATES],
+        "pairs": "every family of `families` at every magnitude, and the rendering "
+                 "configurations in `noise_configs` below — the «same renderer» "
+                 "group; no other renderer, no other machine",
+        "noise_configs": {k: {"pixels_vs_baseline": v["pixels"]}
+                          for k, v in sealed["noise_configs"].items()},
+        "no_pixel_change": sealed["no_pixel_change"],
+        "read": "tests/benchmark.py --corpus browser --final; "
+                "node scripts/bench_playwright_grid.mjs --final",
+    }
+    out = {k: v for k, v in manifest.items() if k != "sealed"}
+    out.update(templates=templates, split=split, cases=cases, sealed=section)
+    return out
 
 
 def write_manifest(manifest: dict, path: Path = MANIFEST) -> None:
+    if path.is_file() and "sealed" not in manifest and (
+            "sealed" in json.loads(path.read_text("utf-8"))):
+        raise CorpusError(f"{path} holds the sealed half and this manifest does "
+                          "not: it was read without sealed=True; nothing written")
     path.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n",
                     encoding="utf-8", newline="\n")
 
 
-def load_manifest(path: Path = MANIFEST) -> dict:
+def load_manifest(path: Path = MANIFEST, *, sealed: bool = False) -> dict:
+    """The manifest — without the sealed half unless `sealed`.
+
+    Without it, what the benchmark, the diagnostics and every test that runs
+    an engine read: the file as it was before the sealed half was drawn (see
+    `unsealed`). With it, the whole file, for what checks, redraws or
+    rewrites the corpus.
+    """
     if not path.is_file():
         raise CorpusError(f"{path} does not exist; the browser corpus is kept in "
                           "the repository. To draw it: "
                           "`python scripts/browser_corpus.py --regenerate`")
-    return json.loads(path.read_text("utf-8"))
+    manifest = json.loads(path.read_text("utf-8"))
+    return manifest if sealed else unsealed(manifest)
+
+
+def unsealed(manifest: dict) -> dict:
+    """The manifest without the sealed half: its baselines, its pairs, its split
+    and its section are left out; every other section is as it is."""
+    keep = {k for k, t in manifest["templates"].items() if t["split"] not in SEALED_SPLITS}
+    out = {k: v for k, v in manifest.items() if k != "sealed"}
+    out["templates"] = {k: t for k, t in manifest["templates"].items() if k in keep}
+    out["cases"] = [c for c in manifest["cases"] if c["template"] in keep]
+    out["split"] = {k: v for k, v in manifest["split"].items() if k not in SEALED_SPLITS}
+    return out
+
+
+def sealed_only(manifest: dict) -> dict:
+    """The sealed half as a manifest of its own, for `--final`: its baselines
+    and its pairs, with the sections every pair refers to (families,
+    fingerprints, the environment). Empty lists where nothing was drawn."""
+    keep = {k for k, t in manifest["templates"].items() if t["split"] in SEALED_SPLITS}
+    out = {k: v for k, v in manifest.items()}
+    out["templates"] = {k: t for k, t in manifest["templates"].items() if k in keep}
+    out["cases"] = [c for c in manifest["cases"] if c["template"] in keep]
+    out["split"] = {k: v for k, v in manifest["split"].items()
+                    if k == "rule" or k in SEALED_SPLITS}
+    return out
 
 
 def frozen_files(manifest: dict) -> dict[str, str]:
@@ -1554,7 +1781,11 @@ def frozen_files(manifest: dict) -> dict[str, str]:
 
 
 def verify_files(manifest: dict, root: Path = CORPUS_DIR) -> list[str]:
-    """What is wrong with the files on disk, against the manifest. Empty: nothing."""
+    """What is wrong with the files on disk, against the manifest. Empty: nothing.
+
+    The whole manifest (`load_manifest(sealed=True)`): the sealed half is on
+    disk too, and read without it its frames are «not in the manifest».
+    """
     problems = []
     want = frozen_files(manifest)
     on_disk = {p.relative_to(root).as_posix()
@@ -1594,7 +1825,7 @@ def regenerate(log=print) -> dict:
     import shutil
     import tempfile
 
-    old = load_manifest() if MANIFEST.is_file() else None
+    old = load_manifest(sealed=True) if MANIFEST.is_file() else None
     staging = Path(tempfile.mkdtemp(prefix="vistest-browser-corpus-"))
     try:
         doc = capture_all(staging, log=log)
@@ -1613,6 +1844,85 @@ def regenerate(log=print) -> dict:
     return manifest
 
 
+def seal(log=print) -> dict:
+    """Draw the sealed half into the frozen corpus, once; the rest stays as it is.
+
+    Only where the corpus was drawn: the environment must be the recorded one,
+    and the six baselines and the baseline's canary must come out as frozen,
+    to the pixel — a sealed frame drawn by another renderer than the frames
+    it will be read with would not be the same corpus. Returns the new
+    manifest; on any problem nothing is written.
+    """
+    import tempfile
+
+    from playwright.sync_api import sync_playwright
+
+    manifest = load_manifest(sealed=True)
+    if "sealed" in manifest:
+        raise CorpusError("the sealed half is in the corpus already; --regenerate "
+                          "redraws the whole corpus")
+    fingerprints = manifest["renderers"]["fingerprints"]
+    staging = Path(tempfile.mkdtemp(prefix="vistest-browser-corpus-sealed-"))
+    try:
+        with sync_playwright() as pw:
+            here = environment(pw)
+            reasons = env_mismatch(manifest["environment"], here)
+            if reasons:
+                raise CorpusError("not the environment the corpus was drawn in: "
+                                  + "; ".join(reasons))
+            s = Session(pw)
+            try:
+                drifted = [k for k, t in manifest["templates"].items()
+                           if differing_pixels((CORPUS_DIR / t["base"]).read_bytes(),
+                                               s.frame(k))]
+                canary = differing_pixels(
+                    (CORPUS_DIR / fingerprints[BASE_RENDERER]["file"]).read_bytes(),
+                    s.canary())
+            finally:
+                s.close()
+            if drifted or canary:
+                raise CorpusError(
+                    "this Chromium does not draw the corpus as frozen (baselines: "
+                    f"{', '.join(drifted) or 'as frozen'}; canary: {canary} px) — "
+                    "the sealed half would be drawn by another renderer")
+            log(f"control: {len(manifest['templates'])} baselines and the canary "
+                "come out as frozen")
+
+            def write(rel: str, png: bytes) -> None:
+                path = staging / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(pack(png))
+
+            record = capture_sealed(pw, write, log=log)
+        new = with_sealed(manifest, record, staging)
+        new["sealed"]["control"] = (
+            "drawn in the environment of the corpus (`environment`), after the six "
+            "baselines and the baseline's canary were redrawn to their frozen "
+            "pixels")
+        differences = env_differences(manifest["environment"], here)
+        if differences:
+            new["sealed"]["environment_differences"] = differences
+        files = sorted(p.relative_to(staging).as_posix() for p in staging.rglob("*.png"))
+        taken = [rel for rel in files if (CORPUS_DIR / rel).exists()]
+        if taken:
+            raise CorpusError(f"already on disk, not overwritten: {', '.join(taken[:5])}")
+        manifest_raw = MANIFEST.read_bytes()
+        for rel in files:
+            (CORPUS_DIR / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(staging / rel, CORPUS_DIR / rel)
+        write_manifest(new)
+        problems = verify_files(new)
+        if problems:
+            for rel in files:
+                (CORPUS_DIR / rel).unlink(missing_ok=True)
+            MANIFEST.write_bytes(manifest_raw)
+            raise CorpusError("the corpus with the sealed half does not check out, "
+                              "nothing changed: " + "; ".join(problems))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return new
+
+
 def sample(manifest: dict, *, full: bool = False) -> list[dict]:
     """The mutation pairs a drift check redraws.
 
@@ -1624,7 +1934,7 @@ def sample(manifest: dict, *, full: bool = False) -> list[dict]:
     cases = [c for c in manifest["cases"] if c["kind"] == "mutation"]
     if full:
         return cases
-    order = [t.key for t in TEMPLATES]
+    order = [t.key for t in ALL_TEMPLATES]
     by_family: dict[tuple[str, str], list[dict]] = {}
     for c in cases:
         by_family.setdefault((c["template"], c["family"]), []).append(c)
@@ -1679,6 +1989,8 @@ def drift(manifest: dict, *, full: bool = False, pw=None,
         s = Session(pw, cfg.launch)
         try:
             for key, t in manifest["templates"].items():
+                if cfg not in configs_of(key):
+                    continue                # the sealed half: same renderer only
                 case = by_name.get(case_name(key, "render", cfg.key))
                 want = frozen(case["actual"] if case else t["base"])
                 n = differing_pixels(want, s.frame(key))
@@ -1932,7 +2244,7 @@ def check_os_capture(record: dict, src: Path, manifest: dict) -> list[str]:
         problems.append(f"devicePixelRatio {dpr!r}, the corpus is drawn at "
                         f"{DEVICE_SCALE_FACTOR}")
     got = set(record.get("templates") or {})
-    want = set(manifest["templates"])
+    want = {k for k, t in manifest["templates"].items() if t["split"] not in SEALED_SPLITS}
     if got != want:
         problems.append(f"templates: the corpus has {sorted(want)}, the capture "
                         f"{sorted(got)}")
@@ -1998,7 +2310,7 @@ def import_os_noise(src: Path, *, replace: bool = False, root: Path = CORPUS_DIR
     """
     src = Path(src)
     manifest_path = root / "manifest.json"
-    manifest = load_manifest(manifest_path)
+    manifest = load_manifest(manifest_path, sealed=True)
     env_file = src / OS_ENV_FILE
     if not env_file.is_file():
         raise CorpusError(f"{env_file} does not exist: --import-noise takes the "
@@ -2200,6 +2512,8 @@ def drift_os(manifest: dict, *, pw=None, root: Path = CORPUS_DIR
         s = Session(pw)
         try:
             for key, t in manifest["templates"].items():
+                if t["split"] in SEALED_SPLITS:
+                    continue                # never drawn on another machine
                 case = by_name.get(case_name(key, "os", family[len("os_"):]))
                 want = (root / (case["actual"] if case else t["base"])).read_bytes()
                 n = differing_pixels(want, s.frame(key))
@@ -2231,6 +2545,10 @@ def main(argv: list[str] | None = None) -> int:
                            "the same capture, into "
                            "--out (default bench_out/os_noise/<tag>) with "
                            "environment.json; the corpus is not touched")
+    what.add_argument("--capture-sealed", action="store_true",
+                      help="draw the sealed half (held-out-2) into the frozen "
+                           "corpus, once, in the environment the corpus was "
+                           "drawn in; the rest of the corpus is not touched")
     what.add_argument("--import-noise", metavar="DIR",
                       help="bring what --capture-noise-only wrote into the corpus "
                            "as the NOISE family os_<os>; the benchmark figures "
@@ -2281,6 +2599,17 @@ def main(argv: list[str] | None = None) -> int:
               "docs/benchmark_browser_native.json")
         return 0
 
+    if args.capture_sealed:
+        manifest = seal()
+        sealed = sealed_only(manifest)
+        size = sum((CORPUS_DIR / t["base"]).stat().st_size
+                   for t in sealed["templates"].values())
+        size += sum((CORPUS_DIR / c["actual"]).stat().st_size for c in sealed["cases"])
+        print(f"Sealed: {len(sealed['cases'])} pairs over "
+              f"{', '.join(sealed['templates'])} ({size / 2**20:.1f} MB), sha256 in "
+              f"{MANIFEST}. Nothing is run on them before the final acceptance.")
+        return 0
+
     if args.regenerate:
         manifest = regenerate()
         env = manifest["environment"]
@@ -2294,7 +2623,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.check:
-        manifest = load_manifest()
+        manifest = load_manifest(sealed=True)
         problems = verify_files(manifest)
         for p in problems:
             print(p)

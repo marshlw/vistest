@@ -2,8 +2,13 @@
  "source": "native",
  "generator": "scripts/bench_playwright_grid.mjs",
  "corpus": {
-  "sha256": "d2c009bfc9d6022cfed60b46ae522656f886ce6575d329d0e32aecfeb9b3e056",
-  "cases": 462
+  "sha256": "74d397dfbee1d4c9f45f55302bbdf04c22c4558a6124da818c9142c45e5942b4",
+  "cases": 462,
+  "sealed": {
+   "split": "held-out-2",
+   "cases": 106,
+   "compared": false
+  }
  },
  "environment": {
   "node": "v22.22.2",
