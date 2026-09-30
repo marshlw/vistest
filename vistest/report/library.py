@@ -353,8 +353,9 @@ def _capture_facts(capture) -> list[str]:
 
 
 def _annotations_text(region: dict) -> str:
+    """The remarks on a region, without the engine's description (its own column)."""
     return " · ".join(str(a.get("text", "")) for a in region.get("annotations") or []
-                      if isinstance(a, dict))
+                      if isinstance(a, dict) and a.get("kind") != "description")
 
 
 def _regions_table(entry: dict) -> str:
@@ -364,12 +365,17 @@ def _regions_table(entry: dict) -> str:
     table of coordinates adds nothing. With one, the score and the remarks are
     the point, and they need a place.
     """
+    from ..library.errors import description
+
     regions = [r for r in entry.get("regions") or [] if isinstance(r, dict)]
     scored = any(r.get("score") is not None for r in regions)
-    noted = any(r.get("annotations") for r in regions)
-    if not (scored or noted):
+    noted = any(a for r in regions for a in r.get("annotations") or []
+                if isinstance(a, dict) and a.get("kind") != "description")
+    said = any(description(r) for r in regions)
+    if not (scored or noted or said):
         return ""
     head = "<tr><th>kind</th><th>severity</th><th>where</th>"
+    head += "<th>what changed</th>" if said else ""
     head += "<th>score</th>" if scored else ""
     head += "<th>notes</th>" if noted else ""
     rows = []
@@ -377,6 +383,8 @@ def _regions_table(entry: dict) -> str:
         cells = (f"<td>{_e(r.get('kind', ''))}</td>"
                  f"<td>{float(r.get('severity') or 0):.1f}</td>"
                  f"<td>{_e(_where(r))}</td>")
+        if said:
+            cells += f"<td>{_e(description(r))}</td>"
         if scored:
             score = r.get("score")
             cells += f"<td>{'' if score is None else f'{float(score):.2f}'}</td>"

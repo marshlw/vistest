@@ -37,6 +37,7 @@ from .. import structure as _struct
 from .. import warp as _warp
 from ..settings import DiffConfig
 from . import base as _base
+from . import describe as _describe
 from . import pageshift as _pageshift
 from . import rerender as _rerender
 from .settings import V2Config
@@ -114,6 +115,7 @@ def compare(
 
     regions = [_region(g, gray_exp, gray_act, de, cand, res.total_pixels, cfg)
                for g in groups]
+    group_of = {id(r): g for r, g in zip(regions, groups, strict=True)}
     for r, g in zip(regions, groups, strict=True):
         if g.pixels < v2.min_region_px:
             r.suppressed_by = (f"min-size: {g.pixels} px < {v2.min_region_px} px "
@@ -163,6 +165,7 @@ def compare(
             r.suppressed_by = f"ignored-kind: {r.kind.value} (diff.ignore_kinds)"
         (res.suppressed if r.suppressed_by else res.regions).append(r)
     res.regions.sort(key=lambda r: (-r.severity, r.y, r.x))
+    _describe_regions(res.regions, group_of, labels, exp, act, lab_exp, lab_act, v2)
     res.max_severity = max((r.severity for r in res.regions), default=0.0)
     _account(res)
     res.notes.insert(0, f"Engine {ENGINE}: ΔE00 > {v2.jnd_delta_e:g} per pixel, grouped "
@@ -185,6 +188,29 @@ def compare(
 
 def _layer_name(hooks) -> str:
     return str(getattr(hooks, "name", None) or type(hooks).__name__)
+
+
+def _describe_regions(live, group_of, labels, exp, act, lab_exp, lab_act,
+                      v2: V2Config) -> None:
+    """Every region that counts gets one sentence of what was measured on it
+    (core/v2/describe.py), as the first of its annotations. A region the AI
+    layer made up has no group behind it, and gets none."""
+    for r in live:
+        g = group_of.get(id(r))
+        if g is None:
+            continue
+        ys, xs = np.nonzero(labels[g.y:g.y + g.h, g.x:g.x + g.w] == g.label)
+        where = (ys + g.y, xs + g.x)
+        c = _rerender.crop(exp, act, labels, g.label, (g.x, g.y, g.w, g.h), v2.group_px)
+        forward = _rerender.block_shift(exp, act, lab_exp, lab_act, where,
+                                        jnd=v2.jnd_delta_e, limit=v2.shift_residual,
+                                        pure_only=True)
+        backward = forward if forward.holds() else _rerender.block_shift(
+            act, exp, lab_act, lab_exp, where, jnd=v2.jnd_delta_e,
+            limit=v2.shift_residual, pure_only=True)
+        d = _describe.describe(c, forward, backward, jnd=v2.jnd_delta_e,
+                               ink_limit=v2.ink_delta_e)
+        r.annotations.insert(0, d.annotation(f"engine {ENGINE}"))
 
 
 def _explain_environment(regions, groups, labels, exp, act, lab_act, cand,

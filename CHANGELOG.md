@@ -272,6 +272,36 @@
   through its anti-aliasing filter, not its jpeg rule). Cost: detection
   re-encodes the changed area at eight qualities on every comparison with a
   live region — 6–209 ms on the browser pairs measured.
+- **Step 5: a region in words** (`vistest/core/v2/describe.py`). Every
+  region that counts in v2 gets one sentence of what was measured on it, as
+  the first of its annotations (kind `description`), and nothing else: «block
+  moved by +1 px along y» — B is A moved by whole pixels and A is B moved
+  back (`rerender.block_shift` both ways; asked one way only, a line taken
+  off a plain paper is «moved» too); «line added: 57×1 px, #2563eb» — the
+  changed pixels fill a box at most 2 px thick and 8 px long, and the other
+  frame shows its paper there; «fill: #2563eb → #4d77ff, ΔE00 8.0» — the
+  most frequent colour of the region's neighbourhood changed; «ink colour:
+  #1f2937 → #4d5666, ΔE00 14.8» — the same shapes to a pixel in a new ink;
+  «strokes redrawn within 1 px; ink #1f2937 → #252f3e, ΔE00 1.97 (below 2)»;
+  «ink shape changed: 17 of 607 px of the new ink and 34 of 629 of the old
+  lie farther than 1 px from the other». «Ink», not «text»: nothing measured
+  knows whether the strokes are letters. It decides no verdict. The failure
+  message says it under `changed:` for three regions and counts the rest,
+  before `also:`; the report has a «what changed» column (the notes column
+  no longer repeats it). v1 writes no sentence, and its message is what it
+  was. The library still compares with v1, so the sentence reaches a
+  library check once the library runs v2 — tested on messages built from v2
+  results. On the calibration half the sentences say the mutations as they
+  were made: every one of the 393 regions of text_color (ΔE00 4, 8, 15),
+  the 22 of link_color and the 12 of icon_color is «ink colour» (the first
+  region of each ΔE00 15 pair: 14.8–17.5); the 12 of fill are «fill» (ΔE00
+  8 pairs: 7.9–8.2); the 6 of underline «line added» (the first regions
+  41×1 to 123×1 px); the first of table/offset/plus1px «block moved by +1
+  px along y». To keep it cheap, `rerender.block_shift(pure_only=True)`
+  drops a move as soon as the pixels it surely leaves pass the limit,
+  proving them apart on L* alone (ΔE00 ≥ |ΔL*| / S_L, since |R_T| ≤ 2)
+  before computing ΔE00; the default search is unchanged. Cost: 160–730 ms
+  on the noisiest browser pairs (86–193 regions).
 
 ### Windows: a refused replace is retried, and a check that raises is still reported
 
