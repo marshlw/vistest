@@ -128,13 +128,16 @@ def compare(
     environment = _explain_environment(regions, groups, labels, exp, act, lab_act, cand,
                                        v2, res)
     #  The page moved by a fraction of a pixel: proven on its box edges
-    #  first, whatever the renderer, then region by region.
+    #  first, whatever the renderer, then region by region. Coverage moments
+    #  (a drawing the rasteriser drew again at the fraction) only where the
+    #  canaries prove it is the same rasteriser: another one draws another
+    #  picture, and its coverage is not the baseline's to keep.
+    rend = _renderer.check(renderer)
     shifted = _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act,
-                                  cand, v2, res)
+                                  cand, v2, res, moments=rend.same)
     #  Text re-rasterisation is the renderer's doing, so it is looked for only
     #  where the renderer is proven to have changed. The same renderer, or
     #  one nobody measured, leaves every region for what it is.
-    rend = _renderer.check(renderer)
     res.notes.append(RENDERER_NOTES[rend.status].format(pixels=rend.pixels))
     assessed = (_explain_rerender(regions, groups, labels, exp, act, lab_exp, lab_act,
                                   cand, v2, res) if rend.changed else [])
@@ -305,7 +308,7 @@ def _explain_environment(regions, groups, labels, exp, act, lab_act, cand,
 
 
 def _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act, cand,
-                        v2: V2Config, res: CompareResult) -> dict:
+                        v2: V2Config, res: CompareResult, *, moments: bool) -> dict:
     """The page moved by a fraction of a pixel (core/v2/pageshift.py).
 
     The move is fitted on the page's box edges and must prove itself there
@@ -332,7 +335,7 @@ def _explain_page_shift(regions, groups, labels, exp, act, lab_exp, lab_act, can
         rs = _pageshift.region(ps, where & cand, box, crop, exp, act, lab_exp, lab_act,
                                limit=v2.shift_region_miss, ink_limit=v2.ink_delta_e,
                                jnd=v2.jnd_delta_e, mass_limit=v2.shift_mass_change,
-                               centroid_limit_px=v2.shift_centroid_px)
+                               centroid_limit_px=v2.shift_centroid_px, moments=moments)
         mo = rs.moments
         record["regions"].append({
             "box": box, "pixels": g.pixels, "missed": rs.missed_share,

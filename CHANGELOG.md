@@ -7,7 +7,7 @@
 
 ### f5: engine v2 by default
 
-- **Step A: coverage moments in page-shift** (`pageshift.moments`,
+- **Step A: coverage moments in page-shift** (`pageshift.coverage_moments`,
   `pageshift.region`). A vector path is drawn by coverage and blended with
   the paper linearly in the frame's own 8-bit sRGB values, so a drawing the
   rasteriser draws again a fraction of a pixel over keeps, in a box that
@@ -54,6 +54,35 @@
   Held out, the icon of dark/render/shift_* keeps M0 to 0.83–0.88 % — over
   0.7 % — and stays red. Synthetic corpus: v1 byte for byte as before, v2
   unchanged (12/16, 0/11).
+- **Step A, the owner's decision: the moments only on the same renderer,
+  ε0 = 0.015.** The premise of the moments is the same rasteriser drawing
+  the same path at the fraction; another renderer draws another picture,
+  and the rule has nothing to say there (at 0.007 the other renderer as if
+  moved still passed 115 records, starting with one renderer-noise region
+  of cards in every family). So the moments are asked only when the
+  canaries prove the renderer is the same; with «changed» and «unknown» a
+  region goes the way it went before step A. The signal side of
+  `SHIFT_MASS_CHANGE` is the same renderer only: noise 0.0107 (an icon of
+  form/render/shift_0.25px), signal 0.0207 (letters of a column header of
+  table/word_swap/one, which the swap re-laid) — value 0.015; the signal
+  side of `SHIFT_CENTROID_PX` moves to 0.301 (a corner of
+  article/border_radius/plus2px), the value stays 0.2. Both were measured
+  on the calibration half before the held-out run. **The held-out half is
+  spent for the page-shift rule: the reviewer and the author have both seen
+  it, and dark/render/shift_* after this change is not evidence for
+  acceptance.** The library's lazy canary follows: a check that failed
+  without the canary is compared again with it whenever both canaries are
+  there — the same renderer now lets a rule in too
+  (`fingerprint.compare_lazily`); the lazy-is-eager test takes
+  article/render/shift_0.25px, which passes only on the second comparison.
+  Browser corpus (OpenCV 4.13.0): same renderer, calibration 1/12 as after
+  step A (form/render/shift_0.5px, the checkbox, M0 ratio 0.80); held out
+  3/6 → 1/6 — dark/render/shift_0.25px and shift_0.5px turn green, their
+  icon keeping M0 to 0.83–0.88 %, now under 1.5 %: **not evidence**, the
+  half is spent; misses 0/184 and 0/92 as before; other renderer and every
+  other verdict unchanged. Synthetic corpus: v1 byte for byte as before, v2
+  unchanged (12/16, 0/11).
+
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 
 - **Where v1 loses the browser corpus, as a script.**

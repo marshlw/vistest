@@ -52,6 +52,10 @@ CARD = (255, 255, 255)
 BORDER = (60, 70, 90)
 INK = (31, 41, 55)
 CARDS = ((10, 10, 100, 60), (130, 10, 100, 60), (10, 90, 220, 60))
+#: Two canaries: the same pixels (the renderer is the same), and two that
+#: differ by a pixel (it changed).
+SAME = (np.zeros((2, 2, 3), np.uint8), np.zeros((2, 2, 3), np.uint8))
+CHANGED = (np.zeros((2, 2, 3), np.uint8), np.full((2, 2, 3), 255, np.uint8))
 
 
 def _cards(h=160, w=240, border=BORDER) -> np.ndarray:
@@ -206,7 +210,7 @@ def test_recoloured_words_on_a_moved_page_are_not_the_move():
     x, y, bw, bh = CARDS[1]
     card = moved[y:y + bh, x:x + bw]
     card[np.all(card == INK, axis=2)] = (122, 31, 31)             # #7a1f1f
-    r = compare(base, moved, engine="v2")
+    r = compare(base, moved, engine="v2", renderer=SAME)
     assert r.verdict is Verdict.FAIL and r.maps["v2_page_shift"]["holds"]
     notes = [n for g in r.regions for n in g.annotations if n["kind"] == ps.RULE]
     assert len(notes) == len(r.regions) == 1
@@ -272,7 +276,7 @@ def _page_with_icon(**icon):
 def test_coverage_keeps_its_mass_and_its_centre_moves_by_the_move():
     a = _ring(np.full((16, 16, 3), 255, np.uint8), 0, 0)
     b = _ring(np.full((16, 16, 3), 255, np.uint8), 0, 0, dx=0.25, dy=0.25)
-    mo = ps.moments(a, b, (0, 0, 16, 16), (0.25, 0.25), pad=0)
+    mo = ps.coverage_moments(a, b, (0, 0, 16, 16), (0.25, 0.25), pad=0)
     assert mo.mass_change < 0.005
     assert mo.centroid_miss < 0.01
     assert mo.text().startswith("M0 B/A ")
@@ -280,7 +284,7 @@ def test_coverage_keeps_its_mass_and_its_centre_moves_by_the_move():
 
 def test_an_icon_drawn_again_at_the_fraction_is_the_move():
     base, moved = _page_with_icon()
-    r = compare(base, moved, engine="v2")
+    r = compare(base, moved, engine="v2", renderer=SAME)
     assert r.verdict is Verdict.PASS
     rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
     assert rec["missed"] > SHIFT_REGION_MISS.value and rec["how"] == ps.MOMENTS
@@ -293,7 +297,7 @@ def test_an_icon_drawn_again_at_the_fraction_is_the_move():
 
 def test_the_icon_in_another_ink_is_not_the_move():
     base, moved = _page_with_icon(ink=(70, 80, 100))
-    r = compare(base, moved, engine="v2")
+    r = compare(base, moved, engine="v2", renderer=SAME)
     assert r.verdict is Verdict.FAIL
     rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
     assert rec["how"] == "" and rec["mass_change"] > SHIFT_MASS_CHANGE.value
@@ -304,11 +308,22 @@ def test_the_icon_at_another_fraction_is_not_the_drawing_moved():
     """Its centre lands half a pixel from the page's move. (The older test for
     text redrawn at the new position still takes it — see f5's report.)"""
     base, moved = _page_with_icon(dx=0.75)
-    r = compare(base, moved, engine="v2")
+    r = compare(base, moved, engine="v2", renderer=SAME)
     rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
     assert rec["how"] != ps.MOMENTS
     assert rec["mass_change"] <= SHIFT_MASS_CHANGE.value
     assert rec["centroid_miss"] > SHIFT_CENTROID_PX.value
+
+
+@pytest.mark.parametrize("renderer", [None, CHANGED, (SAME[0], None)])
+def test_the_moments_are_asked_only_when_the_renderer_is_the_same(renderer):
+    """The premise is the same rasteriser drawing the same path at the
+    fraction: with another renderer, or one nobody measured, the region goes
+    the way it went before f5 (here, as text redrawn at the new position)."""
+    base, moved = _page_with_icon()
+    r = compare(base, moved, engine="v2", renderer=renderer)
+    rec = next(x for x in r.maps["v2_page_shift"]["regions"] if x["box"][1] > 120)
+    assert rec["how"] != ps.MOMENTS and rec["mass_change"] is None
 
 
 def test_v1_does_not_have_the_rule():
@@ -390,8 +405,10 @@ def test_move_tolerance_noise_side_is_where_it_was_measured(corpus):
 
 
 def _region_record(corpus, name, box):
+    """A region of a calibration pair as the benchmark sees it: the shift
+    pairs name the baseline's canary, so the renderer is the same."""
     a, b, _ = corpus(name)
-    r = compare(a, b, engine="v2")
+    r = compare(a, b, engine="v2", renderer=SAME)
     return r, next(x for x in r.maps["v2_page_shift"]["regions"] if list(x["box"]) == box)
 
 
@@ -408,15 +425,15 @@ def _as_if_moved(corpus, name, box, move):
     moved = _warp.to_uint8(_warp.shift(b, *move))
     crop = rr.crop(a, moved, labels, g.label, (g.x, g.y, g.w, g.h), V2Config().group_px)
     held = rr.shape_within(crop).holds() and rr.background_unchanged(crop).holds(1.0)
-    return held, ps.moments(a, moved, (g.x, g.y, g.w, g.h), move)
+    return held, ps.coverage_moments(a, moved, (g.x, g.y, g.w, g.h), move)
 
 
 def test_shift_mass_change_is_where_it_was_measured(corpus):
-    _, noise = _region_record(corpus, "article/render/shift_0.25px", [1142, 243, 10, 9])
+    _, noise = _region_record(corpus, "form/render/shift_0.25px", [983, 417, 10, 7])
     assert round(noise["mass_change"], 4) == SHIFT_MASS_CHANGE.noise
     assert noise["how"] == ps.MOMENTS
-    held, signal = _as_if_moved(corpus, "table/word_swap@full_chromium/one",
-                                [202, 135, 63, 9], (0.25, 0.25))
+    held, signal = _as_if_moved(corpus, "table/word_swap/one", [256, 135, 9, 9],
+                                (0.25, 0.25))
     assert held and signal.follows(SHIFT_CENTROID_PX.value)
     assert round(signal.mass_change, 4) == SHIFT_MASS_CHANGE.signal
     assert SHIFT_MASS_CHANGE.noise < SHIFT_MASS_CHANGE.value < SHIFT_MASS_CHANGE.signal
@@ -426,7 +443,7 @@ def test_shift_centroid_px_is_where_it_was_measured(corpus):
     _, noise = _region_record(corpus, "cards/render/shift_0.25px", [1100, 178, 14, 20])
     assert round(noise["centroid_miss"], 3) == SHIFT_CENTROID_PX.noise
     assert noise["how"] == ps.MOMENTS
-    held, signal = _as_if_moved(corpus, "form/border_radius/plus2px", [988, 589, 8, 8],
+    held, signal = _as_if_moved(corpus, "article/border_radius/plus2px", [1234, 33, 6, 6],
                                 (0.25, 0.25))
     assert held and signal.conserved(SHIFT_MASS_CHANGE.value)
     assert round(signal.centroid_miss, 3) == SHIFT_CENTROID_PX.signal
