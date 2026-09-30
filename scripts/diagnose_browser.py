@@ -430,7 +430,7 @@ def v2_rerender_table(cases, bases, root, out, manifest, *, as_if_changed=False)
             "explained": 0, "a": 0, "b": 0, "c": 0, "e": 0, "only b": 0,
             "need": [], "moves": Counter(), "share": [],
             "ps_holds": 0, "ps_moved": [], "ps_cover": [], "ps_shifts": Counter(),
-            "ps_explained": 0, "ps_refused": 0})
+            "ps_explained": 0, "ps_moments": 0, "ps_refused": 0})
         d["pairs"] += 1
         ps = res.maps.get("v2_page_shift") or {}
         if ps:
@@ -440,6 +440,7 @@ def v2_rerender_table(cases, bases, root, out, manifest, *, as_if_changed=False)
                 d["ps_holds"] += 1
                 d["ps_shifts"][(ps["dx"], ps["dy"])] += 1
                 d["ps_explained"] += sum(1 for x in ps["regions"] if x["explained"])
+                d["ps_moments"] += sum(1 for x in ps["regions"] if x.get("how") == "moments")
                 d["ps_refused"] += sum(1 for x in ps["regions"] if not x["explained"])
         d["green"] += res.verdict.value == "pass"
         d["rend"][res.maps["renderer"].status] += 1
@@ -494,9 +495,11 @@ def v2_page_shift_table(fams: dict, v2, out) -> None:
         f"by the fraction and by no whole pixel, and the move reproduces at least "
         f"{v2.page_shift_cover:.0%} of the changed pixels (ΔE00 ≤ {v2.move_tolerance:g}); "
         f"then a region is explained when the move misses at most "
-        f"{v2.shift_region_miss:.0%} of it, or it is text redrawn at the new position")
+        f"{v2.shift_region_miss:.0%} of it, or it is the drawing moved (coverage M0 within "
+        f"{v2.shift_mass_change:.1%}, its centre within {v2.shift_centroid_px:g} px of the "
+        f"move; «moments»), or text redrawn at the new position")
     head = (f"{'family':28s} {'label':8s} {'proven':>7s} {'edges moved':>12s} "
-            f"{'reproduced':>11s} {'explained':>9s} {'refused':>7s}  shifts")
+            f"{'reproduced':>11s} {'explained':>9s} {'moments':>7s} {'refused':>7s}  shifts")
     out(head)
     out("-" * len(head))
 
@@ -507,7 +510,7 @@ def v2_page_shift_table(fams: dict, v2, out) -> None:
                            for (dx, dy), n in sorted(d["ps_shifts"].items()))
         out(f"{key:28s} {label:8s} {d['ps_holds']:>3d}/{d['pairs']:<3d} "
             f"{span(d['ps_moved']):>12s} {span(d['ps_cover']):>11s} "
-            f"{d['ps_explained']:9d} {d['ps_refused']:7d}  {shifts}")
+            f"{d['ps_explained']:9d} {d['ps_moments']:7d} {d['ps_refused']:7d}  {shifts}")
     out("")
 
 

@@ -29,10 +29,25 @@ is applied to a region, in two steps, each measured:
    the page (`cover`).
 2. **The region is what that move did.** Once the page is proven to have
    moved, a region is explained when its changed pixels are reproduced by
-   the displacements, or when it is text redrawn at the new position: the
-   properties of `rerender.py` — the same ink (a), the shape within a pixel
-   (b), the same paper (c) — and, if it moved as a block by whole pixels,
-   a move the page's shift allows (e').
+   the displacements; or when it is a drawing the rasteriser drew again at
+   the new position (`moments`): the shape within a pixel (b) on the same
+   paper (c), the same coverage (M0) and its centre moved by the page's
+   move (M1); or when it is text redrawn at the new position: the same ink
+   (a), (b), (c), and, if it moved as a block by whole pixels, a move the
+   page's shift allows (e').
+
+**Why coverage moments.** A vector path is drawn by coverage — the share of
+each pixel it covers — and blended with the paper linearly, in the same
+8-bit sRGB values the frame holds (Chromium's rasteriser does not
+linearise). Drawn a fraction of a pixel over, the same path covers the same
+area: in a box that holds it, the sum of (pixel − paper) per channel, M0,
+does not change, and its centre, M1, moves by exactly the move. A bilinear
+move of the old picture is not what the rasteriser drew (a 1 px stroke at a
+half pixel is two half-covered pixels either way, but their colours differ),
+so a thin icon is missed pixel by pixel and kept by its moments. A new
+colour changes M0; another icon, glyphs moved along the line, a new letter
+move M1 elsewhere or change M0. In L* (`rerender.ink_mass`) M0 is not
+conserved, because L* is not linear in coverage.
 
 All the moving goes through `core/warp.py` (`sample`, the same bilinear
 arithmetic as `shift`, at the pixels that are looked at).
@@ -201,8 +216,101 @@ def fit(exp: np.ndarray, lab_exp: np.ndarray, lab_act: np.ndarray, cand: np.ndar
 
 
 # --------------------------------------------------------------------------- #
+#  Coverage moments of a region
+# --------------------------------------------------------------------------- #
+#: The moments are taken in the region's box grown by this much: the drawing
+#: the region's changed pixels outline, wherever the move took it.
+MOMENTS_PAD_PX = 3
+#: A channel is read as a ratio only when it holds at least this share of
+#: the strongest channel's coverage (a grey ink on white holds all three; a
+#: blue one hardly any red to speak of).
+_RATIO_FLOOR = 0.05
+
+
+@dataclass(frozen=True)
+class Moments:
+    """Coverage of a region's box in both frames: M0 and the move of M1.
+
+    M0 is, per channel, the sum over the box of (pixel − paper), the paper
+    being the box's most frequent colour in each frame. M1 is the centre of
+    the coverage, the channels taken together with the sign each has in the
+    baseline (ink darker than the paper counts as much as ink lighter).
+    """
+
+    mass_a: tuple[float, float, float]
+    mass_b: tuple[float, float, float]
+    shift: tuple[float, float]         # centre of B minus centre of A, px
+    move: tuple[float, float]          # the page's move it is held against
+
+    @property
+    def mass_change(self) -> float:
+        """The largest change of a channel's M0, as a share of the strongest
+        channel's M0 in the baseline — so that a channel where the ink is
+        nearly the paper does not divide by nearly nothing."""
+        a, b = np.asarray(self.mass_a), np.asarray(self.mass_b)
+        scale = float(np.abs(a).max())
+        return float(np.abs(b - a).max() / scale) if scale else float("inf")
+
+    @property
+    def ratios(self) -> list[float | None]:
+        a, b = np.asarray(self.mass_a), np.asarray(self.mass_b)
+        scale = float(np.abs(a).max())
+        return [float(b[i] / a[i]) if scale and abs(a[i]) >= _RATIO_FLOOR * scale else None
+                for i in range(3)]
+
+    @property
+    def centroid_miss(self) -> float:
+        """How far, in px, the centre moved from where the page's move puts it."""
+        return float(np.hypot(self.shift[0] - self.move[0], self.shift[1] - self.move[1]))
+
+    def conserved(self, limit: float) -> bool:
+        return self.mass_change <= limit
+
+    def follows(self, limit_px: float) -> bool:
+        return self.centroid_miss <= limit_px
+
+    def text(self) -> str:
+        ratios = ", ".join("—" if r is None else f"{r:.3f}" for r in self.ratios)
+        return (f"M0 B/A {ratios} ({100 * self.mass_change:.1f}% off); M1 moved "
+                f"({self.shift[0]:+.3f}, {self.shift[1]:+.3f}) px, "
+                f"{self.centroid_miss:.3f} px from the page's "
+                f"({self.move[0]:+g}, {self.move[1]:+g})")
+
+
+def moments(exp: np.ndarray, act: np.ndarray, box: tuple[int, int, int, int],
+            move: tuple[float, float], pad: int = MOMENTS_PAD_PX) -> Moments:
+    """M0 and M1 of the region with box `box` (x, y, w, h) in both frames."""
+    from . import rerender as _rr
+
+    x, y, w, h = box
+    H, W = exp.shape[:2]
+    x0, y0, x1, y1 = max(0, x - pad), max(0, y - pad), min(W, x + w + pad), min(H, y + h + pad)
+    ea = exp[y0:y1, x0:x1].astype(np.float64)
+    eb = act[y0:y1, x0:x1].astype(np.float64)
+    ca = ea - _rr.paper(exp[y0:y1, x0:x1]).astype(np.float64)
+    cb = eb - _rr.paper(act[y0:y1, x0:x1]).astype(np.float64)
+    mass_a, mass_b = ca.sum((0, 1)), cb.sum((0, 1))
+    sign = np.where(mass_a < 0, -1.0, 1.0)
+    yy, xx = np.mgrid[y0:y1, x0:x1]
+
+    def centre(c):
+        m = (c * sign).sum(2)
+        total = float(m.sum())
+        if total == 0.0:
+            return float("nan"), float("nan")
+        return float((m * xx).sum() / total), float((m * yy).sum() / total)
+
+    (ax, ay), (bx, by) = centre(ca), centre(cb)
+    return Moments(mass_a=tuple(map(float, mass_a)), mass_b=tuple(map(float, mass_b)),
+                   shift=(bx - ax, by - ay), move=(float(move[0]), float(move[1])))
+
+
+# --------------------------------------------------------------------------- #
 #  A region, once the page is proven to have moved
 # --------------------------------------------------------------------------- #
+MOVE, MOMENTS, TEXT = "move", "moments", "text"
+
+
 @dataclass(frozen=True)
 class RegionShift:
     """What the page's move does for one region."""
@@ -210,8 +318,9 @@ class RegionShift:
     missed: int             # changed pixels of the region no displacement reproduces
     pixels: int
     limit: float            # the share of `missed` a region may keep
-    redrawn: object = None  # rerender.Assessment-like record when the move misses more
+    how: str = ""           # MOVE, MOMENTS or TEXT when explained; "" when not
     reason: str = ""
+    moments: Moments | None = None
 
     @property
     def missed_share(self) -> float:
@@ -219,36 +328,46 @@ class RegionShift:
 
     @property
     def explained(self) -> bool:
-        return self.missed_share <= self.limit or bool(self.redrawn)
+        return bool(self.how)
 
     def text(self) -> str:
-        if self.missed_share <= self.limit:
+        if self.how == MOVE:
             return (f"{100 * (1 - self.missed_share):.0f}% of its {self.pixels} changed px "
                     "are the baseline moved that way")
         return self.reason
 
 
-def region(ps: PageShift, where: np.ndarray, crop, exp: np.ndarray, act: np.ndarray,
-           lab_exp: np.ndarray, lab_act: np.ndarray, *, limit: float, ink_limit: float,
-           jnd: float) -> RegionShift:
+def region(ps: PageShift, where: np.ndarray, box: tuple[int, int, int, int], crop,
+           exp: np.ndarray, act: np.ndarray, lab_exp: np.ndarray, lab_act: np.ndarray, *,
+           limit: float, ink_limit: float, jnd: float, mass_limit: float,
+           centroid_limit_px: float) -> RegionShift:
     """Is this region what the proven move did to the page?
 
     First by the pixels: the move reproduces all but `limit` of its changed
-    pixels. Failing that, as text redrawn at the new position — the
-    properties of `rerender.py` measured as they are there: (a) the ink,
-    (b) the shape within a pixel, (c) the paper, and a whole-pixel move only
-    in the page's direction (e').
+    pixels. Failing that, as a drawing drawn again at the new position: (b)
+    the shape within a pixel, (c) the same paper, M0 within `mass_limit`
+    and M1 within `centroid_limit_px` of the page's move. Failing that, as
+    text redrawn at the new position — the properties of `rerender.py`
+    measured as they are there: (a) the ink, (b), (c), and a whole-pixel
+    move only in the page's direction (e').
     """
     from . import rerender as _rr
 
     pixels = int(where.sum())
     missed = int((where & ~ps.explained).sum())
-    out = RegionShift(missed=missed, pixels=pixels, limit=limit)
-    if out.missed_share <= limit:
-        return out
-    ink = _rr.ink_colour(crop)
+    share = missed / pixels if pixels else 0.0
+    if share <= limit:
+        return RegionShift(missed=missed, pixels=pixels, limit=limit, how=MOVE)
     shape = _rr.shape_within(crop)
     paper = _rr.background_unchanged(crop)
+    mo = moments(exp, act, box, (ps.dx, ps.dy))
+    if (shape.holds() and paper.holds(jnd) and mo.conserved(mass_limit)
+            and mo.follows(centroid_limit_px)):
+        return RegionShift(missed=missed, pixels=pixels, limit=limit, how=MOMENTS,
+                           moments=mo,
+                           reason="; ".join(("the drawing moved with the page: "
+                                             + shape.text(), paper.text(), mo.text())))
+    ink = _rr.ink_colour(crop)
     block = _rr.block_shift(exp, act, lab_exp, lab_act, where, jnd=jnd, limit=0.25)
     pure = not block.holds()
     allowed = not pure or (float(block.dx), float(block.dy)) in {tuple(map(float, d))
@@ -259,7 +378,10 @@ def region(ps: PageShift, where: np.ndarray, crop, exp: np.ndarray, act: np.ndar
             else "(e') not a pure shift")
     reason = "; ".join((f"text redrawn at the new position: {ink.text()}", shape.text(),
                         paper.text(), move))
-    return RegionShift(missed=missed, pixels=pixels, limit=limit, redrawn=ok,
-                       reason=reason if ok else
-                       f"the move misses {100 * out.missed_share:.0f}% of its changed px, "
-                       f"and it is not text redrawn: {reason}")
+    if ok:
+        return RegionShift(missed=missed, pixels=pixels, limit=limit, how=TEXT,
+                           moments=mo, reason=reason)
+    return RegionShift(missed=missed, pixels=pixels, limit=limit, moments=mo,
+                       reason=f"the move misses {100 * share:.0f}% of its changed px; not "
+                              f"the drawing moved ({mo.text()}), and not text redrawn: "
+                              f"{reason}")
