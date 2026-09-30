@@ -524,7 +524,10 @@ def _screenshot():
 
 
 def test_text():
-    expect_screenshot(_screenshot(), "text.png")
+    #  v1 by name: the sentence checked below is its anti-aliasing re-draw.
+    #  Under v2 a text-only picture moved by a fraction, with no canary, is
+    #  not explained: nothing says the renderer is the same.
+    expect_screenshot(_screenshot(), "text.png", engine="v1")
 '''
 
 

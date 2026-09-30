@@ -52,7 +52,7 @@ def pair(case: str) -> tuple[np.ndarray, np.ndarray]:
 # --------------------------------------------------------------------------- #
 def test_an_identical_pair_is_a_perfect_pass():
     expected, _ = pair("button_color")
-    res = compare(expected, expected.copy(), cfg=CFG)
+    res = compare(expected, expected.copy(), cfg=CFG, engine="v1")
     assert res.verdict.value == "pass"
     assert res.regions == [] and res.suppressed == []
     assert res.ssim_global == 1.0
@@ -67,7 +67,7 @@ def test_an_identical_pair_is_a_perfect_pass():
 
 def test_it_leaves_the_maps_a_renderer_expects():
     expected, _ = pair("identical")
-    res = compare(expected, expected.copy(), cfg=CFG)
+    res = compare(expected, expected.copy(), cfg=CFG, engine="v1")
     assert res.maps["de_map"].shape == expected.shape[:2]
     assert not res.maps["de_map"].any() and not res.maps["mask"].any()
     assert res.maps["expected"] is expected
@@ -78,7 +78,7 @@ def test_it_matches_what_the_full_cascade_says_about_the_same_pair():
     for case in ("identical", "identical__thin_glyphs"):
         expected, actual = pair(case)
         assert np.array_equal(expected, actual), "the corpus pair is identical"
-        fast = compare(expected, actual, cfg=CFG).to_dict()["metrics"]
+        fast = compare(expected, actual, cfg=CFG, engine="v1").to_dict()["metrics"]
         slow = _full(expected, actual).to_dict()["metrics"]
         assert fast == slow, case
 
@@ -87,13 +87,13 @@ def test_one_pixel_is_enough_to_run_the_cascade():
     expected, _ = pair("identical")
     changed = expected.copy()
     changed[0, 0] = 255 - changed[0, 0]
-    res = compare(expected, changed, cfg=CFG)
+    res = compare(expected, changed, cfg=CFG, engine="v1")
     assert not any("pixel for pixel" in n for n in res.notes)
 
 
 def test_a_different_size_is_never_identical():
     expected, _ = pair("identical")
-    res = compare(expected, expected[:-10].copy(), cfg=CFG)
+    res = compare(expected, expected[:-10].copy(), cfg=CFG, engine="v1")
     assert res.size_changed and res.verdict.value == "fail"
 
 
@@ -106,7 +106,8 @@ def test_an_identical_900x1200_pair_takes_milliseconds():
     expected, _ = pair("identical")
     assert expected.shape[:2] == (1200, 900)
     actual = expected.copy()
-    best = min(_timed(lambda: compare(expected, actual, cfg=CFG)) for _ in range(5))
+    best = min(_timed(lambda: compare(expected, actual, cfg=CFG, engine="v1"))
+               for _ in range(5))
     assert best < 50, f"{best:.1f} ms"
 
 
@@ -174,7 +175,7 @@ CASES = sorted(p.parent.name for p in CORPUS.glob("*/expected.png"))
 def test_the_whole_result_is_unchanged_on_the_corpus(case):
     """The engine with the selective map against the engine with the full one."""
     expected, actual = pair(case)
-    fast = compare(expected, actual, cfg=CFG)
+    fast = compare(expected, actual, cfg=CFG, engine="v1")
     slow = _full(expected, actual)
     a, b = fast.to_dict(), slow.to_dict()
     a.pop("duration_ms"), b.pop("duration_ms")
@@ -190,4 +191,4 @@ def _full(expected, actual):
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(color, "delta_e_ciede2000_where", every_pixel)
         patch.setattr(comparator_module, "_same_pixels", lambda a, b: False)
-        return compare(expected, actual, cfg=CFG)
+        return compare(expected, actual, cfg=CFG, engine="v1")

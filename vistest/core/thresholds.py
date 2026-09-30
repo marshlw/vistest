@@ -66,6 +66,32 @@ EDITABLE: dict[str, tuple[float, float, str, str]] = {
         "Catches a page that shifted as a whole."),
 }
 
+#  Where a threshold came from, as a result says it — «below the threshold 25
+#  (project override)». Engine v2 applies `fail_severity` only when it has one
+#  of these (`DiffConfig.threshold_source`); a preset's number is v1's.
+SOURCE_YAML = "vistest.yaml"
+SOURCE_ENV = "VISTEST_FAIL_SEVERITY"
+SOURCE_GLOBAL = "global override"
+SOURCE_PROJECT = "project override"
+SOURCE_SNAPSHOT = "snapshot passport"
+SOURCE_CALL = "call"
+#: The variable that carries the source of VISTEST_FAIL_SEVERITY into
+#: somebody else's process (`env_patch`), so a project run says «project
+#: override» and not the name of a variable nobody set by hand.
+SOURCE_VARIABLE = "VISTEST_THRESHOLD_SOURCE"
+
+
+def override_source(global_overrides: dict | None,
+                    project_overrides: dict | None) -> str:
+    """Whose `fail_severity` wins among the overrides made in the interface,
+    or '' when neither set one."""
+    if (project_overrides or {}).get("fail_severity") is not None:
+        return SOURCE_PROJECT
+    if (global_overrides or {}).get("fail_severity") is not None:
+        return SOURCE_GLOBAL
+    return ""
+
+
 #  The thresholds a snapshot may carry in its own passport. Deliberately the
 #  same short list: a third level must govern the same things the first two do,
 #  otherwise it is not a third level but a separate system using the same words.
@@ -207,12 +233,16 @@ def patch_for(snapshot_meta: dict | None = None,
     and Python fails such a call.
     """
     out = dict(from_meta(snapshot_meta))
-    out.update({name: value for name, value in (call or {}).items()
-                if value is not None})
+    if "fail_severity" in out:
+        out["threshold_source"] = SOURCE_SNAPSHOT
+    called = {name: value for name, value in (call or {}).items() if value is not None}
+    out.update(called)
+    if "fail_severity" in called:
+        out["threshold_source"] = SOURCE_CALL
     return out
 
 
-def env_patch(overrides: dict) -> dict[str, str]:
+def env_patch(overrides: dict, source: str = "") -> dict[str, str]:
     """Overrides shaped as environment variables for SOMEBODY ELSE'S process.
 
     A run of a connected project is a separate pytest that reads its own
@@ -221,6 +251,9 @@ def env_patch(overrides: dict) -> dict[str, str]:
     silently not to project runs — the kind of discrepancy that costs days to
     find. `vistest.config` reads these names back on the other side.
     """
-    return {f"VISTEST_{name.upper()}": repr(float(value))
-            for name, value in (overrides or {}).items()
-            if name in EDITABLE and value is not None}
+    out = {f"VISTEST_{name.upper()}": repr(float(value))
+           for name, value in (overrides or {}).items()
+           if name in EDITABLE and value is not None}
+    if source and "VISTEST_FAIL_SEVERITY" in out:
+        out[SOURCE_VARIABLE] = source
+    return out

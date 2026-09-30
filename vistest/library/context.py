@@ -117,8 +117,12 @@ class LibraryContext:
         if self._config is None:
             from ..config import VisTestConfig
 
-            self._config = (VisTestConfig.preset_of(self.preset) if self.preset
-                            else VisTestConfig.load(self.config_path))
+            loaded = VisTestConfig.load(self.config_path)
+            #  A preset tunes v1's cascade; the engine stays the one chosen in
+            #  vistest.yaml or VISTEST_ENGINE (core/engines.py).
+            self._config = (VisTestConfig.preset_of(self.preset,
+                                                    engine=loaded.diff.engine)
+                            if self.preset else loaded)
         return self._config
 
     @property

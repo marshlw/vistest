@@ -1,0 +1,32 @@
+{
+ "note": "The synthetic corpus under engine v2: the ratchet, frozen on 2026-09-30 by the maintainer's decision. It does not block v2 as the default engine — v2 is accepted on the browser corpus and its sealed half — and it holds what v2 does here: no miss, ever (0/11 per raster), and exactly the false failures listed below, each with the reason from step B of f5. A NOISE pair v2 fails that is not listed is a new false failure: the test is red. A listed pair v2 passes is red too until it is taken off the list — the list only shrinks, never grows. The labels are the corpus's and do not change. Engine v1 is held by metrics.json, not here.",
+ "engine": "v2",
+ "measured_as": "tests/benchmark.py --compare --engine v2: preset balanced (v2 reads no preset), the AI layer as AIPipeline(AIConfig()), no renderer canaries (renderer unknown)",
+ "misses_allowed": 0,
+ "false_failures": {
+  "sensor noise σ=1.6": "Gaussian noise on every pixel, ΔE00 up to 7.2 over the whole frame; not in a browser screenshot (Chromium's raster is deterministic); v1 never saw it: ΔE00 > 2.3 with no SSIM < 0.9 (consensus)",
+  "sensor noise σ=3.0": "Gaussian noise on every pixel, σ 3.0; not in a browser screenshot; v1: consensus left 25 regions, all taken by rerender «zero-mean sensor noise»",
+  "jpeg q=88": "JPEG re-encoding at quality 88; only in a JPEG pipeline, the library captures PNG; v1: consensus, anti-aliasing re-draw and morphology, not its JPEG rule; v2's JPEG rule tries 85 and 90, and neither leaves half of the error",
+  "global shift 1px": "the whole frame moved by (1, 1) px; not in the browser corpus, a whole frame moves on another scroll position; v1: global alignment",
+  "global shift 3px": "the whole frame moved by (3, 2) px; not in the browser corpus; v1: global alignment",
+  "combined": "shift (1, 0), re-draw at (0.35, 0.175), noise σ 1.2 and JPEG q 90 at once; in part in a browser (the fractional shift); v1: alignment, anti-aliasing re-draw, rerender «zero-mean sensor noise»",
+  "font fallback": "a heading drawn with a heavier stroke; in a browser, a font substituted on another machine — a changed renderer to the library, and v2 passes it with the canaries saying so; v1: anti-aliasing re-draw with heavier strokes, then morphology",
+  "shadow radius": "one row under a card blurred; no launch configuration of the corpus's Chromium draws a shadow otherwise; v1: anti-aliasing re-draw (the baseline moved by 0.20, 0.44 px)",
+  "gradient dither": "a brightness ramp of 0–6 levels plus ±2 per pixel; no launch configuration of the corpus's Chromium draws a gradient otherwise; v1 never saw it: consensus",
+  "caret": "a 2 px caret line in a field; the library hides the caret when it captures; v1: the morphological opening of 2 px",
+  "lazy placeholder": "a 130×132 placeholder recoloured by ΔE00 1.46; in a browser an unloaded image is an image against a placeholder, not this; v1 never saw it: ΔE00 below 2.3",
+  "subpixel text": "a band of text lines moved by 0.25 px; in a browser, a fraction of the layout — and v2 passes it with the canaries saying the renderer changed; v1 never saw it: consensus",
+  "sensor noise σ=1.6, thin glyphs": "Gaussian noise on every pixel, ΔE00 up to 7.2 over the whole frame; not in a browser screenshot (Chromium's raster is deterministic); v1 never saw it: ΔE00 > 2.3 with no SSIM < 0.9 (consensus)",
+  "sensor noise σ=3.0, thin glyphs": "Gaussian noise on every pixel, σ 3.0; not in a browser screenshot; v1: consensus left 25 regions, all taken by rerender «zero-mean sensor noise»",
+  "jpeg q=88, thin glyphs": "JPEG re-encoding at quality 88; only in a JPEG pipeline, the library captures PNG; v1: consensus, anti-aliasing re-draw and morphology, not its JPEG rule; v2's JPEG rule tries 85 and 90, and neither leaves half of the error",
+  "global shift 1px, thin glyphs": "the whole frame moved by (1, 1) px; not in the browser corpus, a whole frame moves on another scroll position; v1: global alignment",
+  "global shift 3px, thin glyphs": "the whole frame moved by (3, 2) px; not in the browser corpus; v1: global alignment",
+  "combined, thin glyphs": "shift (1, 0), re-draw at (0.35, 0.175), noise σ 1.2 and JPEG q 90 at once; in part in a browser (the fractional shift); v1: alignment, anti-aliasing re-draw, rerender «zero-mean sensor noise»",
+  "font fallback, thin glyphs": "a heading drawn with a heavier stroke; in a browser, a font substituted on another machine — a changed renderer to the library, and v2 passes it with the canaries saying so; v1: anti-aliasing re-draw with heavier strokes, then morphology",
+  "shadow radius, thin glyphs": "one row under a card blurred; no launch configuration of the corpus's Chromium draws a shadow otherwise; v1: anti-aliasing re-draw (the baseline moved by 0.20, 0.44 px)",
+  "gradient dither, thin glyphs": "a brightness ramp of 0–6 levels plus ±2 per pixel; no launch configuration of the corpus's Chromium draws a gradient otherwise; v1 never saw it: consensus",
+  "caret, thin glyphs": "a 2 px caret line in a field; the library hides the caret when it captures; v1: the morphological opening of 2 px",
+  "lazy placeholder, thin glyphs": "a 130×132 placeholder recoloured by ΔE00 1.46; in a browser an unloaded image is an image against a placeholder, not this; v1 never saw it: ΔE00 below 2.3",
+  "subpixel text, thin glyphs": "a band of text lines moved by 0.25 px; in a browser, a fraction of the layout — and v2 passes it with the canaries saying the renderer changed; v1 never saw it: consensus"
+ }
+}

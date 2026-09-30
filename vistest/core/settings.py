@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
+from . import engines as _engines
+
 __all__ = [
     "AIConfig", "AuthConfig", "CaptureConfig", "ConfigError", "DiffConfig",
     "MatrixConfig", "PathsConfig", "PluginsConfig", "RenderConfig",
@@ -227,6 +229,30 @@ class DiffConfig:
     #  `VISTEST_ENGINE_MAX_PIXELS` sets it, and — like every other environment
     #  variable — it is read by the loader in `vistest.config`, not here.
     max_pixels: int = 80_000_000
+
+    # --- engine ---
+    #  Which comparison runs: "v2", the default, or "v1", deprecated and gone
+    #  in the next release. One field that `compare()` reads, so that no
+    #  caller chooses on its own; core/engines.py says who sets it.
+    engine: str = _engines.DEFAULT
+    #  Where `fail_severity` came from when a person set it — "vistest.yaml",
+    #  "VISTEST_FAIL_SEVERITY", "global override", "project override",
+    #  "snapshot passport", "call". Empty when it is the preset's number:
+    #  v1 applies that, v2 does not (`v2_threshold`).
+    threshold_source: str = ""
+    #  The preset the numbers above were built from. v2 reads it only to say
+    #  that a preset does not act on it.
+    preset: str = "balanced"
+
+    def __post_init__(self) -> None:
+        self.engine = _engines.check(self.engine, "diff.engine")
+
+    @property
+    def v2_threshold(self) -> float:
+        """The severity below which v2 lists a region instead of failing on it:
+        a threshold a person set, or 0 — whatever no rule explains fails."""
+        return (float(self.fail_severity) if self.threshold_source
+                else _engines.V2_DEFAULT_THRESHOLD)
 
     def merged(self, **overrides: Any) -> DiffConfig:
         clean = {k: v for k, v in overrides.items() if v is not None}

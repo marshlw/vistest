@@ -88,7 +88,9 @@ def harvest(cases, cfg: DiffConfig | None = None, log=print) -> Dataset:
     groups: list[str] = []
 
     for case in cases:
-        res = compare(case.expected, case.actual, cfg=cfg, name=case.name)
+        #  v1 by name: the gate was trained on the cascade's regions, and a
+        #  change of the default engine must not change what it learns from.
+        res = compare(case.expected, case.actual, cfg=cfg, name=case.name, engine="v1")
         regions = list(res.regions) + list(res.suppressed)
         if not regions:
             continue
@@ -248,9 +250,10 @@ def evaluate(gate: RegionGate, cases, cfg: DiffConfig, log=print) -> dict:
     stats = {"false_fail_before": 0, "false_fail_after": 0,
              "missed_before": 0, "missed_after": 0, "flipped": []}
     for case in cases:
-        plain = compare(case.expected, case.actual, cfg=cfg, name=case.name)
+        plain = compare(case.expected, case.actual, cfg=cfg, name=case.name,
+                        engine="v1")
         gated = compare(case.expected, case.actual, cfg=cfg, name=case.name,
-                        ai_hooks=ai)
+                        ai_hooks=ai, engine="v1")
         fail_before = plain.verdict.value == "fail"
         fail_after = gated.verdict.value == "fail"
         if case.group == "NOISE":

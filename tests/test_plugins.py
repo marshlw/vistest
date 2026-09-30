@@ -322,10 +322,10 @@ def test_a_suppressed_region_leaves_the_verdict_but_not_the_result():
 
     reg = PluginRegistry()
     reg.set_scorer(Scorer(lambda regions: [0.0] * len(regions)), name="s")
-    plain = compare(base, changed, name="n")
+    plain = compare(base, changed, name="n", engine="v1")
     scored = compare(base, changed, name="n",
                      ai_hooks=AIPipeline(AIConfig(attribution_enabled=False),
-                                         registry=reg))
+                                         registry=reg), engine="v1")
 
     assert plain.verdict is Verdict.FAIL
     assert scored.verdict is Verdict.PASS

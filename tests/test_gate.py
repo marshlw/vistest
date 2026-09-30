@@ -237,9 +237,9 @@ def test_no_regression_is_lost_on_the_corpus(cases):
     for case in cases:
         if case.group != "SIGNAL":
             continue
-        plain = compare(case.expected, case.actual, cfg=cfg, name=case.name)
+        plain = compare(case.expected, case.actual, cfg=cfg, name=case.name, engine="v1")
         gated = compare(case.expected, case.actual, cfg=cfg, name=case.name,
-                        ai_hooks=ai)
+                        ai_hooks=ai, engine="v1")
         if plain.verdict is Verdict.FAIL and gated.verdict is not Verdict.FAIL:
             lost.append(case.name)
 
@@ -259,9 +259,9 @@ def test_gate_removes_false_failures_on_a_wide_aperture(cases):
         if case.group != "NOISE":
             continue
         before += compare(case.expected, case.actual, cfg=cfg,
-                          name=case.name).verdict is Verdict.FAIL
+                          name=case.name, engine="v1").verdict is Verdict.FAIL
         after += compare(case.expected, case.actual, cfg=cfg, name=case.name,
-                         ai_hooks=ai).verdict is Verdict.FAIL
+                         ai_hooks=ai, engine="v1").verdict is Verdict.FAIL
 
     assert before >= 5, "широкая апертура обязана давать шум — иначе гейт не нужен"
     assert after < before

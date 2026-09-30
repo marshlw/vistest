@@ -7,6 +7,60 @@
 
 ### f5: engine v2 by default
 
+#### Moving to engine v2
+
+Engine v2 now runs wherever a comparison runs — the library's
+`expect_screenshot`, the pytest fixtures, the service and `POST /api/check`,
+`vistest check`, `vistest compare`, `vistest doctor`. What no rule explains
+fails; each region that counts is said in words.
+
+**What turns red after the update**, and why v1 let it through:
+
+- colour differences between ΔE00 1 and 2.3, and recolours SSIM does not
+  see: v1 needed both colour and structure to change (consensus); v2 takes
+  every pixel above ΔE00 1;
+- a new ink colour on text: v1 let it through within 30 % of the local
+  contrast;
+- thin lines and small marks — an underline, a 1–2 px border, a focus ring,
+  a caret, anything under 24 px: v1's morphological opening and its minimum
+  region removed them; v2 keeps regions from 4 px;
+- a whole page moved by whole pixels: v1 aligned the frame (up to 8 px); v2
+  explains a move by a fraction of a pixel only, and a block moved by whole
+  pixels is a layout change;
+- a baseline taken by another renderer (another machine, OS, Chromium build
+  or font hinting): v2 explains re-rasterised text only when the canaries
+  prove the renderer changed, and nothing else it drew otherwise; a baseline
+  accepted before the canary existed names none, and then nothing about the
+  renderer is assumed;
+- JPEG at a quality v1's detection does not try, sensor or video noise, a
+  gradient re-dithered — none of it comes from a browser screenshot in the
+  library's path, and v2 fails it (`tests/benchmark_corpus/v2_ratchet.json`
+  lists what it fails on the synthetic corpus, and why);
+- a preset's `fail_severity` no longer lets anything through: under v2 the
+  threshold is 0 unless a person set one.
+
+**What to do:**
+
+- accept the baselines again on the renderer the checks run on
+  (`pytest --vistest-update=changed` in the container or on the CI machine):
+  a baseline accepted now keeps the renderer's canary, and v2 can then tell
+  re-rasterised text from a change;
+- set a threshold where a check has to tolerate small differences —
+  `threshold=` in the call, the snapshot's passport, `diff.fail_severity` in
+  vistest.yaml, an override in the interface. A region no rule explained
+  below it does not fail the check and is listed apart with where the
+  threshold came from: «below the threshold 25 (project override): 2 regions
+  — ink colour: #333333 → #3a3a3a, ΔE00 2.2 ×2». Overrides saved before the
+  update are applied and named that way. `max_changed_area_pct` still fails
+  on its own — counted over what no rule explained;
+- mask or ignore what moves: `mask=` (selectors and boxes), ignore zones,
+  `data-vistest="ignore"`, `diff.ignore_kinds`;
+- for one release, keep v1: `engine: v1` in vistest.yaml,
+  `VISTEST_ENGINE=v1`, or `engine="v1"` in the call (`--engine v1` for
+  `vistest compare`, `--set engine=v1` for `vistest check`,
+  `{"engine": "v1"}` in the API's `options`). A v1 result says in its notes
+  that v1 goes in the next release.
+
 - **Step A: coverage moments in page-shift** (`pageshift.coverage_moments`,
   `pageshift.region`). A vector path is drawn by coverage and blended with
   the paper linearly in the frame's own 8-bit sRGB values, so a drawing the
@@ -108,6 +162,60 @@
   compares it only with `--final`. Neither engine nor Playwright has been
   run on it, and no table of it has been read. The corpus budget goes from
   40 to 50 MiB (51.3 MB used).
+- **Step C: v2 is the default engine; v1 stays for one release.** The
+  engine is one field, `DiffConfig.engine` (default `core/engines.DEFAULT`,
+  "v2"), and `compare()` reads it; no caller in the package passes it on its
+  own except training (`ai/train.py`, v1 by name: the gate learns from v1's
+  regions). Chosen, in increasing strength, by vistest.yaml (`engine:`, or
+  `diff.engine` — the two may not disagree), `VISTEST_ENGINE`, and the call
+  (`compare(engine=)`, `expect_screenshot(engine=)`, an `engine` override of
+  a check — `vistest check --set engine=v1`, `options` of `POST /api/check`;
+  `vistest compare --engine`). A preset never chooses it: the library's
+  `--vistest-preset`, `vistest check --preset` and the API's `preset=` keep
+  the engine chosen elsewhere (`VisTestConfig.preset_of(..., engine=)`). A v1
+  result says in its notes, the library's report and its failure message
+  that v1 goes in the next release. **The threshold under v2:** 0 in every
+  preset — a preset's `fail_severity` is v1's — unless a person set one:
+  `threshold=`, the passport, `diff.fail_severity` in vistest.yaml,
+  `VISTEST_FAIL_SEVERITY`, a global or project override in the interface
+  (applied by the service, and handed to a project's run with
+  `VISTEST_THRESHOLD_SOURCE` so it is named there too). Where it came from
+  is `DiffConfig.threshold_source`. A region nothing explained below it
+  goes to `CompareResult.below_threshold`, keeps its description, does not
+  fail the check, and is said — one line, «below the threshold 25 (project
+  override): 14 regions — ink colour: #333333 → #3a3a3a, ΔE00 2.2 ×14» — in
+  the notes, the report (a list of its own, open), `ScreenshotMismatch` and
+  the API answer (`threshold`, `below_threshold`, only when a threshold was
+  set). `max_changed_area_pct` fails on its own as in v1, over what no rule
+  explained; the message says so when it does. A preset other than balanced
+  under v2 adds one line: it acts on v1 only. The engine does not change:
+  the v2 rows of both benchmarks are byte for byte what they were
+  (OpenCV 4.13.0, `--no-timing`: the synthetic table with `--compare
+  --engine both`, and the browser corpus). **The synthetic ratchet**
+  (`tests/benchmark_corpus/v2_ratchet.json`, the maintainer's decision): v2
+  misses nothing (0/11 per raster) and fails exactly the 24 listed NOISE
+  pairs, each with its reason from step B; a new red pair is red, a listed
+  pair that turned green is red until it is taken off — the list only
+  shrinks. v1 stays held by metrics.json, which does not change. Every test
+  that holds v1 — the cascade's, the ratchet, metrics.json — calls
+  `engine="v1"` by name.
+  **Measured, no rule added.** Stability on live pages — examples/ (the
+  demo page through the pytest fixture and the three integration forms) and
+  the library's own live pages (the demo page, the animated page with a
+  spinner, a pulse and a focused field, the renderer test's page), 19
+  checks: a baseline, then five repeats with nothing changed, each engine on
+  its own copy of the baselines: v1 5 of 95 red, v2 5 of 95 — the same
+  check both times, `existing-from-bytes.png`, a frame taken by the
+  project's own `page.screenshot` with no stabilisation, and in it the live
+  counter (v2: 21x13 at (305, 229), «ink shape changed»). Speed per pair on
+  the unsealed browser corpus, 1280×800, one Xeon core at 2.1 GHz: median
+  v1 169 ms, v2 198 ms, Playwright's comparator 107 ms (which decodes the
+  two PNGs itself, 12 ms here); identical frames 0.9 / 0.9 / 38 ms. v2 is
+  slower than twice v1 at the p95 (4.8 s against 1.4 s) and on the pairs
+  another renderer drew (median 1.96 s against 0.63 s): 65 % of v2's time
+  is the text re-rasterisation rule, 13 % the page-shift rule, 8 % the
+  descriptions. The canary costs 243 ms once per browser; a failed check is
+  compared once more with it (median 159 ms).
 
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 

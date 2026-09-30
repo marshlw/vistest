@@ -249,6 +249,14 @@ def project(tmp_path) -> Path:
     return root
 
 
+def _from_extensions(region: dict) -> list:
+    """The annotations extensions wrote. Engine v2 (the default) writes its
+    own sentence about every region that counts — the engine's, not an
+    extension's, and there with plugins off as with them on."""
+    return [a for a in region["annotations"]
+            if not (a.get("kind") == "description" and a.get("source") == "engine v2")]
+
+
 def _verdicts(parts: list[dict]) -> list[tuple]:
     """What must not depend on plugins being broken: the outcome and the regions."""
     out = []
@@ -274,7 +282,7 @@ def test_library_mode_with_plugins_disabled_is_complete_and_deterministic(
     assert changed["regions"], "the change must be found"
     for region in changed["regions"]:
         assert region["score"] is None
-        assert region["annotations"] == []
+        assert _from_extensions(region) == []
         assert region["suppressed_by"] is None
 
     recoloured = first["recoloured"][0]
@@ -461,13 +469,13 @@ def test_server_mode_with_plugins_disabled_is_complete_and_deterministic(
     # The extension fields: present, empty, in the JSON and in the database.
     for region in out["changed"]["regions"]:
         assert region["score"] is None
-        assert region["annotations"] == []
+        assert _from_extensions(region) == []
         assert region["suppressed_by"] is None
     detail = out["detail"]
     assert detail["regions"]
     for region in detail["regions"]:
         assert region["score"] is None
-        assert region["annotations"] == []
+        assert _from_extensions(region) == []
         assert region["suppressed_by"] is None
     assert detail["suppressed"] == [] or all(
         r["suppressed_by"] for r in detail["suppressed"])

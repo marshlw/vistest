@@ -148,7 +148,7 @@ def traced():
 def run_v1(exp: np.ndarray, act: np.ndarray, name: str):
     cfg = VisTestConfig.preset_of("balanced").diff
     with traced() as t:
-        res = compare(exp, act, cfg=cfg, name=name)
+        res = compare(exp, act, cfg=cfg, name=name, engine="v1")
     return res, t, cfg
 
 

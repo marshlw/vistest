@@ -73,8 +73,12 @@ def describe(result) -> str:
 
     regions = list(getattr(result, "regions", ()) or ())
     if not regions:
-        return (f"no single region stands out; "
-                f"{result.changed_area_pct:.2f}% of the frame differs")
+        #  Engine v2 passed with regions a person's threshold let through:
+        #  that is what happened, and it is said in the engine's words.
+        from ..core.engines import below_line
+
+        return below_line(result) or (f"no single region stands out; "
+                                      f"{result.changed_area_pct:.2f}% of the frame differs")
 
     counts: dict[str, int] = {}
     for region in regions:
@@ -292,7 +296,14 @@ def _row(entry: dict, budget: list[int]) -> str:
     limits = entry.get("limits") or {}
 
     facts = []
-    if "max_severity" in metrics:
+    if "max_severity" in metrics and limits.get("engine") == "v2":
+        #  v2 fails on what no rule explained; a threshold, when a person set
+        #  one, is named with its source.
+        facts.append(f"severity {metrics['max_severity']:.1f}"
+                     + (f" / threshold {limits['fail_severity']:g} "
+                        f"({limits['threshold_source']})"
+                        if limits.get("threshold_source") else ""))
+    elif "max_severity" in metrics:
         facts.append(f"severity {metrics['max_severity']:.1f}"
                      + (f" / {limits['fail_severity']:.1f}"
                         if "fail_severity" in limits else ""))
@@ -318,7 +329,7 @@ def _row(entry: dict, budget: list[int]) -> str:
 
     open_attr = " open" if verdict in ("fail", "error") else ""
     body = _viewer(entry, images) if verdict != "pass" else ""
-    body = _regions_table(entry) + _suppressed_list(entry) + body
+    body = _regions_table(entry) + _below_list(entry) + _suppressed_list(entry) + body
 
     return (
         f'<details class="row {_e(verdict)}"{open_attr} data-verdict="{_e(verdict)}">'
@@ -330,9 +341,17 @@ def _row(entry: dict, budget: list[int]) -> str:
         f'<p class="reason">{_e(entry.get("reason", ""))}</p>'
         + (f'<p class="renderer">{_e(entry["renderer"].get("line", ""))}</p>'
            if isinstance(entry.get("renderer"), dict) else "")
+        + (f'<p class="renderer">{_e(_v1_line())}</p>'
+           if limits.get("engine") == "v1" else "")
         + (f'<p class="nodeid">{_e(entry["nodeid"])}</p>'
            if entry.get("nodeid") else "")
         + body + '</div></details>')
+
+
+def _v1_line() -> str:
+    from ..core.engines import V1_DEPRECATED
+
+    return V1_DEPRECATED
 
 
 def _capture_facts(capture) -> list[str]:
@@ -401,6 +420,21 @@ def _where(region: dict) -> str:
     if region.get("selector"):
         text += f", {region['selector']}"
     return text
+
+
+def _below_list(entry: dict) -> str:
+    """What a threshold a person set let through (engine v2). Open by default:
+    it is not noise that a rule explained, and it is shown in passing rows too."""
+    line = entry.get("below_line")
+    if not line:
+        return ""
+    from ..core.engines import region_words
+
+    items = [f"<li>{_e(_where(r))} — {_e(region_words(r))} <span class=\"muted\">"
+             f"(severity {float(r.get('severity') or 0):.1f})</span></li>"
+             for r in entry.get("below_threshold") or [] if isinstance(r, dict)]
+    return (f'<details class="below" open><summary>{_e(line)}</summary>'
+            f'<ul>{"".join(items)}</ul></details>')
 
 
 def _suppressed_list(entry: dict) -> str:
@@ -521,6 +555,8 @@ footer{color:var(--muted);font-size:12px;margin-top:28px}
 .regions th,.regions td{border-bottom:1px solid var(--line);padding:4px 8px;
   text-align:left;vertical-align:top}
 .regions th{color:var(--muted);font-weight:500}
+.below{margin:8px 0;font-size:12px}
+.below ul{margin:4px 0 0;padding-left:20px}
 .suppressed{margin:8px 0;color:var(--muted);font-size:12px}
 .suppressed summary{cursor:pointer}
 .suppressed ul{margin:4px 0 0;padding-left:20px}

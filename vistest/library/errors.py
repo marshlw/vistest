@@ -75,6 +75,36 @@ def suppressed_line(r) -> str:
         where = f"{kind} {where}"
     return f"{where}: {why}"
 
+def _limits_line(result, limits: dict) -> str:
+    """The numbers the verdict was taken on, the way the engine takes it.
+
+    v1 fails on severity against its limit, or on the changed area. v2 fails
+    on any region no rule explained — unless a person set a threshold, and
+    then only on those at or above it (or on the share of the frame the ones
+    below cover), so the threshold is named with where it came from.
+    """
+    n = len(result.regions)
+    regions = f"{n} region{'' if n == 1 else 's'}"
+    if limits.get("engine") == "v2":
+        source = limits.get("threshold_source")
+        threshold = (f"threshold {limits.get('fail_severity', 0):g} ({source}), "
+                     f"area limit {limits.get('max_changed_area_pct', 0):.2f}%"
+                     if source else "no threshold: what no rule explains fails")
+        said = getattr(result, "threshold", None) or {}
+        if "area_pct" in said:
+            #  Every region was below the threshold, and together they cover
+            #  the share of the frame that fails on its own.
+            threshold += (f" — all below it, together {said['area_pct']:.2f}% of "
+                          f"the frame, at or over the area limit")
+        return (f"  engine v2: {regions} no rule explained, severity up to "
+                f"{result.max_severity:.1f}; {threshold}; changed area "
+                f"{result.changed_area_pct:.2f}%")
+    return (f"  severity {result.max_severity:.1f}"
+            f" (limit {limits.get('fail_severity', 0):.1f}),"
+            f" changed area {result.changed_area_pct:.2f}%"
+            f" (limit {limits.get('max_changed_area_pct', 0):.2f}%), {regions}")
+
+
 class VisTestWarning(UserWarning):
     """An optional part is missing, and the run goes on without it.
 
@@ -142,14 +172,12 @@ class ScreenshotMismatch(VisualCheckError):
         head = f"vistest: {name!r} differs from the baseline"
         if platform:
             head += f" ({platform})"
+        from ..core.engines import V1_DEPRECATED
+
         lines = [
             head,
-            f"  severity {result.max_severity:.1f}"
-            f" (limit {limits.get('fail_severity', 0):.1f}),"
-            f" changed area {result.changed_area_pct:.2f}%"
-            f" (limit {limits.get('max_changed_area_pct', 0):.2f}%),"
-            f" {len(result.regions)} region"
-            f"{'' if len(result.regions) == 1 else 's'}",
+            _limits_line(result, limits),
+            *([f"  {V1_DEPRECATED}"] if limits.get("engine") == "v1" else []),
             f"  reason: {reason}",
             #  Whether the browser draws text the way it did for the baseline:
             #  read before the diff, it changes what the diff means.
@@ -163,6 +191,11 @@ class ScreenshotMismatch(VisualCheckError):
             lines.append(("  changed:  " if i == 0 else "            ") + changed_line(r))
         if len(said) > CHANGED_SHOWN:
             lines.append(f"            ... and {len(said) - CHANGED_SHOWN} more in the report")
+        #  What a threshold a person set let through: said, never dropped.
+        from ..core.engines import below_line
+
+        if below := below_line(result):
+            lines.append(f"  {below}")
         suppressed = list(getattr(result, "suppressed", None) or ())
         if suppressed:
             from ..plugins.runtime import count_suppressed, say_suppressed

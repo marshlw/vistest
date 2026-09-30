@@ -155,19 +155,26 @@ def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
     accept(ctx, frame(), "page.png")
     changed = frame(box=(10, 10, 60, 30))
 
+    #  Engine v2, the default: a preset's number is not a threshold, one set
+    #  in the call is — and is named with where it came from.
     with pytest.raises(ScreenshotMismatch) as default:
         expect_screenshot(changed, "page.png")
-    assert "limit 25.0" in str(default.value)
+    assert "no threshold: what no rule explains fails" in str(default.value)
 
     with pytest.raises(ScreenshotMismatch) as raised:
         expect_screenshot(changed, "page.png", threshold=60)
-    assert "limit 60.0" in str(raised.value)
+    assert "threshold 60 (call)" in str(raised.value)
 
     with pytest.raises(ScreenshotMismatch) as both:
         expect_screenshot(changed, "page.png",
                           threshold={"fail_severity": 60,
                                      "max_changed_area_pct": 30})
-    assert "limit 60.0" in str(both.value) and "limit 30.00%" in str(both.value)
+    assert "threshold 60 (call), area limit 30.00%" in str(both.value)
+
+    #  Engine v1, by name, reads the same plumbing as its limit.
+    with pytest.raises(ScreenshotMismatch) as v1:
+        expect_screenshot(changed, "page.png", threshold=60, engine="v1")
+    assert "limit 60.0" in str(v1.value)
 
 
 def test_an_unknown_threshold_is_refused_at_the_call(ctx):
@@ -195,7 +202,7 @@ def test_the_passport_thresholds_reach_the_comparison(ctx):
     changed = frame(box=(10, 10, 60, 30))
     with pytest.raises(ScreenshotMismatch) as before:
         expect_screenshot(changed, "page.png")
-    assert "limit 25.0" in str(before.value)
+    assert "no threshold: what no rule explains fails" in str(before.value)
 
     store = FileStore(ctx.baselines)
     key = SnapshotKey("page.png")
@@ -204,7 +211,7 @@ def test_the_passport_thresholds_reach_the_comparison(ctx):
 
     with pytest.raises(ScreenshotMismatch) as after:
         expect_screenshot(changed, "page.png")
-    assert "limit 70.0" in str(after.value)
+    assert "threshold 70 (snapshot passport)" in str(after.value)
 
 
 def test_the_call_beats_the_passport(ctx):
@@ -220,7 +227,7 @@ def test_the_call_beats_the_passport(ctx):
 
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png", threshold=42)
-    assert "limit 42.0" in str(e.value)
+    assert "threshold 42 (call)" in str(e.value)
 
 
 def test_setting_a_passport_threshold_does_not_need_a_new_picture(ctx):

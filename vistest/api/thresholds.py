@@ -45,6 +45,7 @@ from ..core.thresholds import (
     ThresholdStore,
     env_patch,
     layer,
+    override_source,
     validate,
 )
 
@@ -229,6 +230,10 @@ def apply(cfg: VisTestConfig, db, project_key: str | None = None
     patch = overrides(db, project_key)
     if not patch:
         return cfg
+    if "fail_severity" in patch:
+        #  Named, because engine v2 applies a threshold only when a person
+        #  set one — and an override saved in the interface is exactly that.
+        patch["threshold_source"] = override_source(*SettingStore(db).layers(project_key))
     return replace(cfg, diff=cfg.diff.merged(**patch))
 
 
@@ -240,7 +245,8 @@ def env_for(db, project_key: str | None = None) -> dict[str, str]:
     threshold set in the interface would apply to the service's own runs and
     silently not to project runs — a discrepancy that costs days to find.
     """
-    return env_patch(overrides(db, project_key))
+    return env_patch(overrides(db, project_key),
+                     override_source(*SettingStore(db).layers(project_key)))
 
 
 #  A runtime assertion rather than a comment: if the protocol in the core ever

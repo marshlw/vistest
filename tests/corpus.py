@@ -478,9 +478,47 @@ def measure(cases: list[Case] | None = None, *, preset: str = METRICS_PRESET) ->
     ai = AIPipeline(cfg.ai)
     rows = {}
     for c in cases if cases is not None else load():
+        #  Engine v1 by name: this file is v1's answer, whatever the default is.
         rows[c.name] = _metrics_row(
-            compare(c.expected, c.actual, cfg=cfg.diff, name=c.name, ai_hooks=ai))
+            compare(c.expected, c.actual, cfg=cfg.diff, name=c.name, ai_hooks=ai,
+                    engine="v1"))
     return {"preset": preset, "cases": rows}
+
+
+# --------------------------------------------------------------------------- #
+#  Engine v2 on this corpus: a ratchet list, not a table
+#
+#  v2 is accepted on the browser corpus; here it fails twelve NOISE pairs per
+#  raster that v1 filtered before they became regions (step B of f5 says for
+#  each what the noise is, whether a browser screenshot has it, and which v1
+#  rule took it). The maintainer's decision of 2026-09-30: no miss ever, and
+#  the false failures frozen as a list with a reason each, in a file of its
+#  own next to metrics.json. The list only shrinks.
+# --------------------------------------------------------------------------- #
+V2_RATCHET_PATH = FROZEN_DIR / "v2_ratchet.json"
+
+
+def load_v2_ratchet(path: str | Path | None = None) -> dict:
+    p = Path(path) if path is not None else V2_RATCHET_PATH
+    if not p.is_file():
+        raise CorpusError(f"{p} does not exist: it is engine v2's ratchet on this "
+                          "corpus and lives in the repository")
+    return json.loads(p.read_text("utf-8"))
+
+
+def measure_v2(cases: list[Case] | None = None) -> dict[str, bool]:
+    """Engine v2 over the corpus the way the benchmark's v2 row runs it:
+    -> {pair: failed}."""
+    from vistest.ai.pipeline import AIPipeline
+    from vistest.config import VisTestConfig
+    from vistest.core.comparator import compare
+    from vistest.models import Verdict
+
+    cfg = VisTestConfig.preset_of(METRICS_PRESET)
+    ai = AIPipeline(cfg.ai)
+    return {c.name: compare(c.expected, c.actual, cfg=cfg.diff, name=c.name,
+                            ai_hooks=ai, engine="v2").verdict is Verdict.FAIL
+            for c in (cases if cases is not None else load())}
 
 
 def load_metrics(path: str | Path | None = None) -> dict:

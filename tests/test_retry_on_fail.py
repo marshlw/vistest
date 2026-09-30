@@ -358,12 +358,17 @@ def test_garbage_in_the_passport_does_not_stop_the_run(svc):
 
 
 def test_a_snapshot_can_be_made_stricter_too(svc):
-    """Третий уровень работает в обе стороны, а не только «потерпи»."""
+    """Третий уровень работает в обе стороны, а не только «потерпи».
+
+    Engine v1 by name: «stricter» is v1's severity. Under v2 the threshold
+    is 0 unless a person sets one, and 12 against 10 is below ΔE00 1 —
+    there is nothing to be stricter about."""
     barely = _page(spinner=12)               # почти неотличимо от эталона (10)
-    assert not _check(svc, barely).failed
+    v1 = {"engine": "v1"}
+    assert not _check(svc, barely, diff_overrides=v1).failed
 
     _with_thresholds(svc, fail_severity=0, max_changed_area_pct=0)
-    assert _check(svc, barely).failed
+    assert _check(svc, barely, diff_overrides=v1).failed
 
 
 # --------------------------------------------------------------------------- #

@@ -45,7 +45,7 @@ HD = (720, 1280)
 
 
 def _c(a, b, **kw):
-    return compare(a, b, cfg=DiffConfig(**kw))
+    return compare(a, b, cfg=DiffConfig(**kw), engine="v1")
 
 
 def _blank_hd():

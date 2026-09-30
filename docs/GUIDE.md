@@ -1891,6 +1891,13 @@ Visual mismatch: checkout.png
   «непонятно на чём», загляните в `result.json`, там они с причинами.
 - **note** — точная причина падения по политике.
 
+Under engine v2, the default, the policy line reads «Reason for the failure:
+N region(s) no rule explained», each region says in words what changed, and
+a threshold a person set is named with its source; the regions it let
+through follow on a line of their own, «below the threshold 25 (call): …».
+The library's `ScreenshotMismatch` opens with `engine v2: 2 regions no rule
+explained, severity up to 71.4; no threshold: what no rule explains fails`.
+
 ### Смотрим артефакты
 
 Лежат в `.vistest/runs/<run_id>/<имя-снимка>/`:
@@ -1929,6 +1936,64 @@ allure serve allure-results
 ---
 
 ## 7. Настройка порогов
+
+### The engine: v2 by default, v1 for one more release
+
+Every check — the library's `expect_screenshot`, the pytest fixture, the
+service and `POST /api/check`, `vistest check`, `vistest compare`,
+`vistest doctor` — runs **engine v2** unless somebody chose otherwise. v2
+catches every difference a person can see (ΔE00 above 1 per pixel, grouped
+within 2 px, from 4 px up) and takes out only what a named rule explains: a
+scroll bar that appeared, a JPEG re-encode, the page moved by a fraction of a
+pixel, text re-rasterised by a renderer the canaries prove changed. **A
+region no rule explained fails the check.** Each region that counts is said
+in words in the report and the failure message («ink colour: #1f2937 →
+#4d5666, ΔE00 14.8»).
+
+Engine v1, the cascade, stays for one release and then goes. Choose it, in
+increasing strength, with:
+
+```yaml
+engine: v1          # vistest.yaml, top level
+```
+
+```bash
+VISTEST_ENGINE=v1 pytest tests/
+vistest compare expected.png actual.png --engine v1
+vistest check checkout.png shot.png --set engine=v1
+```
+
+```python
+expect_screenshot(page, "home.png", engine="v1")
+```
+
+and `{"engine": "v1"}` in the `options` of `POST /api/check`. A v1 result
+carries one line in its notes: v1 is deprecated and goes in the next release.
+
+**The threshold under v2.** A preset's `fail_severity` is v1's and is not
+applied: under v2 the threshold is 0 — whatever no rule explains fails. When
+a person sets one — `threshold=` in the call, the snapshot's passport,
+`diff.fail_severity` in vistest.yaml, `VISTEST_FAIL_SEVERITY`, an override
+in the interface — a region no rule explained whose severity is below it
+does not fail the check, and it is not dropped either: the result, the
+report, the failure message and the API answer list it apart, in the
+engine's words and with where the threshold came from:
+
+```
+below the threshold 25 (project override): 2 regions — ink colour: #333333 → #3a3a3a, ΔE00 2.0; …
+```
+
+Overrides saved in the interface before the switch are applied by v2 and
+named that way, so an old number that now lets something through is seen.
+`max_changed_area_pct` means what it means in v1: the share of the frame
+that fails on its own, whatever the severity — counted over the regions no
+rule explained, so under the default threshold of 0 it adds nothing.
+
+**Presets under v2.** `strict`, `balanced` and `loose` tune v1's cascade
+(ΔE00 and SSIM thresholds, morphology). v2 has one rule — unexplained
+fails — and your threshold, so a preset does not act on it; a preset other
+than `balanced` adds one line to a v2 result saying so. The table below is
+v1's.
 
 ### Пресеты
 
@@ -2037,9 +2102,14 @@ python tests/benchmark.py --preset balanced
 Аргумент `assert_screenshot` → `--vistest-preset` → `vistest.yaml` →
 переменные окружения → дефолт.
 
+The engine follows the same order, with one difference: a preset never
+chooses the engine — `--vistest-preset strict` keeps whatever vistest.yaml
+or `VISTEST_ENGINE` chose.
+
 Переменные окружения:
 
 ```
+VISTEST_ENGINE=v1            # engine v1 for one more release; v2 by default
 VISTEST_ROOT=.vistest
 VISTEST_API_URL=http://localhost:8420
 VISTEST_PROJECT=my-shop

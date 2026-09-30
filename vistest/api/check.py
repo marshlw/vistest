@@ -181,6 +181,8 @@ _OVERRIDES: dict[str, tuple] = {
     "detect_moved":           (bool,   None,    None),
     "fail_on_size_change":    (bool,   None,    None),
     "ignore_kinds":           (list,   None,    None),
+    #  The engine for this one check: "v2" (the default) or "v1", deprecated.
+    "engine":                 (str,    None,    None),
 }
 _ALLOWED_OVERRIDES = frozenset(_OVERRIDES)
 
@@ -204,6 +206,16 @@ def _clean_overrides(raw: dict) -> dict:
             if not isinstance(value, bool):
                 raise HTTPException(400, f"{name} must be true or false")
             out[name] = value
+            continue
+
+        if kind is str:
+            from ..core.engines import check as _engine
+            from ..core.settings import ConfigError
+
+            try:
+                out[name] = _engine(value, name)
+            except ConfigError as e:
+                raise HTTPException(400, str(e)) from None
             continue
 
         if kind is list:
@@ -298,7 +310,9 @@ async def check(
     # Порядок здесь и есть ответ на «чей порог сильнее»: пресет или конфиг —
     # основа, поверх ложится то, что выставили в интерфейсе, и только сверху —
     # `options` этого конкретного вызова. Ближе к вызывающему — сильнее.
-    cfg = VisTestConfig.preset_of(preset) if preset else _cfg
+    #  A preset tunes v1's cascade; the engine stays the one the service runs
+    #  with (vistest.yaml, VISTEST_ENGINE), unless `options` names another.
+    cfg = VisTestConfig.preset_of(preset, engine=_cfg.diff.engine) if preset else _cfg
     try:
         from .main import db
         from .thresholds import apply

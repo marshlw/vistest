@@ -53,12 +53,18 @@ def test_identical_loads_are_clean():
 
 
 def test_sensor_noise_stays_clean():
-    """Шум ниже порога различимости не должен считаться ложным падением."""
+    """Шум ниже порога различимости не должен считаться ложным падением.
+
+    Engine v1 by name: its consensus of ΔE00 and SSIM is what keeps sensor
+    noise out. Under v2 it fails, as on the synthetic corpus
+    (tests/benchmark_corpus/v2_ratchet.json) — and a browser does not draw
+    it: every frame of the browser corpus comes out the same twice."""
     base = syn.page()
     frames = _frames([base,
                       syn.add_sensor_noise(base, sigma=1.6, seed=1),
                       syn.add_sensor_noise(base, sigma=1.6, seed=2)])
-    rep = analyze(frames, cfg=CFG, target="noisy-sensor")
+    rep = analyze(frames, cfg=VisTestConfig.preset_of("balanced", engine="v1"),
+                  target="noisy-sensor")
 
     assert rep.suppressed_fails == 0, rep.verdict()
     assert rep.healthy

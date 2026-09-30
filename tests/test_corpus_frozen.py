@@ -320,3 +320,54 @@ def test_regenerate_refuses_an_unknown_raster(monkeypatch, tmp_path):
     with pytest.raises(cp.CorpusError, match="RENDERS"):
         cp.regenerate(tmp_path)
     assert not (tmp_path / "manifest.json").exists()
+
+
+# --------------------------------------------------------------------------- #
+#  Engine v2: the ratchet list
+# --------------------------------------------------------------------------- #
+#: The twelve NOISE pages v2 failed when the list was frozen (2026-09-30),
+#: on both rasters. The file may drop names; it may never hold one outside this.
+V2_RATCHET_FROZEN = frozenset(
+    name + suffix
+    for name in ("sensor noise σ=1.6", "sensor noise σ=3.0", "jpeg q=88",
+                 "global shift 1px", "global shift 3px", "combined", "font fallback",
+                 "shadow radius", "gradient dither", "caret", "lazy placeholder",
+                 "subpixel text")
+    for suffix in ("", ", thin glyphs"))
+
+
+@pytest.fixture(scope="module")
+def measured_v2(cases):
+    return cp.measure_v2(cases)
+
+
+def test_v2_misses_nothing_on_the_synthetic_corpus(cases, measured_v2):
+    ratchet = cp.load_v2_ratchet()
+    assert ratchet["misses_allowed"] == 0
+    missed = [c.name for c in cases if c.group == "SIGNAL" and not measured_v2[c.name]]
+    assert not missed, f"engine v2 passes SIGNAL pairs: {missed}"
+
+
+def test_v2_fails_exactly_the_listed_noise_pairs(cases, measured_v2):
+    """A new red pair is red; a listed pair that turned green is red until it
+    is taken off the list — the list only shrinks."""
+    listed = set(cp.load_v2_ratchet()["false_failures"])
+    red = {c.name for c in cases if c.group == "NOISE" and measured_v2[c.name]}
+    new = sorted(red - listed)
+    assert not new, (f"engine v2 fails NOISE pairs that are not on the ratchet list "
+                     f"({cp.V2_RATCHET_PATH.name}): {new}")
+    green = sorted(listed - red)
+    assert not green, (f"engine v2 now passes {green}: take them off "
+                       f"{cp.V2_RATCHET_PATH.name} — the list only shrinks")
+
+
+def test_the_v2_list_only_shrinks_and_says_why(cases):
+    ratchet = cp.load_v2_ratchet()
+    assert ratchet["engine"] == "v2"
+    listed = ratchet["false_failures"]
+    assert set(listed) <= V2_RATCHET_FROZEN, \
+        f"not on the list frozen on 2026-09-30: {sorted(set(listed) - V2_RATCHET_FROZEN)}"
+    noise = {c.name for c in cases if c.group == "NOISE"}
+    assert set(listed) <= noise
+    for name, why in listed.items():
+        assert why and "\n" not in why and "v1" in why, name
