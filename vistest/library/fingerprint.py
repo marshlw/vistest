@@ -20,9 +20,11 @@ is drawn only when it can change an outcome (`compare_lazily`):
    names a canary** — then this run's canary is drawn and the pair is
    compared again with `compare(..., renderer=(the baseline's, this run's))`.
 
-Nothing else can move a verdict: the renderer only switches on a rule that
-takes regions out, so a check that passes without the canary passes with
-it. A passing check says «renderer: not checked (the check passed)».
+Nothing else can move a verdict: a known renderer only switches rules on
+that take regions out — text re-rasterisation when it changed, the coverage
+moments of a page moved by a fraction (engine v2) when it is the same — so
+a check that passes without the canary passes with it. A passing check says
+«renderer: not checked (the check passed)».
 
 A canary, once drawn, is kept for the browser it was drawn in and the
 device scale factor it was drawn at — not per context: every context of one
@@ -129,11 +131,13 @@ def compare_lazily(compare_with, baseline_canary, this_run):
     this run's (a `RunCanary`). Returns `(result, renderer)` — the renderer
     pair the result was computed with, `None` when it was computed without.
 
-    A pass is final: the renderer only switches on a rule that takes regions
-    out, so what passes without it passes with it. A failure is looked at
-    again only when the baseline names a canary and this run can draw one,
-    and compared again only when the two differ: with the same renderer the
-    rule stays off, and the second comparison would be the first.
+    A pass is final: a known renderer only switches rules on that take
+    regions out, so what passes without it passes with it. A failure is
+    looked at again when the baseline names a canary and this run can draw
+    one, and then compared again whatever the two say: another renderer
+    lets text re-rasterisation in, the same one lets the coverage moments
+    of a moved page in (f5; until then the same renderer changed nothing and
+    the second comparison was skipped).
     """
     result = compare_with(None)
     if not result.failed:
@@ -145,8 +149,6 @@ def compare_lazily(compare_with, baseline_canary, this_run):
     if run.png is None:
         return result, None
     renderer = (base, run.png)
-    if not _renderer.check(renderer).changed:
-        return result, renderer
     return compare_with(renderer), renderer
 
 

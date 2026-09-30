@@ -29,8 +29,9 @@ is applied to a region, in two steps, each measured:
    the page (`cover`).
 2. **The region is what that move did.** Once the page is proven to have
    moved, a region is explained when its changed pixels are reproduced by
-   the displacements; or when it is a drawing the rasteriser drew again at
-   the new position (`moments`): the shape within a pixel (b) on the same
+   the displacements; or — when the canaries prove the renderer is the
+   same — when it is a drawing the rasteriser drew again at the new
+   position (`coverage_moments`): the shape within a pixel (b) on the same
    paper (c), the same coverage (M0) and its centre moved by the page's
    move (M1); or when it is text redrawn at the new position: the same ink
    (a), (b), (c), and, if it moved as a block by whole pixels, a move the
@@ -277,8 +278,8 @@ class Moments:
                 f"({self.move[0]:+g}, {self.move[1]:+g})")
 
 
-def moments(exp: np.ndarray, act: np.ndarray, box: tuple[int, int, int, int],
-            move: tuple[float, float], pad: int = MOMENTS_PAD_PX) -> Moments:
+def coverage_moments(exp: np.ndarray, act: np.ndarray, box: tuple[int, int, int, int],
+                     move: tuple[float, float], pad: int = MOMENTS_PAD_PX) -> Moments:
     """M0 and M1 of the region with box `box` (x, y, w, h) in both frames."""
     from . import rerender as _rr
 
@@ -340,13 +341,16 @@ class RegionShift:
 def region(ps: PageShift, where: np.ndarray, box: tuple[int, int, int, int], crop,
            exp: np.ndarray, act: np.ndarray, lab_exp: np.ndarray, lab_act: np.ndarray, *,
            limit: float, ink_limit: float, jnd: float, mass_limit: float,
-           centroid_limit_px: float) -> RegionShift:
+           centroid_limit_px: float, moments: bool = True) -> RegionShift:
     """Is this region what the proven move did to the page?
 
     First by the pixels: the move reproduces all but `limit` of its changed
     pixels. Failing that, as a drawing drawn again at the new position: (b)
     the shape within a pixel, (c) the same paper, M0 within `mass_limit`
-    and M1 within `centroid_limit_px` of the page's move. Failing that, as
+    and M1 within `centroid_limit_px` of the page's move — asked only with
+    `moments`, which the engine gives when the canaries prove the renderer
+    is the same (the premise: the same rasteriser drew the same path at the
+    fraction; another rasteriser draws another picture). Failing that, as
     text redrawn at the new position — the properties of `rerender.py`
     measured as they are there: (a) the ink, (b), (c), and a whole-pixel
     move only in the page's direction (e').
@@ -360,9 +364,9 @@ def region(ps: PageShift, where: np.ndarray, box: tuple[int, int, int, int], cro
         return RegionShift(missed=missed, pixels=pixels, limit=limit, how=MOVE)
     shape = _rr.shape_within(crop)
     paper = _rr.background_unchanged(crop)
-    mo = moments(exp, act, box, (ps.dx, ps.dy))
-    if (shape.holds() and paper.holds(jnd) and mo.conserved(mass_limit)
-            and mo.follows(centroid_limit_px)):
+    mo = coverage_moments(exp, act, box, (ps.dx, ps.dy)) if moments else None
+    if (mo is not None and shape.holds() and paper.holds(jnd)
+            and mo.conserved(mass_limit) and mo.follows(centroid_limit_px)):
         return RegionShift(missed=missed, pixels=pixels, limit=limit, how=MOMENTS,
                            moments=mo,
                            reason="; ".join(("the drawing moved with the page: "
@@ -381,7 +385,8 @@ def region(ps: PageShift, where: np.ndarray, box: tuple[int, int, int, int], cro
     if ok:
         return RegionShift(missed=missed, pixels=pixels, limit=limit, how=TEXT,
                            moments=mo, reason=reason)
+    drawing = (f"not the drawing moved ({mo.text()})" if mo is not None else
+               "the drawing moved is not asked (the renderer is not proven the same)")
     return RegionShift(missed=missed, pixels=pixels, limit=limit, moments=mo,
-                       reason=f"the move misses {100 * share:.0f}% of its changed px; not "
-                              f"the drawing moved ({mo.text()}), and not text redrawn: "
-                              f"{reason}")
+                       reason=f"the move misses {100 * share:.0f}% of its changed px; "
+                              f"{drawing}, and not text redrawn: {reason}")

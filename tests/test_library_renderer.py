@@ -302,6 +302,8 @@ def _corpus_sample():
             picked.setdefault((family,), c)
         elif c["family"] == "opacity" and c["magnitude"] == "0.98":
             picked.setdefault((c["name"],), c)
+        elif c["name"] == "article/render/shift_0.25px":    # its bookmark: moments
+            picked.setdefault((c["name"],), c)
     return bc, m, list(picked.values())
 
 
@@ -314,7 +316,7 @@ class _Result:
     (False, canary_png(), canary_png(3), 1, 0, False),   # passed: nothing to decide
     (True, None, canary_png(3), 1, 0, False),            # the baseline names no canary
     (True, canary_png(), None, 1, 1, False),             # this run cannot draw one
-    (True, canary_png(), canary_png(), 1, 1, True),      # the same renderer: rule off
+    (True, canary_png(), canary_png(), 2, 1, True),      # the same renderer: again, with it
     (True, canary_png(), canary_png(3), 2, 1, True),     # another renderer: again, with it
 ])
 def test_the_canary_is_drawn_and_used_only_where_it_decides(first, base, run, compares,
@@ -335,8 +337,9 @@ def test_the_canary_is_drawn_and_used_only_where_it_decides(first, base, run, co
 
 
 def test_the_lazy_path_gives_the_eager_verdicts_on_the_corpus():
-    """The renderer only lets a rule take regions out: what passes without the
-    canary passes with it, and a failure is judged again with it."""
+    """A known renderer only lets rules take regions out: what passes without
+    the canary passes with it, and a failure is judged again with it — also
+    when the renderer is the same (a page moved by a fraction, f5)."""
     from vistest.core import compare
 
     bc, m, sample = _corpus_sample()
@@ -361,8 +364,12 @@ def test_the_lazy_path_gives_the_eager_verdicts_on_the_corpus():
             [(r.x, r.y, r.w, r.h) for r in eager.regions], c["name"]
         if not lazy.failed:
             passed_without += used is None
-            assert not drawn, c["name"]
-    assert len(sample) == 15 and passed_without > 0
+            assert not drawn or used is not None, c["name"]
+        if c["name"] == "article/render/shift_0.25px":
+            #  The same renderer lets the coverage moments in (f5): the
+            #  first comparison fails, the second, with the canaries, passes.
+            assert eager.verdict.value == "pass" and used is not None and drawn
+    assert len(sample) == 16 and passed_without > 0
 
 
 # --------------------------------------------------------------------------- #
