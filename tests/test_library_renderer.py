@@ -304,6 +304,22 @@ def test_another_renderer_is_named_with_its_pixels_in_the_failure(ctx):
         "renderer: different from the baseline's (canary: 7 px)"
 
 
+def test_the_canary_a_check_drew_is_kept_with_the_run(ctx):
+    """Phase 2: `vistest bench` reads the run's side of a pair from here — the
+    canary under `.vistest/renderers/`, its sha in the report row."""
+    accept(ctx, FakePage(frame(), FakeContext(canary_png())), "home.png")
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(FakePage(frame(90), FakeContext(canary_png(dots=7))), "home.png")
+    row = rows(ctx)[-1]
+    sha = fp._sha(canary_png(dots=7))
+    assert row["renderer"]["run_sha256"] == sha
+    kept = ctx.artifacts_root / fp.RUN_RENDERERS_DIR / f"{sha}.png"
+    assert kept.read_bytes() == canary_png(dots=7)
+    #  Nothing drawn, nothing kept: the row says only what the check knew.
+    expect_screenshot(FakePage(frame(), FakeContext(canary_png())), "home.png")
+    assert "run_sha256" not in rows(ctx)[-1]["renderer"]
+
+
 def test_bytes_have_no_renderer_and_the_report_says_so(ctx):
     accept(ctx, frame(), "flat.png")
     [path] = list(ctx.store.root.rglob("flat.json"))

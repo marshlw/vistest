@@ -93,6 +93,8 @@ tests/.vistest_codegen.json
 
 # CLI and benchmark output
 bench_out/
+# `vistest bench`: its report, labels.csv and diff pictures, never committed
+vistest-bench-out/
 vistest-diff/
 vistest-report/
 *.actual.png

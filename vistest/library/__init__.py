@@ -279,6 +279,7 @@ def expect_screenshot(
         rend = (_fingerprint.not_checked() if renderer is None and not result.failed
                 else _fingerprint.status(base_canary, base_why, run_canary))
         _canary_row(captured, run_canary)
+        run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
 
         #  Failed: one more frame, and whatever did not hold still between the two
         #  is masked for a second comparison of the FIRST frame. The same function
@@ -330,6 +331,7 @@ def expect_screenshot(
             if run_canary is _fingerprint.NOT_DRAWN:
                 this_run()              # writing a baseline: its sha is kept
                 _canary_row(captured, run_canary)
+                run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
             meta = store.put(key, shot.png,
                              meta=_passport_with_renderer(store, key, run_canary))
             record(verdict="new_baseline",
@@ -339,13 +341,14 @@ def expect_screenshot(
                            if result.verdict is not Verdict.FAIL
                            else f"accepted: {reason}"),
                    result=result, limits=limits, images=images,
-                   duration_ms=_ms(started), capture=captured, renderer=rend)
+                   duration_ms=_ms(started), capture=captured, renderer=rend,
+                   run_canary=run_sha)
             return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
 
         record(verdict="fail" if result.verdict is Verdict.FAIL else "pass",
                action="compared", reason=reason, result=result, limits=limits,
                images=images, duration_ms=_ms(started), capture=captured,
-               renderer=rend)
+               renderer=rend, run_canary=run_sha)
 
         if result.verdict is Verdict.FAIL:
             raise ScreenshotMismatch.build(
@@ -560,8 +563,12 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
 def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
             images: dict, duration_ms: int, result=None,
             limits: dict | None = None, capture: dict | None = None,
-            renderer=None) -> None:
-    """One row for the report, written as this process's own file."""
+            renderer=None, run_canary: str = "") -> None:
+    """One row for the report, written as this process's own file.
+
+    `run_canary` is the sha256 of the canary this check drew, kept under
+    `.vistest/renderers/` (`fingerprint.keep_run`), or '' when it drew none.
+    """
     from ..report.library import write_part
 
     entry = {
@@ -579,7 +586,8 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
     if capture:
         entry["capture"] = capture
     if renderer is not None:
-        entry["renderer"] = {**renderer.as_dict(), "line": renderer.line()}
+        entry["renderer"] = {**renderer.as_dict(), "line": renderer.line(),
+                             **({"run_sha256": run_canary} if run_canary else {})}
     if result is not None:
         entry["metrics"] = {
             "max_severity": round(float(result.max_severity), 2),

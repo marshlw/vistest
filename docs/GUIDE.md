@@ -2280,6 +2280,106 @@ git, число эталонов по платформам и то, откуда
 разберитесь с источниками из списка: инструмент, который падает на
 неизменённой странице, бесполезен независимо от качества движка.
 
+### The engine on your own failures: `vistest bench`
+
+Our benchmark corpus was written by us — simple templates, one browser. This
+command runs the engine on yours: the pairs your own checks failed on, from
+whatever made them.
+
+```bash
+vistest bench test-results                     # Playwright's test-results
+vistest bench .                                # a project with a VisTest run (.vistest/)
+vistest bench --expected baselines --actual screenshots   # two folders, same file names
+```
+
+**The input** is told apart by what is on disk:
+
+- Playwright's `test-results/`: a failed `toHaveScreenshot` leaves
+  `<test>/<name>-expected.png` next to `<name>-actual.png`;
+- a VisTest run: `.vistest/actual/<platform>/<name>.png` against
+  `tests/__vistest__/<platform>/<name>.png` (`--baselines` for another
+  root; the report rows say where each baseline was);
+- two folders with the same file names, `--expected` and `--actual`.
+
+Anything the layout does not account for — a picture with no other half, a
+file that is not a picture — is one line in the output, never dropped in
+silence. Two pictures of different sizes are compared as they are, and said.
+
+**Each pair** goes through:
+
+- **engine v2**, with its defaults (no threshold, no preset) and the AI layer
+  as the benchmark runs it: its verdict, the first three regions in words, and
+  the renderer — with the canaries of both sides when the pair has them (the
+  baseline's passport and the canary the library kept for the run under
+  `.vistest/renderers/`; in two folders, `<name>.canary.png` next to a
+  picture), «unknown» otherwise;
+- **Playwright's own comparator** at threshold 0.05 and 0.2 (its default),
+  maxDiffPixels 0 — `getComparator('image/png')`, the function
+  `toHaveScreenshot()` calls, not a port. It needs Node and an installed
+  Playwright: `--playwright <folder>`, else the input folder and the folders
+  above it, the current folder and above, a VisTest checkout's `scripts/bench`,
+  and only then a global install. Without them those columns are empty and
+  the output says how to fill them.
+
+A pair v2 fails while the page's move by a fraction of a pixel is proven is
+flagged — that is where «What engine v2 does not tell apart» shows in your
+pictures, and how often.
+
+**There are no labels, so there is no score.** What comes out is where the
+tools disagree, for a person to look at:
+
+```
+vistest bench — --expected tmp/expected --actual tmp/actual
+Nothing was sent anywhere: the pictures were read where they are, and what this wrote is in tmp/out/.
+layout: two folders; 77 pairs
+v2: its defaults (no threshold, no preset), as the benchmark runs it
+Playwright: Playwright 1.63.0 toHaveScreenshot() (@playwright/test 1.63.0, …), threshold 0.05 and 0.2, maxDiffPixels 0 — getComparator('image/png'), as toHaveScreenshot()
+
+pairs: 77 — v2 failed 74, passed 3
+all three agree (v2, Playwright 0.05/0, Playwright 0.2/0): 55
+disagreements: 22 pairs
+  v2 failed, Playwright 0.05/0 passed: 7
+  v2 passed, Playwright 0.05/0 failed: 2
+  v2 failed, Playwright 0.2/0 passed: 20
+  v2 passed, Playwright 0.2/0 failed: 2
+v2 failed where the page's move by a fraction of a pixel is proven: 0 pairs
+
+Disagreements:
+  table/fill/de8 · v2 fail — 1 region: 107x30 at (405, 77): fill: #2563eb → #4d77ff, ΔE00 8.0 · renderer: same as the baseline's · Playwright 0.05/0 fail (2712 px), 0.2/0 pass (0 px)
+  table/render/shift_0.25px · v2 pass · renderer: same as the baseline's · Playwright 0.05/0 fail (5785 px), 0.2/0 fail (5051 px)
+  …
+```
+
+(The table template of our corpus, as two folders with the canaries next to
+the pictures.) In `--out` (`./vistest-bench-out/` by default, ignored by git):
+
+- `report.html` — the library report's page: the disagreements first and
+  open, baseline / actual / diff side by side, a slider, the regions in words;
+  the pairs all three tools agree on stay shut, their pictures left on disk;
+- `labels.csv` — one row per disagreement, with what each tool said and an
+  empty `label` column;
+- `summary.txt` (the text above), `pairs.json`, `diff/`.
+
+**Labelling.** Fill the `label` column with `SIGNAL` (a real change),
+`NOISE` (nothing changed that matters) or `unsure`, and run again with
+`--labels labels.csv`: each tool's false failures (NOISE it failed) and
+misses (SIGNAL it passed) on the labelled pairs, counted as the benchmark
+counts — `unsure` is printed and not counted. A label already given is kept
+when the command runs again.
+
+```
+labelled pairs: 22 — SIGNAL 17, NOISE 2, unsure 3 (printed, not counted)
+tool                  false (NOISE failed)   misses (SIGNAL passed)  unsure failed
+v2                                     0/2                     0/17            3/3
+Playwright 0.05/0                      2/2                     4/17            0/3
+Playwright 0.2/0                       2/2                    17/17            0/3
+```
+
+**Nothing leaves the machine.** The command opens no network connection,
+copies nothing into a repository, and writes only to `--out`; the first lines
+of the output and of the report say so. The output without time in it is
+the same for the same input, to the byte.
+
 ### Что работает автоматически
 
 Ничего настраивать не нужно, это включено по умолчанию:

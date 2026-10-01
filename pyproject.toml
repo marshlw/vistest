@@ -107,8 +107,9 @@ include = ["vistest*"]
 # коэффициентов, читаемых глазами. Без неё гейт молча выключается, и `pip
 # install vistest` дал бы движок слабее, чем из исходников.
 [tool.setuptools.package-data]
-# The canary font draws the renderer's fingerprint (vistest/library/canary.py).
-vistest = ["ai/*.json", "library/fonts/*"]
+# The canary font draws the renderer's fingerprint (vistest/library/canary.py);
+# `vistest bench` runs Playwright's comparator through bench/*.mjs.
+vistest = ["ai/*.json", "library/fonts/*", "bench/*.mjs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
