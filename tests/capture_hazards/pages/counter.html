@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>counter</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+</head>
+<body>
+<header>Live</header>
+<main>
+  <div class="card"><h2 id="title">Visitors online</h2>
+    <p style="font-size:32px;font-weight:700;margin:6px 0"><span id="counter">0</span></p>
+    <p class="muted">Counted every 200 ms</p></div>
+</main>
+<script>
+if (SIGNAL) document.getElementById('title').textContent = 'Visitors on the site';
+let n = 0;
+setInterval(() => { document.getElementById('counter').textContent = String(++n); }, 200);
+readyOnLoad();
+</script>
+</body></html>

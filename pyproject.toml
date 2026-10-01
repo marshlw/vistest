@@ -116,6 +116,7 @@ testpaths = ["tests"]
 markers = ["visual: visual checks",
            "e2e: run of our own interface in a browser",
            "packaging: builds the wheel and installs it into a fresh environment",
+           "capture_hazards: the capture-hazard stand (tests/capture_hazards), on its own only",
            # Registered here so the mark is known even without pytest-xdist
            # installed. It groups the jsdom screen checks onto one worker
            # under `--dist loadgroup`: they contend for the disk, not the CPU.

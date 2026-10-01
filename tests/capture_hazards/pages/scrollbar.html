@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>scroll bar</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+/* 600 px in the middle: with a 15 px scroll bar the left edge lands on a
+   half pixel, and it moves by 7.5 px when the bar appears. */
+.wrap { width: 600px; margin: 0 auto; padding-top: 20px; }
+</style></head>
+<body>
+<header>Shipments</header>
+<div class="wrap">
+  <div class="card"><h2>Today</h2><p class="muted">Tracking 30 shipments</p></div>
+  <div class="card" id="list"><p class="muted">Loading the list…</p></div>
+</div>
+<script>
+fetchJSON('/api/rows').then((d) => {
+  document.getElementById('list').innerHTML = table(d.rows);
+  done();
+});
+</script>
+</body></html>

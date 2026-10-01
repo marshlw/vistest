@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>scrolled</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+header { position: sticky; top: 0; z-index: 2; }
+.filler { height: 760px; }
+#card { height: 220px; background: linear-gradient(160deg, #dbeafe, #fef3c7) fixed;
+        border: 1px solid #c7d2fe; border-radius: 10px; padding: 18px 20px; }
+#card h2 { margin-top: 0; }
+.tail { height: 1400px; }
+</style></head>
+<body>
+<header>Account</header>
+<main>
+  <div class="card filler"><h2>Activity</h2><p class="muted">Nothing new.</p></div>
+  <div id="card"><h2>Plan</h2><p id="plan">Pro — 25 seats, renews 1 Apr 2026</p></div>
+  <div class="tail"></div>
+</main>
+<script>
+if (SIGNAL) document.getElementById('plan').textContent = 'Pro — 20 seats, renews 1 Apr 2026';
+readyOnLoad();
+</script>
+</body></html>
