@@ -216,6 +216,39 @@ fails; each region that counts is said in words.
   is the text re-rasterisation rule, 13 % the page-shift rule, 8 % the
   descriptions. The canary costs 243 ms once per browser; a failed check is
   compared once more with it (median 159 ms).
+- **Step D: the final run on held-out-2, once** (2026-10-01, commit
+  `45f057e`, OpenCV 4.13.0, `python tests/benchmark.py --corpus browser
+  --final --no-timing --engine both --native bench_out/native_final.json`
+  after `node scripts/bench_playwright_grid.mjs --final`; two runs, the
+  same to the byte; the tables before the sealed half the same to the byte
+  as without `--final`). The target was written down before the run: the
+  one of E1 for the «same renderer» group — v2's false failures at most a
+  third of Playwright 0.05/0's, its misses at most Playwright's; DISPUTED
+  printed, not counted. 106 pairs (dashboard, settings), all drawn by the
+  baseline's renderer: 92 SIGNAL, 6 NOISE, 8 DISPUTED.
+
+  | tool | false | misses | DISPUTED failed |
+  |---|---|---|---|
+  | VisTest v1 strict | 4/6 | 36/92 | 2/8 |
+  | VisTest v1 balanced | 3/6 | 38/92 | 2/8 |
+  | VisTest v1 loose | 1/6 | 53/92 | 2/8 |
+  | VisTest v2 | 2/6 | 0/92 | 8/8 |
+  | Playwright 0.2/0 (default) | 4/6 | 36/92 | 2/8 |
+  | Playwright 0.05/0 | 4/6 | 5/92 | 2/8 |
+
+  **The target is not met:** no misses (0/92 against 5/92), but 2/6 false
+  failures where a third of Playwright's 4/6 allows 1. Both are on
+  dashboard, `render:shift_0.25px` and `render:shift_0.5px`, two regions
+  each, in the engine's words: 576x122 at (263, 301) — «ink shape changed:
+  0 of 2402 (2422) px of the new ink and 1 of 2417 of the old lie farther
+  than 1 px from the other»; 33x32 (33x33) at (1180, 14) — «strokes redrawn
+  within 1 px; ink #4b4444 → #4b4444, ΔE00 0.00 (below 2)». The figures
+  are recorded as they came. No engine change in f5 follows from
+  them; a later change made with these pairs in view spends held-out-2 for
+  that rule, and says so where it is made. Whether f5 goes into main with
+  the target not met is the maintainer's decision. The grid's JSON with
+  `--final` is not committed: `docs/benchmark_browser_native.json` stays
+  the run without the flag.
 
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 
