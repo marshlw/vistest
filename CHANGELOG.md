@@ -5,6 +5,27 @@
 
 ## [Unreleased]
 
+### Phase 2: the engine on pairs from elsewhere
+
+- **Step 0b: the canary does not depend on the window.** The canary is
+  360×156 px, and in a tab smaller than that in either direction one of its
+  lines came out otherwise (765 px of it: a 320 px wide window, or a 1280 px
+  wide one 120 px high). It is kept per browser and device scale factor, not
+  per window, so in one browser a check at 320 px and one at 1280 px got the
+  canary of whichever came first, and one of them could say «the renderer
+  changed» under the same renderer. Fixed by the page, not by the cache key:
+  the canary's tab is never smaller than 400×400 px (`canary.MIN_TAB`) —
+  raised by `canary.draw`, so in both paths (a tab of the context, and the
+  new context of a page from `browser.new_page()`); a larger viewport is
+  kept, and the user's page keeps its own size. A test in Chromium: windows
+  of 320×120, 1280×720, 1280×120 and 320×900 in one browser draw one
+  canary. The corpus's canaries drawn again with it — every configuration
+  this machine can start, nine of ten (os_windows is another machine's) —
+  come out as the files the manifest names, sha256 for sha256; the manifest
+  and the page of the canary (`CANARY_VERSION` 1) are unchanged. A baseline
+  accepted before this in a window smaller than 360×156 px carries the
+  other canary and now reads as another renderer: accept it again.
+
 ### f5: engine v2 by default
 
 #### Moving to engine v2

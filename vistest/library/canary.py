@@ -21,7 +21,10 @@ renderer; two that do not are not, and the number of pixels says by how much.
 
 Only the renderer is in it: the page's own stylesheet never reaches the
 canary tab, so a CSS change (`text-rendering`, a fractional `transform`) is
-the page's, not the renderer's, and leaves the fingerprint as it was.
+the page's, not the renderer's, and leaves the fingerprint as it was. Nor
+does the window: the canary is 360×156 px, and in a tab smaller than that in
+either direction one of its lines comes out otherwise — so its tab is never
+smaller than `MIN_TAB` (400×400 px), whatever the context's viewport.
 
 **Playwright is never imported here**, as in `targets.py`: a context is
 anything with `new_page()`, a page anything with `set_content()`.
@@ -36,7 +39,8 @@ from pathlib import Path
 
 from .targets import capture
 
-__all__ = ["CANARY_VERSION", "CanaryError", "TabRefused", "draw", "html", "page_sha256"]
+__all__ = ["CANARY_VERSION", "MIN_TAB", "CanaryError", "TabRefused", "draw", "html",
+           "page_sha256"]
 
 #: Changes whenever the page below changes. Two fingerprints are comparable
 #: only when they were drawn from the same page.
@@ -96,15 +100,31 @@ def page_sha256() -> str:
 
 _FONT_LOADED = f"() => document.fonts.check(\"13px '{FONT_FAMILY}'\")"
 
+#: The smallest viewport the canary's tab gets, (width, height) in CSS px:
+#: larger than the canary itself (360×156), where its pixels stop depending
+#: on the window. A larger viewport is kept as it is.
+MIN_TAB = (400, 400)
+
+
+def _tab_size(page) -> dict:
+    """The viewport the canary's tab is drawn at: the context's, raised to
+    `MIN_TAB` where it is smaller; `MIN_TAB` when the context has none."""
+    size = getattr(page, "viewport_size", None)
+    width, height = MIN_TAB
+    if isinstance(size, dict) and size.get("width") and size.get("height"):
+        width, height = max(int(size["width"]), width), max(int(size["height"]), height)
+    return {"width": width, "height": height}
+
 
 def draw(context, *, stable_timeout_ms: int = 5000) -> bytes:
     """The canary, drawn in a new tab of `context`; PNG bytes.
 
     Through `targets.capture`, as every screenshot of the library is: fonts
     awaited, animations off, caret hidden, CSS pixels, frames until two in
-    a row agree. Raises `CanaryError` when the shipped font did not load or
-    the tab would not hold still — a fingerprint of that is not one — and
-    `TabRefused` when `context` would not open the tab at all.
+    a row agree. The tab is at least `MIN_TAB`: the same canary in a 320 px
+    window as in a 1280 px one. Raises `CanaryError` when the shipped font
+    did not load or the tab would not hold still — a fingerprint of that is
+    not one — and `TabRefused` when `context` would not open the tab at all.
     """
     new_page = getattr(context, "new_page", None)
     if not callable(new_page):
@@ -115,6 +135,9 @@ def draw(context, *, stable_timeout_ms: int = 5000) -> bytes:
         raise TabRefused(f"{type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}"
                          ) from e
     try:
+        size = _tab_size(page)
+        if size != getattr(page, "viewport_size", None):
+            page.set_viewport_size(size)
         page.set_content(html(), wait_until="load")
         cap = capture(page.locator(f"#{ELEMENT_ID}"),
                       stable_timeout_ms=stable_timeout_ms)

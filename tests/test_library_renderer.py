@@ -477,8 +477,8 @@ def test_a_real_browser_draws_its_canary_once_in_a_tab_of_its_own(ctx, playwrigh
 
 @pytest.mark.parametrize("scale, viewport", [
     (1, None), (2, None),
-    #  Narrower than the canary (360 px): there the canary is drawn otherwise,
-    #  so the new context takes the page's viewport as well.
+    #  Smaller than the canary (360×156): the new context takes the page's
+    #  viewport, and the canary's tab is raised to MIN_TAB either way.
     (1, {"width": 320, "height": 120}),
 ])
 def test_browser_new_page_draws_the_canary_a_context_of_the_user_draws(
@@ -503,6 +503,57 @@ def test_browser_new_page_draws_the_canary_a_context_of_the_user_draws(
         assert np.array_equal(pngio.decode(run.png), pngio.decode(theirs.png))
         alone.close()
         mine.close()
+    finally:
+        browser.close()
+
+
+@pytest.mark.parametrize("size, expected", [
+    ({"width": 320, "height": 120}, {"width": 400, "height": 400}),
+    ({"width": 1280, "height": 120}, {"width": 1280, "height": 400}),
+    ({"width": 390, "height": 844}, {"width": 400, "height": 844}),
+    ({"width": 1280, "height": 720}, {"width": 1280, "height": 720}),
+    (None, {"width": 400, "height": 400}),                  # a context with no viewport
+])
+def test_the_canary_tab_is_never_smaller_than_min_tab(size, expected):
+    class Page:
+        viewport_size = size
+    assert _canary.MIN_TAB == (400, 400)
+    assert _canary._tab_size(Page()) == expected
+
+
+def test_one_browser_draws_one_canary_in_a_320_and_a_1280_px_window(playwright):
+    """Step 0b of phase 2: below 360×156 the canary used to come out otherwise,
+    and the cache is per browser and scale — so whichever window drew first
+    decided for the other. Now the canary's tab is never smaller than
+    MIN_TAB: both windows draw it the same, and the user's page keeps its
+    own size."""
+    browser = playwright.chromium.launch()
+    try:
+        drawn = {}
+        for width, height in ((320, 120), (1280, 720), (1280, 120), (320, 900)):
+            fp._BY_BROWSER.clear()                          # each one drawn, not kept
+            context = browser.new_context(viewport={"width": width, "height": height})
+            page = context.new_page()
+            run = fp.of_target(page, stable_timeout_ms=5000)
+            assert run.png is not None and run.drawn_ms is not None, run.why
+            assert page.viewport_size == {"width": width, "height": height}
+            drawn[(width, height)] = pngio.decode(run.png)
+            context.close()
+        first = drawn[(320, 120)]
+        for size, img in drawn.items():
+            assert np.array_equal(img, first), size
+        #  And without clearing: the second check takes the first one's canary,
+        #  which is now also its own.
+        fp._BY_BROWSER.clear()
+        narrow = browser.new_context(viewport={"width": 320, "height": 120})
+        wide = browser.new_context(viewport={"width": 1280, "height": 720})
+        a = fp.of_target(narrow.new_page(), stable_timeout_ms=5000)
+        b = fp.of_target(wide.new_page(), stable_timeout_ms=5000)
+        assert b.drawn_ms is None and b.png == a.png
+        assert np.array_equal(pngio.decode(_canary.draw(wide, stable_timeout_ms=5000)),
+                              pngio.decode(a.png))
+        narrow.close()
+        wide.close()
     finally:
         browser.close()
 

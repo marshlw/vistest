@@ -27,14 +27,16 @@ a check that passes without the canary passes with it. A passing check says
 «renderer: not checked (the check passed)».
 
 A canary, once drawn, is kept for the browser it was drawn in and the
-device scale factor it was drawn at — not per context: every context of one
-browser at one scale draws the same pixels, and a context per test would
-otherwise pay for it every time. It is drawn in a tab of the context the
-screenshot came from, through the same capture as the screenshot. A page
-from `browser.new_page()` has a context of its own that opens no other tab:
-then the canary is drawn in a new context of the same browser, at the same
-device scale factor and viewport, closed again after it. Only a canary that was drawn is
-kept: a failure is said for this check, and the next one tries again.
+device scale factor it was drawn at — not per context and not per window:
+every context of one browser at one scale draws the same pixels (its tab is
+never smaller than `canary.MIN_TAB`, so a 320 px window and a 1280 px one
+draw the same canary), and a context per test would otherwise pay for it
+every time. It is drawn in a tab of the context the screenshot came from,
+through the same capture as the screenshot. A page from `browser.new_page()`
+has a context of its own that opens no other tab: then the canary is drawn
+in a new context of the same browser, at the same device scale factor and
+viewport, closed again after it. Only a canary that was drawn is kept: a
+failure is said for this check, and the next one tries again.
 
 Anything missing makes its side `None` and the answer «unknown», with the
 reason: a picture handed in as bytes has no browser behind it; a store that
@@ -135,8 +137,8 @@ def _draw(page, context, scale: float | None, *, stable_timeout_ms: int) -> byte
     """The canary in a tab of `context` — or, when `context` opens none (the
     one `browser.new_page()` makes belongs to its page), in a new context of
     the same browser at the same device scale factor and viewport, closed
-    after it: what a tab of `context` would have drawn. The viewport counts
-    only below the canary's own width (360 px), where the canary changes."""
+    after it: what a tab of `context` would have drawn (`canary.draw` raises
+    the tab to `MIN_TAB` either way)."""
     try:
         return _canary.draw(context, stable_timeout_ms=stable_timeout_ms)
     except _canary.TabRefused as refused:
