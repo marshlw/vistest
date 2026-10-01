@@ -25,6 +25,52 @@
   and the page of the canary (`CANARY_VERSION` 1) are unchanged. A baseline
   accepted before this in a window smaller than 360×156 px carries the
   other canary and now reads as another renderer: accept it again.
+- **v6: `vistest bench <folder>` — the engine on your own failures.** Our
+  corpus was written by us; this is the engine on somebody else's pairs.
+  They carry no labels, so the command keeps no score: it collects where the
+  tools disagree, for a person. **Input**, told apart by what is on disk
+  (`vistest/bench/layouts.py`): Playwright's test-results
+  (`<name>-expected.png` / `<name>-actual.png`), a VisTest run
+  (`.vistest/actual/` against the baselines, the report rows read for where
+  each baseline is and what the renderer was), or two folders with the same
+  file names (`--expected` / `--actual`); whatever a layout does not account
+  for is one line, and two sizes are compared as they are and said. **Per
+  pair:** v2 with its defaults and the AI layer, as the benchmark runs it —
+  verdict, the first three regions in words, the renderer line with both
+  canaries when the pair has them (the passport's and the run's; in two
+  folders `<name>.canary.png`), «unknown» otherwise; Playwright's own
+  comparator (`getComparator('image/png')`, threshold 0.05 and 0.2,
+  maxDiffPixels 0) through Node and an installed Playwright
+  (`vistest/bench/playwright_compare.mjs`, shipped with the package: found
+  through `--playwright`, the input folder and above, the current folder and
+  above, `scripts/bench`, then a global install — empty columns and one line
+  on how to fill them without); a flag where v2 failed although the page's
+  fractional move is proven. **Output:** a summary (pairs, all three
+  agreeing, disagreements by kind), one line per disagreement, the flagged
+  pairs; `report.html` on the library report's code (the disagreements
+  first and open, baseline / actual / diff side by side); `labels.csv` with
+  the disagreements and an empty `label`; with `--labels` each tool's false
+  failures and misses on the labelled pairs, as the benchmark counts
+  (unsure printed, not counted), and a label once given is kept on the next
+  run. Nothing goes to the network or into a repository: everything is
+  written to `--out` (`./vistest-bench-out/`, now in `.gitignore`), and the
+  first lines say so; the same input gives the same text and the same
+  report. **Checked on the browser corpus:** the 308 calibration pairs as
+  two folders with their canaries, and the manifest's labels as
+  `--labels`, give the benchmark's calibration figures exactly — v2 17/28
+  false, 0/264 misses; Playwright 0.05/0 24/28, 15/264; 0.2/0 24/28, 70/264
+  (OpenCV 4.13.0, @playwright/test 1.63.0); a test does the same pair by
+  pair on a third of the table template. held-out-2 is not read. **Around
+  it:** the library keeps the canary a check drew under
+  `.vistest/renderers/<sha>.png` and names it in the report row
+  (`renderer.run_sha256`), so a run's pair can be looked at again with both
+  canaries; the library report embeds pictures only for the rows that show
+  them and each picture once (the side-by-side pane copies them in when it
+  is opened — half the size for large frames), shows the diff next to
+  baseline and actual, can open a row whatever its verdict or keep one shut
+  (in `vistest bench`, the pairs all tools agree on: shut, pictures left on
+  disk), and takes lines under the title and a fixed stamp. The engine does
+  not change: both benchmarks print what they printed.
 
 ### f5: engine v2 by default
 

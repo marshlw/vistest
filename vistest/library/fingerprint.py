@@ -58,8 +58,9 @@ from ..storage import atomic
 from . import canary as _canary
 from . import targets as _targets
 
-__all__ = ["NOT_DRAWN", "RENDERERS_DIR", "RunCanary", "compare_lazily", "keep",
-           "not_checked", "of_baseline", "of_target", "status"]
+__all__ = ["NOT_DRAWN", "RENDERERS_DIR", "RUN_RENDERERS_DIR", "RunCanary",
+           "compare_lazily", "keep", "keep_run", "not_checked", "of_baseline",
+           "of_target", "status"]
 
 #: Under the baseline root: one PNG per canary, named by its sha256.
 RENDERERS_DIR = ".renderers"
@@ -215,6 +216,31 @@ def keep(store, run: RunCanary) -> dict | None:
     if not path.is_file():
         atomic.write_bytes(path, run.png)
     return {"sha256": run.sha256, "canary_version": _canary.CANARY_VERSION}
+
+
+#: Under the run's artifacts (`.vistest/`): the canary a run drew, one PNG
+#: per sha256 — what `vistest bench` reads of the run's side of a pair.
+RUN_RENDERERS_DIR = "renderers"
+
+
+def keep_run(artifacts_root, run: RunCanary) -> str:
+    """Keep the canary this run drew next to the run's own artifacts.
+
+    The baseline's canary lives with the baselines (`keep`); the run's, when
+    a check drew one, lives with the run's pictures, so that the pair can be
+    looked at again later with both canaries — `vistest bench` on a run's
+    `.vistest/` folder. Its sha256, or '' when nothing was drawn or the
+    file could not be written (a report row is not the verdict).
+    """
+    if run.png is None or artifacts_root is None:
+        return ""
+    path = Path(artifacts_root) / RUN_RENDERERS_DIR / f"{run.sha256}.png"
+    try:
+        if not path.is_file():
+            atomic.write_bytes(path, run.png)
+    except OSError:
+        return ""
+    return run.sha256
 
 
 def of_baseline(store, passport) -> tuple[bytes | None, str]:

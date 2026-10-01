@@ -261,25 +261,32 @@ def _viewer(entry: dict, images: dict[str, str]) -> str:
         tabs.append('<button class="tab on" data-pane="slider">Slider</button>')
         panes.append(
             '<div class="pane on" data-pane="slider">'
-            f'<div class="cmp" style="--p:50%"><img alt="baseline" src="{baseline}">'
-            f'<img class="over" alt="actual" src="{actual}">'
+            f'<div class="cmp" style="--p:50%"><img alt="baseline" data-pic="baseline" '
+            f'src="{baseline}"><img class="over" alt="actual" data-pic="actual" '
+            f'src="{actual}">'
             '<span class="handle"></span></div>'
             '<input class="range" type="range" min="0" max="100" value="50" '
             'aria-label="Reveal the new screenshot">'
             '<div class="legend"><span>baseline</span><span>actual</span></div>'
             '</div>')
         tabs.append('<button class="tab" data-pane="side">Side by side</button>')
+        #  The diff joins them when there is one: baseline, actual and what
+        #  changed in one row. The pictures are the slider's and the diff
+        #  pane's, copied in when the pane is opened (_JS) — embedded once, a
+        #  report of large frames is half the size.
+        third = ('<figure><img alt="diff" data-same="diff"><figcaption>diff</figcaption>'
+                 '</figure>' if diff else "")
         panes.append(
-            '<div class="pane" data-pane="side"><div class="side">'
-            f'<figure><img alt="baseline" src="{baseline}">'
+            f'<div class="pane" data-pane="side"><div class="side{" three" if diff else ""}">'
+            '<figure><img alt="baseline" data-same="baseline">'
             '<figcaption>baseline</figcaption></figure>'
-            f'<figure><img alt="actual" src="{actual}">'
+            '<figure><img alt="actual" data-same="actual">'
             '<figcaption>actual</figcaption></figure>'
-            '</div></div>')
+            f'{third}</div></div>')
     if diff:
         tabs.append('<button class="tab" data-pane="diff">Diff</button>')
         panes.append(f'<div class="pane" data-pane="diff">'
-                     f'<img alt="diff" src="{diff}"></div>')
+                     f'<img alt="diff" data-pic="diff" src="{diff}"></div>')
     if actual and not baseline:
         tabs.append('<button class="tab on" data-pane="only">Screenshot</button>')
         panes.append('<div class="pane on" data-pane="only">'
@@ -290,8 +297,6 @@ def _viewer(entry: dict, images: dict[str, str]) -> str:
 
 def _row(entry: dict, budget: list[int]) -> str:
     verdict = str(entry.get("verdict", "error"))
-    images = {kind: _data_uri(path, budget)
-              for kind, path in (entry.get("images") or {}).items()}
     metrics = entry.get("metrics") or {}
     limits = entry.get("limits") or {}
 
@@ -330,8 +335,20 @@ def _row(entry: dict, budget: list[int]) -> str:
     if suppressed:
         facts.append(f"{suppressed} suppressed")
 
-    open_attr = " open" if verdict in ("fail", "error") else ""
-    body = _viewer(entry, images) if verdict != "pass" else ""
+    #  `open` — a row a reader must look at whatever its verdict: `vistest
+    #  bench` opens the pairs the tools disagree on, passes included;
+    #  `collapsed` — one that stays shut and carries no pictures (there, the
+    #  pairs all the tools agree on).
+    shown = ((verdict in ("fail", "error") and not entry.get("collapsed"))
+             or bool(entry.get("open")))
+    open_attr = " open" if shown else ""
+    body = ""
+    if verdict != "pass" or shown:
+        #  Embedded only where they are shown: a row that shows no pictures
+        #  does not spend the report's budget on them.
+        images = {kind: _data_uri(path, budget)
+                  for kind, path in (entry.get("images") or {}).items()}
+        body = _viewer(entry, images)
     body = _regions_table(entry) + _below_list(entry) + _suppressed_list(entry) + body
 
     return (
@@ -536,10 +553,13 @@ h1{font-size:20px;margin:0 0 4px}
 .range{width:100%;margin:10px 0 2px;accent-color:var(--accent)}
 .legend{display:flex;justify-content:space-between;color:var(--muted);
   font-size:12px}
+.intro{white-space:pre-wrap;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+  color:var(--muted);margin:6px 0 14px}
 .side{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.side.three{grid-template-columns:1fr 1fr 1fr}
 .side figure{margin:0} .side figcaption{color:var(--muted);font-size:12px;
   padding-top:4px}
-@media (max-width:720px){.side{grid-template-columns:1fr}
+@media (max-width:720px){.side,.side.three{grid-template-columns:1fr}
   .facts{margin-left:0;width:100%}}
 .empty{background:var(--card);border:1px solid var(--line);border-radius:10px;
   padding:28px;text-align:center;color:var(--muted)}
@@ -581,7 +601,14 @@ document.addEventListener('click', function (e) {
     box.querySelectorAll('.pane').forEach(function (p) { p.classList.remove('on'); });
     tab.classList.add('on');
     var pane = box.querySelector('.pane[data-pane="' + tab.dataset.pane + '"]');
-    if (pane) pane.classList.add('on');
+    if (pane) {
+      pane.classList.add('on');
+      pane.querySelectorAll('img[data-same]').forEach(function (img) {
+        if (img.getAttribute('src')) return;
+        var from = box.querySelector('img[data-pic="' + img.dataset.same + '"]');
+        if (from) img.src = from.src;
+      });
+    }
     return;
   }
   var count = e.target.closest('.count');
@@ -632,8 +659,15 @@ def _suppressed_total(entries: list[dict]) -> str:
     return " · " + _e("; ".join(say_suppressed(total)))
 
 
-def render(parts: Parts | list[dict], *, title: str = "VisTest") -> str:
-    """The whole report as one string. No network, no fonts, no libraries."""
+def render(parts: Parts | list[dict], *, title: str = "VisTest",
+           intro: list[str] | tuple[str, ...] = (), stamp: str | None = None) -> str:
+    """The whole report as one string. No network, no fonts, no libraries.
+
+    A list of rows is shown in the order given. `intro` — lines said under
+    the title, before the rows; `stamp` — what stands for the time of the
+    report (the current time when not given; `vistest bench` passes its own,
+    so the same input gives the same file).
+    """
     if not isinstance(parts, Parts):
         parts = Parts(entries=list(parts))
     entries = parts.entries
@@ -655,15 +689,18 @@ def render(parts: Parts | list[dict], *, title: str = "VisTest") -> str:
     rows = "".join(_row(entry, budget) for entry in entries) or \
         '<div class="empty">This run made no visual checks.</div>'
 
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if stamp is None:
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    #  As the terminal said it: one block, its columns kept.
+    said = (f'<pre class="intro">{_e(chr(10).join(intro))}</pre>' if intro else "")
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         f"<title>{_e(title)}</title><style>{_CSS}</style></head><body>"
         f'<div class="wrap"><h1>{_e(title)}</h1>'
         f'<p class="sub">{len(entries)} visual '
-        f'check{"s" if len(entries) != 1 else ""} · {stamp}'
-        f'{_suppressed_total(entries)}</p>'
+        f'check{"s" if len(entries) != 1 else ""}{" · " + _e(stamp) if stamp else ""}'
+        f'{_suppressed_total(entries)}</p>{said}'
         f'{_banners(parts)}'
         f'<div class="counts">{"".join(chips)}</div>{rows}'
         "<footer>Generated by VisTest. Everything in this file is inside it — "

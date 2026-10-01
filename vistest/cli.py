@@ -117,6 +117,28 @@ def main(argv: list[str] | None = None) -> int:
     doc.add_argument("--out", help="where to put the noise map and report.json")
     doc.add_argument("--json", action="store_true")
 
+    bn = sub.add_parser(
+        "bench", help="the engine on your own failures: v2 against Playwright's "
+                      "comparator, disagreements collected for a person")
+    bn.add_argument("folder", nargs="?",
+                    help="Playwright's test-results, or a project with a VisTest run "
+                         "(.vistest/actual/)")
+    bn.add_argument("--expected", help="two folders with the same file names: the baselines")
+    bn.add_argument("--actual", help="... and the screenshots")
+    bn.add_argument("--baselines",
+                    help="a VisTest run: where its baselines are "
+                         "(tests/__vistest__ by default)")
+    bn.add_argument("--out", default="vistest-bench-out",
+                    help="where the report, labels.csv and the diff pictures go "
+                         "(./vistest-bench-out by default)")
+    bn.add_argument("--labels", help="labels.csv with the label column filled in: "
+                                     "count each tool's false failures and misses")
+    bn.add_argument("--playwright", help="a folder of a project with @playwright/test "
+                                         "installed, for Playwright's own comparator")
+    bn.add_argument("--no-playwright", action="store_true",
+                    help="leave the Playwright columns empty")
+    bn.add_argument("--no-ai", action="store_true", help="v2 without the AI layer")
+
     cg = sub.add_parser(
         "codegen", help="rebuild test files from the baselines' passports")
     cg.add_argument("--out", default="tests", help="directory for the tests")
@@ -389,6 +411,10 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 2
         return run_doctor(args)
+    if args.cmd == "bench":
+        from .bench import main as run_bench
+
+        return run_bench(args)
     if args.cmd == "report":
         return _report(args)
     if args.cmd == "evidence":
