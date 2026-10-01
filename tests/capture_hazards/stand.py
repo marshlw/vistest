@@ -1,0 +1,133 @@
+# VisTest - self-hosted visual regression testing.
+# Copyright (C) 2026 Kirill Kulagin
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
+# the trademark and commercial-licensing terms. Removing this header does not
+# remove those obligations.
+
+"""The capture-hazard stand: the pages, their hazards, and every number in it.
+
+Each page has one way of being photographed too early or in the wrong state —
+data still on its way under a spinner, a font that arrives late, a banner that
+pushes the page down, a hover left over from the previous step — and knows
+when that way is over: it sets `window.__ready = true` then (and
+`window.__events.done`/`.ready`, for the oracle test). The baseline is taken
+after that, the checks are taken the way a test takes them, without it.
+
+Everything that varies comes from the seed: how long the server holds each
+answer (real network — `server.py` sleeps before it answers), which element
+the previous step hovered or focused, where the page was scrolled. Seeds 0–9
+are the calibration, 10–19 are held out: the numbers of the readiness step
+(S2) are chosen on the first and looked at once on the second (REPORT_S1).
+"""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+PAGES = HERE / "pages"
+FONT = HERE.parents[1] / "vistest" / "library" / "fonts" / "canary-sans.ttf"
+
+CALIBRATION = tuple(range(0, 10))
+HELD_OUT = tuple(range(10, 20))
+VIEWPORT = {"width": 800, "height": 600}
+#: Checks per page and seed, each in a fresh browser context.
+SHOTS = 20
+#: Checks of the signal variant per page and seed.
+SIGNAL_SHOTS = 5
+#: The baseline is taken this long after `window.__ready`.
+AFTER_READY_MS = 500
+#: How long a page may take to say it is ready, at most.
+READY_TIMEOUT_MS = 15000
+#: The range of every network delay, milliseconds.
+DELAY_MS = (50, 1500)
+
+
+@dataclass(frozen=True)
+class Hazard:
+    key: str
+    page: str
+    #: One line: what makes a picture of it wrong.
+    what: str
+    #: "" — the page; a CSS selector — that element (a Locator).
+    target: str = ""
+    #: The previous step of the test: "" | "hover_focus" | "scroll".
+    step: str = ""
+    #: Selectors masked in every picture of it (ours and Playwright's).
+    mask: tuple[str, ...] = ()
+    #: "default" — Playwright's headless launch, which passes --hide-scrollbars;
+    #: "scrollbars" — the same without that flag, as a headed browser draws.
+    launch: str = "default"
+    #: Is there a signal variant (a real change after the page loaded)?
+    signal: bool = True
+    #: Does the hazard end? A counter or an endless animation never does:
+    #: waiting cannot help there, only a mask.
+    ends: bool = True
+
+
+HAZARDS: tuple[Hazard, ...] = (
+    Hazard("spinner", "spinner",
+           "data by request after 50–1500 ms, under a spinning CSS spinner"),
+    Hazard("skeleton", "skeleton",
+           "data by request after 50–1500 ms, under a shimmering skeleton"),
+    Hazard("lazy_images", "lazyimg",
+           "lazy images in the frame and below it, each answered after 50–1500 ms"),
+    Hazard("web_font", "font",
+           "a web font answered after 50–1500 ms, font-display: swap"),
+    Hazard("late_banner", "banner",
+           "a banner by request after 50–1500 ms, inserted on top, moving the page down"),
+    Hazard("scrollbar", "scrollbar",
+           "rows by request after 50–1500 ms make the page scroll; centred layout "
+           "(headless default: --hide-scrollbars)"),
+    Hazard("scrollbar_visible", "scrollbar",
+           "the same, launched without --hide-scrollbars: the scroll bar appears late",
+           launch="scrollbars"),
+    Hazard("hover_focus", "hover",
+           "the previous step left the pointer on a control or the focus in a field",
+           step="hover_focus"),
+    Hazard("scrolled", "scrolled",
+           "an element photographed after the page was scrolled somewhere; a sticky "
+           "header and a fixed background", target="#card", step="scroll"),
+    Hazard("raf_canvas", "raf",
+           "a canvas animated by requestAnimationFrame, for ever", signal=False, ends=False),
+    Hazard("raf_canvas_masked", "raf", "the same, the canvas masked",
+           mask=("#anim",), ends=False),
+    Hazard("counter", "counter",
+           "a number that setInterval changes every 200 ms", signal=False, ends=False),
+    Hazard("counter_masked", "counter", "the same, the number masked",
+           mask=("#counter",), ends=False),
+)
+
+BY_KEY = {h.key: h for h in HAZARDS}
+
+
+def _rng(*parts) -> random.Random:
+    #  A string seed is hashed with SHA-512: the same numbers on every Python.
+    return random.Random(":".join(str(p) for p in parts))
+
+
+def delay_ms(what: str, seed: int) -> int:
+    """How long the server holds the answer `what` for this seed."""
+    lo, hi = DELAY_MS
+    return int(_rng("delay", what, seed).uniform(lo, hi))
+
+
+HOVER_TARGETS = ("#save", "#export", "#docs", "#search", "#tip")
+
+
+def step_target(seed: int) -> str:
+    """What the previous step pointed at: hovered, or — `#search` — clicked into."""
+    return _rng("hover", seed).choice(HOVER_TARGETS)
+
+
+def scroll_y(seed: int) -> int:
+    """Where the previous step left the page scrolled, CSS pixels."""
+    return int(_rng("scroll", seed).uniform(0, 1100))
+
+
+def page_url(base: str, hazard: Hazard, seed: int, signal: bool = False) -> str:
+    return f"{base}/pages/{hazard.page}.html?seed={seed}&signal={int(signal)}"

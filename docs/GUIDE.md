@@ -2380,6 +2380,22 @@ copies nothing into a repository, and writes only to `--out`; the first lines
 of the output and of the report say so. The output without time in it is
 the same for the same input, to the byte.
 
+### Photographed too early: the capture-hazard stand
+
+How often a check fails because it photographed the page too early — data
+under a spinner, a late font, a banner that pushes the page down, a hover left
+by the previous step — is measured on local pages with real network delays,
+our `expect_screenshot` against Playwright's `toHaveScreenshot()`:
+
+```bash
+python -m tests.capture_hazards.measure
+```
+
+The stand's own test (the pages say when their hazard is over) carries its
+own pytest mark and is skipped otherwise: `pytest -m capture_hazards
+tests/capture_hazards`. What the pages are and how the table is counted:
+`tests/capture_hazards/README.md`.
+
 ### Что работает автоматически
 
 Ничего настраивать не нужно, это включено по умолчанию:

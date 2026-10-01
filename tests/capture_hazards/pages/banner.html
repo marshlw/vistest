@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>late banner</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+#banner { height: 56px; display: flex; align-items: center; padding: 0 24px; margin: -24px -24px 20px;
+          background: #fef3c7; color: #92400e; border-bottom: 1px solid #fcd34d; }
+</style></head>
+<body>
+<header>Dashboard</header>
+<main id="main">
+  <div class="card"><h2>Orders</h2><p class="muted">128 new since yesterday</p></div>
+  <div class="card"><h2>Customers</h2><p class="muted">1,042 active this month</p></div>
+  <div class="card"><h2>Returns</h2><p class="muted">7 waiting for review</p></div>
+</main>
+<script>
+fetchJSON('/api/banner').then((d) => {
+  const b = document.createElement('div');
+  b.id = 'banner';
+  b.textContent = d.text;
+  document.getElementById('main').prepend(b);
+  done();
+});
+</script>
+</body></html>

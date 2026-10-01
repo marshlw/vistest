@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>requestAnimationFrame</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+</head>
+<body>
+<header>Live</header>
+<main>
+  <div class="card"><h2 id="title">Throughput</h2>
+    <canvas id="anim" width="300" height="60" style="display:block;background:#f3f4f6;border-radius:6px"></canvas>
+    <p class="muted">Updated continuously</p></div>
+</main>
+<script>
+/* An animation CSS cannot stop: drawn frame by frame, for ever. */
+if (SIGNAL) document.getElementById('title').textContent = 'Throughput (beta)';
+const cv = document.getElementById('anim'), g = cv.getContext('2d');
+function frame(t) {
+  g.clearRect(0, 0, 300, 60);
+  g.fillStyle = '#2563eb';
+  const x = (t / 6) % 340 - 40;
+  g.fillRect(x, 20, 40, 20);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+readyOnLoad();
+</script>
+</body></html>

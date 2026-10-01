@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>hover and focus</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+.bar { display: flex; gap: 10px; align-items: center; }
+button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid #c7ced8;
+         background: #fff; color: #1f2937; cursor: pointer; }
+button:hover { background: #e8eefc; border-color: #2563eb; }
+button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+button.primary:hover { background: #1d4ed8; }
+a { color: #2563eb; text-decoration: none; }
+a:hover { text-decoration: underline; }
+input { font: inherit; padding: 8px 10px; border: 1px solid #c7ced8; border-radius: 8px; width: 220px; }
+input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .35); }
+#tip { position: relative; display: inline-block; width: 22px; height: 22px; border-radius: 50%;
+       background: #e5e7eb; text-align: center; line-height: 22px; }
+#tip:hover::after { content: 'Exports run nightly'; position: absolute; left: 30px; top: -4px;
+                    white-space: nowrap; background: #111827; color: #fff; padding: 4px 8px;
+                    border-radius: 6px; font-size: 13px; }
+</style></head>
+<body>
+<header>Reports</header>
+<main>
+  <div class="card">
+    <div class="bar">
+      <button class="primary" id="save">Save report</button>
+      <button id="export">Export CSV</button>
+      <a href="#" id="docs">How exports work</a>
+      <span id="tip">?</span>
+    </div>
+    <p><input id="search" placeholder="Search by name"></p>
+    <p class="muted" id="note">Last export: 12 Mar 2026, 1,284 rows</p>
+  </div>
+</main>
+<script>
+if (SIGNAL) document.getElementById('note').textContent = 'Last export: 12 Mar 2026, 1,824 rows';
+readyOnLoad();
+</script>
+</body></html>

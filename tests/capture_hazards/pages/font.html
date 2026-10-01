@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>web font</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+.hz { font-family: 'Hazard', serif; }
+h1.hz { font-size: 34px; margin: 0 0 8px; }
+p.hz { font-size: 18px; margin: 6px 0; }
+</style></head>
+<body>
+<header>Plans</header>
+<main><div class="card" id="plan"><p class="muted">Loading the plan…</p></div></main>
+<script>
+/* A view rendered by the page's own script after the load event, as a
+   single-page application draws its routes: the face it uses is requested
+   only then, so the load event does not wait for it. Its URL carries the
+   seed — the server holds the font for as long as the seed says —, and
+   font-display: swap draws the fallback first, the font when it arrives. */
+window.addEventListener('load', () => {
+  document.head.insertAdjacentHTML('beforeend', `<style>@font-face { font-family: 'Hazard';
+    src: url('${api('/font')}') format('truetype'); font-display: swap; }</style>`);
+  document.getElementById('plan').innerHTML =
+    `<h1 class="hz">Pro plan — $${SIGNAL ? 59 : 49} a month</h1>`
+    + '<p class="hz">Unlimited projects, 25 seats, priority support.</p>'
+    + '<p class="hz">Billed yearly, cancel at any time.</p>';
+  document.fonts.load("34px 'Hazard'").then(() => {
+    if (document.fonts.check("34px 'Hazard'")) done();
+  });
+});
+</script>
+</body></html>
