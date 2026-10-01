@@ -207,8 +207,9 @@ class VisTestConfig:
         #  A threshold written into the file is a threshold a person chose:
         #  engine v2 applies it and names it (core/engines.py). A preset's
         #  number is not one.
-        if (raw.get("diff") or {}).get("fail_severity") is not None:
-            cfg.diff = replace(cfg.diff, threshold_source=_thresholds.SOURCE_YAML)
+        for name, source_field in _thresholds.SOURCE_FIELD.items():
+            if (raw.get("diff") or {}).get(name) is not None:
+                cfg.diff = replace(cfg.diff, **{source_field: _thresholds.SOURCE_YAML})
 
         #  The engine: top level, because it is not a tuning of the diff but
         #  the choice of what makes it. `diff.engine` is the same field and
@@ -313,6 +314,9 @@ class VisTestConfig:
             #  override it carries; set by hand it is this variable.
             patch["threshold_source"] = (env_text(_thresholds.SOURCE_VARIABLE)
                                          or _thresholds.SOURCE_ENV)
+        if "max_changed_area_pct" in patch:
+            patch["area_source"] = (env_text(_thresholds.AREA_SOURCE_VARIABLE)
+                                    or _thresholds.SOURCE_ENV_AREA)
         if patch:
             cfg.diff = replace(cfg.diff, **patch)
 
@@ -391,8 +395,9 @@ def _plugins_section(raw, path) -> PluginsConfig:
 
 
 #: Fields of a section that are derived, never written in vistest.yaml:
-#: where the threshold came from, and the preset — both said by the loader.
-_DERIVED: dict[str, set[str]] = {"diff": {"threshold_source", "preset"}}
+#: where the threshold and the area limit came from, and the preset — said
+#: by the loader.
+_DERIVED: dict[str, set[str]] = {"diff": {"threshold_source", "area_source", "preset"}}
 
 
 def _find_config() -> Path | None:

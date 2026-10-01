@@ -311,6 +311,9 @@ def _row(entry: dict, budget: list[int]) -> str:
         facts.append(f"area {metrics['changed_area_pct']:.2f}%"
                      + (f" / {limits['max_changed_area_pct']:.2f}%"
                         if "max_changed_area_pct" in limits else "")
+                     + (f" ({limits['area_source']})"
+                        if limits.get("area_source") and limits.get("threshold_source")
+                        else "")
                      + (f" ({metrics['region_area_pct']:.2f}% in regions)"
                         if "region_area_pct" in metrics else ""))
     if "ssim_global" in metrics:

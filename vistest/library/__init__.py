@@ -369,14 +369,18 @@ def _limits(cfg) -> dict:
     """The thresholds this check ran under, as the report and the message say them.
 
     For v2 `fail_severity` is the threshold it applied — 0 unless a person set
-    one, and then `threshold_source` says who; a preset's number is v1's.
+    one, and then `threshold_source` says who — and `max_changed_area_pct`
+    the area limit, the default unless a person set one, with `area_source`
+    saying which; a preset's numbers are v1's.
     """
     v2 = cfg.engine == "v2"
     out = {"engine": cfg.engine,
            "fail_severity": cfg.v2_threshold if v2 else cfg.fail_severity,
-           "max_changed_area_pct": cfg.max_changed_area_pct}
+           "max_changed_area_pct": cfg.v2_area_limit if v2 else cfg.max_changed_area_pct}
     if cfg.threshold_source:
         out["threshold_source"] = cfg.threshold_source
+    if v2:
+        out["area_source"] = cfg.v2_area_source
     return out
 
 

@@ -169,6 +169,55 @@ def test_the_canary_is_drawn_once_per_browser_and_scale():
     assert fp.of_target(FakePage(frame(), alone), stable_timeout_ms=0).png == canary_png(4)
 
 
+def test_a_canary_that_could_not_be_drawn_is_tried_again_next_time():
+    """A failure is this check's, not the browser's for good."""
+    browser = FakeBrowser()
+    flaky = FakeContext(RuntimeError("busy for a moment"), browser)
+    first = fp.of_target(FakePage(frame(), flaky), stable_timeout_ms=0)
+    assert first.png is None and "busy for a moment" in first.why
+    flaky.drawn = canary_png()
+    again = fp.of_target(FakePage(frame(), flaky), stable_timeout_ms=0)
+    assert again.png == canary_png() and flaky.draws == 2
+    kept = fp.of_target(FakePage(frame(), flaky), stable_timeout_ms=0)
+    assert kept.png == canary_png() and flaky.draws == 2       # a drawn one is kept
+
+
+class OwnedContext(FakeContext):
+    """The context of `browser.new_page()`: it opens no other tab."""
+
+    def __init__(self, browser):
+        super().__init__(_canary.TabRefused("Error: Please use browser.new_context()"),
+                         browser)
+
+
+class BrowserWithContexts(FakeBrowser):
+    def __init__(self, drawn: bytes):
+        self.drawn = drawn
+        self.opened: list[tuple[dict, FakeContext]] = []
+
+    def new_context(self, **options):
+        context = FakeContext(self.drawn, self)
+        context.closed = False
+
+        def close():
+            context.closed = True
+        context.close = close
+        self.opened.append((options, context))
+        return context
+
+
+@pytest.mark.parametrize("scale", [1.0, 2.0])
+def test_a_page_that_opens_no_tab_has_its_canary_drawn_in_a_new_context(scale):
+    browser = BrowserWithContexts(canary_png(6))
+    run = fp.of_target(FakePage(frame(), OwnedContext(browser), ratio=scale),
+                       stable_timeout_ms=0)
+    assert run.png == canary_png(6), run.why
+    [(options, fresh)] = browser.opened
+    assert options == {"device_scale_factor": scale,
+                       "viewport": FakePage.viewport_size}           # the page's own
+    assert fresh.closed and fresh.draws == 1
+
+
 def test_no_page_no_canary_and_the_reason():
     assert fp.of_target(frame(), stable_timeout_ms=0).why.startswith(
         "the screenshot was handed in")
@@ -422,6 +471,38 @@ def test_a_real_browser_draws_its_canary_once_in_a_tab_of_its_own(ctx, playwrigh
         assert "renderer: same as the baseline's" in str(e.value)
         second.close()
         context.close()
+    finally:
+        browser.close()
+
+
+@pytest.mark.parametrize("scale, viewport", [
+    (1, None), (2, None),
+    #  Narrower than the canary (360 px): there the canary is drawn otherwise,
+    #  so the new context takes the page's viewport as well.
+    (1, {"width": 320, "height": 120}),
+])
+def test_browser_new_page_draws_the_canary_a_context_of_the_user_draws(
+        playwright, scale, viewport):
+    """`browser.new_page()` makes a context that opens no other tab. The canary
+    is then drawn in a new context of the same browser at the same device
+    scale factor and viewport, closed again — and is the one, pixel for
+    pixel, that a context the user opened in that browser draws."""
+    options = {"device_scale_factor": scale, **({"viewport": viewport} if viewport else {})}
+    browser = playwright.chromium.launch()
+    try:
+        mine = browser.new_context(**options)
+        theirs = fp.of_target(mine.new_page(), stable_timeout_ms=5000)
+        assert theirs.png is not None, theirs.why
+        fp._BY_BROWSER.clear()                             # not from the cache
+        alone = browser.new_page(**options)
+        contexts = len(browser.contexts)
+        run = fp.of_target(alone, stable_timeout_ms=5000)
+        assert run.png is not None, run.why
+        assert run.drawn_ms is not None                    # drawn, not kept
+        assert len(browser.contexts) == contexts           # and its context closed
+        assert np.array_equal(pngio.decode(run.png), pngio.decode(theirs.png))
+        alone.close()
+        mine.close()
     finally:
         browser.close()
 

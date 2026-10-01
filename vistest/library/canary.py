@@ -36,7 +36,7 @@ from pathlib import Path
 
 from .targets import capture
 
-__all__ = ["CANARY_VERSION", "CanaryError", "draw", "html", "page_sha256"]
+__all__ = ["CANARY_VERSION", "CanaryError", "TabRefused", "draw", "html", "page_sha256"]
 
 #: Changes whenever the page below changes. Two fingerprints are comparable
 #: only when they were drawn from the same page.
@@ -64,6 +64,11 @@ LINES: tuple[tuple[str, str], ...] = (
 
 class CanaryError(RuntimeError):
     """The canary could not be drawn the way it has to be."""
+
+
+class TabRefused(RuntimeError):
+    """The context would not open a tab — the context of `browser.new_page()`
+    is one: it belongs to that one page. Nothing about the canary yet."""
 
 
 @lru_cache(maxsize=1)
@@ -98,12 +103,17 @@ def draw(context, *, stable_timeout_ms: int = 5000) -> bytes:
     Through `targets.capture`, as every screenshot of the library is: fonts
     awaited, animations off, caret hidden, CSS pixels, frames until two in
     a row agree. Raises `CanaryError` when the shipped font did not load or
-    the tab would not hold still — a fingerprint of that is not one.
+    the tab would not hold still — a fingerprint of that is not one — and
+    `TabRefused` when `context` would not open the tab at all.
     """
     new_page = getattr(context, "new_page", None)
     if not callable(new_page):
         raise CanaryError(f"{type(context).__name__} cannot open a tab")
-    page = new_page()
+    try:
+        page = new_page()
+    except Exception as e:
+        raise TabRefused(f"{type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}"
+                         ) from e
     try:
         page.set_content(html(), wait_until="load")
         cap = capture(page.locator(f"#{ELEMENT_ID}"),

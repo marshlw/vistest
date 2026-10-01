@@ -448,7 +448,9 @@ def _apply_threshold(res: CompareResult, cfg: DiffConfig) -> None:
     res.below_threshold = below
     res.threshold = {"value": threshold, "source": cfg.threshold_source,
                      "regions": len(below),
-                     "pixels": int(sum(r.pixel_count for r in below))}
+                     "pixels": int(sum(r.pixel_count for r in below)),
+                     "area_limit": cfg.v2_area_limit,
+                     "area_source": cfg.v2_area_source}
 
 
 def _account(res: CompareResult) -> None:
@@ -479,13 +481,16 @@ def _verdict(res: CompareResult, cfg: DiffConfig) -> Verdict:
         #  As in v1: a share of the frame that is enough on its own, whatever
         #  the severity. Only what no rule explained counts; under the default
         #  threshold of 0 every such region fails anyway, so this adds nothing.
+        #  The limit is the one a person set, or the default whatever the
+        #  preset (`DiffConfig.v2_area_limit`), named with where it came from.
         area = 100.0 * threshold["pixels"] / max(res.total_pixels, 1)
-        if area >= cfg.max_changed_area_pct:
+        if area >= threshold["area_limit"]:
             reasons.append(
                 f"{len(res.below_threshold)} region(s) below the threshold "
                 f"{threshold['value']:g} ({threshold['source']}) cover {area:.2f}% "
-                f"of the frame together, at least max_changed_area_pct "
-                f"{cfg.max_changed_area_pct:g}%")
+                f"of the frame together, at least the area limit "
+                f"{threshold['area_limit']:.2f}% ({threshold['area_source']}) — "
+                f"{_engines.AREA_HINT}")
             res.regions, res.below_threshold = res.below_threshold, []
             threshold.update(regions=0, pixels=0, area_pct=round(area, 4))
             _account(res)

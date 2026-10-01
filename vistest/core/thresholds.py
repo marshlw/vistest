@@ -71,6 +71,7 @@ EDITABLE: dict[str, tuple[float, float, str, str]] = {
 #  of these (`DiffConfig.threshold_source`); a preset's number is v1's.
 SOURCE_YAML = "vistest.yaml"
 SOURCE_ENV = "VISTEST_FAIL_SEVERITY"
+SOURCE_ENV_AREA = "VISTEST_MAX_CHANGED_AREA_PCT"
 SOURCE_GLOBAL = "global override"
 SOURCE_PROJECT = "project override"
 SOURCE_SNAPSHOT = "snapshot passport"
@@ -79,15 +80,23 @@ SOURCE_CALL = "call"
 #: somebody else's process (`env_patch`), so a project run says «project
 #: override» and not the name of a variable nobody set by hand.
 SOURCE_VARIABLE = "VISTEST_THRESHOLD_SOURCE"
+#: The same for VISTEST_MAX_CHANGED_AREA_PCT: engine v2 applies an area limit
+#: only when a person set one (`DiffConfig.area_source`), and names it.
+AREA_SOURCE_VARIABLE = "VISTEST_AREA_SOURCE"
+
+#: Which field of `DiffConfig` carries the source of which threshold.
+SOURCE_FIELD = {"fail_severity": "threshold_source",
+                "max_changed_area_pct": "area_source"}
 
 
 def override_source(global_overrides: dict | None,
-                    project_overrides: dict | None) -> str:
-    """Whose `fail_severity` wins among the overrides made in the interface,
-    or '' when neither set one."""
-    if (project_overrides or {}).get("fail_severity") is not None:
+                    project_overrides: dict | None,
+                    name: str = "fail_severity") -> str:
+    """Whose `name` wins among the overrides made in the interface, or ''
+    when neither set one."""
+    if (project_overrides or {}).get(name) is not None:
         return SOURCE_PROJECT
-    if (global_overrides or {}).get("fail_severity") is not None:
+    if (global_overrides or {}).get(name) is not None:
         return SOURCE_GLOBAL
     return ""
 
@@ -233,16 +242,19 @@ def patch_for(snapshot_meta: dict | None = None,
     and Python fails such a call.
     """
     out = dict(from_meta(snapshot_meta))
-    if "fail_severity" in out:
-        out["threshold_source"] = SOURCE_SNAPSHOT
+    for name, field in SOURCE_FIELD.items():
+        if name in out:
+            out[field] = SOURCE_SNAPSHOT
     called = {name: value for name, value in (call or {}).items() if value is not None}
     out.update(called)
-    if "fail_severity" in called:
-        out["threshold_source"] = SOURCE_CALL
+    for name, field in SOURCE_FIELD.items():
+        if name in called:
+            out[field] = SOURCE_CALL
     return out
 
 
-def env_patch(overrides: dict, source: str = "") -> dict[str, str]:
+def env_patch(overrides: dict, source: str = "", *,
+              area_source: str = "") -> dict[str, str]:
     """Overrides shaped as environment variables for SOMEBODY ELSE'S process.
 
     A run of a connected project is a separate pytest that reads its own
@@ -256,4 +268,6 @@ def env_patch(overrides: dict, source: str = "") -> dict[str, str]:
            if name in EDITABLE and value is not None}
     if source and "VISTEST_FAIL_SEVERITY" in out:
         out[SOURCE_VARIABLE] = source
+    if area_source and SOURCE_ENV_AREA in out:
+        out[AREA_SOURCE_VARIABLE] = area_source
     return out

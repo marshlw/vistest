@@ -52,8 +52,11 @@ A region that no explanation takes out fails the comparison. There is no
 severity threshold between "found" and "failed" unless a person sets one
 (`threshold=`, a snapshot's passport, vistest.yaml, an override in the
 interface): then a region below it is listed apart, with its description and
-where the threshold came from, and does not fail the check on its own. A
-preset's `fail_severity` is v1's and is not applied (`core/engines.py`).
+where the threshold came from, and does not fail the check on its own —
+unless those below it cover the area limit of the frame together: the
+`max_changed_area_pct` a person set, or the default 0.15 %. A preset's
+`fail_severity` and `max_changed_area_pct` are v1's and are not applied
+(`core/engines.py`).
 """
 
 from .engine import compare

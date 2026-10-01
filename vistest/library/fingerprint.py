@@ -30,7 +30,11 @@ A canary, once drawn, is kept for the browser it was drawn in and the
 device scale factor it was drawn at — not per context: every context of one
 browser at one scale draws the same pixels, and a context per test would
 otherwise pay for it every time. It is drawn in a tab of the context the
-screenshot came from, through the same capture as the screenshot.
+screenshot came from, through the same capture as the screenshot. A page
+from `browser.new_page()` has a context of its own that opens no other tab:
+then the canary is drawn in a new context of the same browser, at the same
+device scale factor and viewport, closed again after it. Only a canary that was drawn is
+kept: a failure is said for this check, and the next one tries again.
 
 Anything missing makes its side `None` and the answer «unknown», with the
 reason: a picture handed in as bytes has no browser behind it; a store that
@@ -111,16 +115,51 @@ def of_target(target, *, stable_timeout_ms: int) -> RunCanary:
         return replace(cached, drawn_ms=None)
     started = time.perf_counter()
     try:
-        png = _canary.draw(context, stable_timeout_ms=stable_timeout_ms)
+        png = _draw(page, context, scale, stable_timeout_ms=stable_timeout_ms)
         run = RunCanary(png=png, sha256=_sha(png))
     except Exception as e:  # the canary must never fail somebody's test
         run = RunCanary(why=f"the canary could not be drawn ({type(e).__name__}: {e})")
     run = replace(run, drawn_ms=int((time.perf_counter() - started) * 1000))
+    if run.png is None:
+        #  Not kept: a browser busy for a moment, a font that came late —
+        #  the next check tries again rather than inherit this one's failure.
+        return run
     try:
         _BY_BROWSER.setdefault(owner, {})[scale] = run
     except TypeError:
         pass
     return run
+
+
+def _draw(page, context, scale: float | None, *, stable_timeout_ms: int) -> bytes:
+    """The canary in a tab of `context` — or, when `context` opens none (the
+    one `browser.new_page()` makes belongs to its page), in a new context of
+    the same browser at the same device scale factor and viewport, closed
+    after it: what a tab of `context` would have drawn. The viewport counts
+    only below the canary's own width (360 px), where the canary changes."""
+    try:
+        return _canary.draw(context, stable_timeout_ms=stable_timeout_ms)
+    except _canary.TabRefused as refused:
+        browser = getattr(context, "browser", None)
+        if browser is None or not callable(getattr(browser, "new_context", None)):
+            raise
+        options = {"device_scale_factor": scale} if scale else {}
+        viewport = getattr(page, "viewport_size", None)
+        if isinstance(viewport, dict) and viewport.get("width") and viewport.get("height"):
+            options["viewport"] = {"width": int(viewport["width"]),
+                                   "height": int(viewport["height"])}
+        try:
+            fresh = browser.new_context(**options)
+        except Exception as e:
+            raise _canary.TabRefused(f"{refused}; a new context of the browser "
+                                     f"neither ({type(e).__name__}: {e})") from e
+        try:
+            return _canary.draw(fresh, stable_timeout_ms=stable_timeout_ms)
+        finally:
+            try:
+                fresh.close()
+            except Exception:  # pragma: no cover - a browser closing under us
+                pass
 
 
 def compare_lazily(compare_with, baseline_canary, this_run):

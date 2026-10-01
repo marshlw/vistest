@@ -51,6 +51,13 @@ V1_DEPRECATED = (
 #: fails. A preset's `fail_severity` is v1's and is not applied to v2.
 V2_DEFAULT_THRESHOLD = 0.0
 
+#: The source a v2 area limit is named with when nobody set one — the
+#: default of `DiffConfig`, whatever the preset.
+AREA_DEFAULT_SOURCE = "default"
+
+#: What to do when the share of the frame below a threshold failed the check.
+AREA_HINT = "raise max_changed_area_pct or mask the area"
+
 
 def check(value, where: str = "engine") -> str:
     """`value` as an engine name, or a `ConfigError` saying what is allowed."""
