@@ -65,7 +65,9 @@ def test_check_bytes_from_elsewhere(page):
     from vistest.integrations import visual_session
 
     page.goto(DEMO)
-    png_bytes = page.screenshot(full_page=True)     # ваш существующий код
+    # Bytes taken elsewhere are not stabilised: mask the counter that ticks every 200 ms.
+    png_bytes = page.screenshot(full_page=True,     # ваш существующий код
+                                mask=[page.locator("#live-counter")])
 
     with visual_session() as vs:
         vs.check_image("existing-from-bytes.png", png_bytes)

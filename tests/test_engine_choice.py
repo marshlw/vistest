@@ -19,13 +19,17 @@ engines themselves (their own tests do that):
   says the preset does not act on it;
 * a threshold a person set lets regions below it through under v2 — listed,
   with its source, in the result, the notes, the report, the failure message
-  and the API answer; a preset's number does not.
+  and the API answer; a preset's number does not;
+* (step C2) so does the area limit: the one a person set, or the default
+  0.15 % whatever the preset, named next to the number, and a failure on it
+  says what to do.
 """
 
 from __future__ import annotations
 
 import ast
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -205,15 +209,46 @@ def test_below_the_threshold_alone_passes_and_is_still_said():
 
 
 def test_the_share_of_the_frame_still_fails_as_in_v1():
-    """max_changed_area_pct: enough on its own, whatever the severity."""
+    """max_changed_area_pct: enough on its own, whatever the severity — named
+    with where it came from, and with what to do about it."""
     a, b = _pair()
     high = DiffConfig(fail_severity=99, threshold_source="call")
     r = compare(a, b, cfg=high)                        # 840 px of 60 000: 1.4 %
     assert r.verdict is Verdict.FAIL and len(r.regions) == 2 and not r.below_threshold
-    assert any("cover 1.40% of the frame together, at least max_changed_area_pct"
-               in n for n in r.notes)
-    wide = DiffConfig(fail_severity=99, threshold_source="call", max_changed_area_pct=5)
+    assert any("cover 1.40% of the frame together, at least the area limit 0.15% "
+               "(default) — raise max_changed_area_pct or mask the area" in n
+               for n in r.notes), r.notes
+    wide = DiffConfig(fail_severity=99, threshold_source="call",
+                      max_changed_area_pct=5, area_source="call")
     assert compare(a, b, cfg=wide).verdict is Verdict.PASS
+
+
+def _faint(pixels_wide: int):
+    """Only a faint change, 4 px high: 40 px is 0.07 % of the frame, 180 px 0.30 %."""
+    a = np.full((200, 300, 3), 250, np.uint8)
+    b = a.copy()
+    b[100:104, 200:200 + pixels_wide] = (244, 244, 244)
+    return a, b
+
+
+@pytest.mark.parametrize("preset", ["strict", "balanced", "loose"])
+def test_a_preset_does_not_set_the_area_limit_for_v2(preset):
+    """Step C2: like the threshold, the area limit under v2 is the one a person
+    set or the default, 0.15 %, whatever the preset — strict's 0.02 % and
+    loose's 0.8 % are v1's."""
+    cfg = replace(VisTestConfig.preset_of(preset).diff,
+                  fail_severity=99, threshold_source="call")
+    assert (cfg.v2_area_limit, cfg.v2_area_source) == (0.15, "default")
+    small = compare(*_faint(10), cfg=cfg)               # 0.07 %: strict's would fail it
+    assert small.verdict is Verdict.PASS and len(small.below_threshold) == 1
+    assert small.threshold["area_limit"] == 0.15
+    assert small.threshold["area_source"] == "default"
+    wider = compare(*_faint(45), cfg=cfg)               # 0.30 %: loose's would pass it
+    assert wider.verdict is Verdict.FAIL
+    assert any("at least the area limit 0.15% (default)" in n for n in wider.notes)
+    #  v1 keeps the preset's number.
+    assert VisTestConfig.preset_of(preset).diff.max_changed_area_pct == {
+        "strict": 0.02, "balanced": 0.15, "loose": 0.8}[preset]
 
 
 def test_the_threshold_does_not_touch_v1():
@@ -250,6 +285,54 @@ def test_every_layer_names_itself(tmp_path, monkeypatch):
                      {"fail_severity": 5})["threshold_source"] == "call"
     assert "threshold_source" not in patch_for({"thresholds": {"max_changed_area_pct": 1}},
                                                {"max_changed_area_pct": 2})
+
+
+def test_every_layer_names_the_area_limit_too(tmp_path, monkeypatch):
+    for name in ("VISTEST_MAX_CHANGED_AREA_PCT", "VISTEST_AREA_SOURCE"):
+        monkeypatch.delenv(name, raising=False)
+    assert VisTestConfig.load(tmp_path / "none.yaml").diff.area_source == ""
+    path = _yaml(tmp_path, "preset: loose\n")
+    cfg = VisTestConfig.load(path).diff                                  # a preset's
+    assert (cfg.area_source, cfg.v2_area_limit, cfg.v2_area_source) == ("", 0.15, "default")
+    path = _yaml(tmp_path, "preset: loose\ndiff:\n  max_changed_area_pct: 2\n")
+    cfg = VisTestConfig.load(path).diff
+    assert (cfg.v2_area_limit, cfg.v2_area_source) == (2, "vistest.yaml")
+    monkeypatch.setenv("VISTEST_MAX_CHANGED_AREA_PCT", "3")
+    assert VisTestConfig.load(path).diff.v2_area_source == "VISTEST_MAX_CHANGED_AREA_PCT"
+    monkeypatch.setenv("VISTEST_AREA_SOURCE", "project override")
+    cfg = VisTestConfig.load(path).diff
+    assert (cfg.v2_area_limit, cfg.v2_area_source) == (3, "project override")
+
+    assert patch_for({"thresholds": {"max_changed_area_pct": 1}}, None)["area_source"] \
+        == "snapshot passport"
+    assert patch_for({"thresholds": {"max_changed_area_pct": 1}},
+                     {"max_changed_area_pct": 2})["area_source"] == "call"
+    assert "area_source" not in patch_for({"thresholds": {"fail_severity": 1}},
+                                          {"fail_severity": 2})
+    with pytest.raises(ValueError, match="unknown key diff.area_source"):
+        VisTestConfig.load(_yaml(tmp_path, "diff:\n  area_source: call\n"))
+
+
+def test_an_area_limit_saved_in_the_interface_is_named():
+    from vistest.api.thresholds import apply, env_for
+
+    class DB:
+        rows = {("global", ""): {"fail_severity": 30.0, "max_changed_area_pct": 1.0},
+                ("project", "acme"): {"max_changed_area_pct": 2.0}}
+
+        def query(self, _sql, args):
+            scope, key = args
+            return [{"name": k, "value": v} for k, v in self.rows.get((scope, key), {}).items()]
+
+    cfg = VisTestConfig()
+    acme = apply(cfg, DB(), "acme").diff
+    assert (acme.v2_area_limit, acme.v2_area_source) == (2, "project override")
+    assert acme.threshold_source == "global override"
+    other = apply(cfg, DB(), "other").diff
+    assert (other.v2_area_limit, other.v2_area_source) == (1, "global override")
+    env = env_for(DB(), "acme")
+    assert env["VISTEST_AREA_SOURCE"] == "project override"
+    assert env["VISTEST_THRESHOLD_SOURCE"] == "global override"
 
 
 def test_an_override_saved_in_the_interface_is_named():
@@ -334,7 +417,7 @@ def test_below_the_threshold_in_the_message_and_the_report(ctx):
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(_png(b), "page.png", threshold=25)
     text = str(e.value)
-    assert "threshold 25 (call), area limit 0.15%" in text
+    assert "threshold 25 (call), area limit 0.15% (default)" in text
     assert "  below the threshold 25 (call): 1 region — " in text
 
     c = a.copy()
@@ -352,6 +435,30 @@ def test_below_the_threshold_in_the_message_and_the_report(ctx):
     assert "threshold 25 (call)" in html
 
 
+def test_the_area_limit_in_the_message_says_where_from_and_what_to_do(ctx):
+    from vistest import expect_screenshot
+    from vistest.library.errors import ScreenshotMismatch
+    from vistest.report.library import read_parts, render
+
+    a, b = _pair()
+    _accept(ctx, _png(a))
+    _accept(ctx, _png(a), "other.png")
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(_png(b), "page.png",
+                          threshold={"fail_severity": 99, "max_changed_area_pct": 1})
+    assert "threshold 99 (call), area limit 1.00% (call) — all below it" in str(e.value)
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(_png(b), "page.png", threshold=99)
+    assert ("threshold 99 (call), area limit 0.15% (default) — all below it, "
+            "together 1.40% of the frame, at or over the area limit: raise "
+            "max_changed_area_pct or mask the area") in str(e.value)
+    passed = expect_screenshot(_png(b), "other.png",
+                               threshold={"fail_severity": 99, "max_changed_area_pct": 5})
+    assert passed.verdict is Verdict.PASS
+    html = render(read_parts(ctx.parts_dir))              # the last check of each
+    assert "area 1.40% / 0.15% (default)" in html and "area 1.40% / 5.00% (call)" in html
+
+
 def test_the_api_answer_carries_the_list(tmp_path, monkeypatch):
     """`POST /api/check` answers with `to_dict()`: the threshold, what is below
     it, and the line in the notes."""
@@ -367,6 +474,8 @@ def test_the_api_answer_carries_the_list(tmp_path, monkeypatch):
                     diff_overrides={"fail_severity": 25})
     body = json.loads(res.to_json())
     assert body["threshold"]["source"] == "call" and len(body["below_threshold"]) == 1
+    assert (body["threshold"]["area_limit"], body["threshold"]["area_source"]) \
+        == (0.15, "default")
     assert any(n.startswith("below the threshold 25 (call)") for n in body["notes"])
     old = svc.check("page.png", b, render=False, diff_overrides={"engine": "v1"})
     assert engines.V1_DEPRECATED in old.notes

@@ -138,6 +138,11 @@ FLAT_RECOLOUR_CV = Gap(
 # --------------------------------------------------------------------------- #
 #  Comparison thresholds
 # --------------------------------------------------------------------------- #
+#: The share of the frame enough on its own when nobody set one. For engine v2
+#: whatever the preset: a preset's number is v1's (`DiffConfig.v2_area_limit`).
+DEFAULT_MAX_CHANGED_AREA_PCT = 0.15
+
+
 @dataclass
 class DiffConfig:
     # --- perceptual threshold ---
@@ -182,7 +187,7 @@ class DiffConfig:
 
     # --- severity / verdict policy ---
     fail_severity: float = 25.0         # at least one region with this severity → fail
-    max_changed_area_pct: float = 0.15  # or the total area of changes
+    max_changed_area_pct: float = DEFAULT_MAX_CHANGED_AREA_PCT  # or the total area of changes
 
     # Area is measured BEFORE segmentation, so it also includes the pixels that
     # are later discarded as too small or too sparse. If no region remains after
@@ -240,6 +245,10 @@ class DiffConfig:
     #  "snapshot passport", "call". Empty when it is the preset's number:
     #  v1 applies that, v2 does not (`v2_threshold`).
     threshold_source: str = ""
+    #  Where `max_changed_area_pct` came from when a person set it — the same
+    #  names. Empty when it is the preset's number or the default: v1 applies
+    #  that, v2 takes DEFAULT_MAX_CHANGED_AREA_PCT (`v2_area_limit`).
+    area_source: str = ""
     #  The preset the numbers above were built from. v2 reads it only to say
     #  that a preset does not act on it.
     preset: str = "balanced"
@@ -253,6 +262,19 @@ class DiffConfig:
         a threshold a person set, or 0 — whatever no rule explains fails."""
         return (float(self.fail_severity) if self.threshold_source
                 else _engines.V2_DEFAULT_THRESHOLD)
+
+    @property
+    def v2_area_limit(self) -> float:
+        """The share of the frame that fails v2 on its own — of the regions no
+        rule explained and a threshold let through: the number a person set,
+        or the default, whatever the preset."""
+        return (float(self.max_changed_area_pct) if self.area_source
+                else DEFAULT_MAX_CHANGED_AREA_PCT)
+
+    @property
+    def v2_area_source(self) -> str:
+        """Where `v2_area_limit` came from, as a message names it."""
+        return self.area_source or _engines.AREA_DEFAULT_SOURCE
 
     def merged(self, **overrides: Any) -> DiffConfig:
         clean = {k: v for k, v in overrides.items() if v is not None}

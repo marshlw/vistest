@@ -86,16 +86,22 @@ def _limits_line(result, limits: dict) -> str:
     n = len(result.regions)
     regions = f"{n} region{'' if n == 1 else 's'}"
     if limits.get("engine") == "v2":
+        from ..core import engines as _engines
+
         source = limits.get("threshold_source")
+        area_source = limits.get("area_source") or _engines.AREA_DEFAULT_SOURCE
         threshold = (f"threshold {limits.get('fail_severity', 0):g} ({source}), "
-                     f"area limit {limits.get('max_changed_area_pct', 0):.2f}%"
+                     f"area limit {limits.get('max_changed_area_pct', 0):.2f}% "
+                     f"({area_source})"
                      if source else "no threshold: what no rule explains fails")
         said = getattr(result, "threshold", None) or {}
         if "area_pct" in said:
             #  Every region was below the threshold, and together they cover
-            #  the share of the frame that fails on its own.
+            #  the share of the frame that fails on its own — said with what
+            #  to do about it.
             threshold += (f" — all below it, together {said['area_pct']:.2f}% of "
-                          f"the frame, at or over the area limit")
+                          f"the frame, at or over the area limit: "
+                          f"{_engines.AREA_HINT}")
         return (f"  engine v2: {regions} no rule explained, severity up to "
                 f"{result.max_severity:.1f}; {threshold}; changed area "
                 f"{result.changed_area_pct:.2f}%")

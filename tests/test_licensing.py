@@ -24,7 +24,7 @@ import base64
 import hashlib
 import json
 import threading
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,7 +84,10 @@ def _test_public_key(monkeypatch):
 
 
 def _iso(days_from_today: int) -> str:
-    return (date.today() + timedelta(days=days_from_today)).isoformat()
+    #  The licence counts days in UTC (`License.days_left`), and so does this:
+    #  outside UTC the local date differs from it for some hours of every day.
+    today = datetime.now(timezone.utc).date()
+    return (today + timedelta(days=days_from_today)).isoformat()
 
 
 # --------------------------------------------------------------------------- #

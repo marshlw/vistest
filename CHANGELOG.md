@@ -37,7 +37,8 @@ fails; each region that counts is said in words.
   library's path, and v2 fails it (`tests/benchmark_corpus/v2_ratchet.json`
   lists what it fails on the synthetic corpus, and why);
 - a preset's `fail_severity` no longer lets anything through: under v2 the
-  threshold is 0 unless a person set one.
+  threshold is 0 unless a person set one; nor does loose's 0.8 % area
+  limit — under v2 it is 0.15 % unless a person set one.
 
 **What to do:**
 
@@ -52,7 +53,10 @@ fails; each region that counts is said in words.
   threshold came from: «below the threshold 25 (project override): 2 regions
   — ink colour: #333333 → #3a3a3a, ΔE00 2.2 ×2». Overrides saved before the
   update are applied and named that way. `max_changed_area_pct` still fails
-  on its own — counted over what no rule explained;
+  on its own — counted over what no rule explained; a preset does not set
+  it for v2 either: the number a person set, or the default 0.15 %, named
+  next to it («area limit 0.15% (default)»), and a check failed on it says
+  to raise `max_changed_area_pct` or mask the area;
 - mask or ignore what moves: `mask=` (selectors and boxes), ignore zones,
   `data-vistest="ignore"`, `diff.ignore_kinds`;
 - for one release, keep v1: `engine: v1` in vistest.yaml,
@@ -249,6 +253,35 @@ fails; each region that counts is said in words.
   the target not met is the maintainer's decision. The grid's JSON with
   `--final` is not committed: `docs/benchmark_browser_native.json` stays
   the run without the flag.
+- **Step C2: the area limit under v2 is set like the threshold; the canary
+  of `browser.new_page()`.** A preset does not set `max_changed_area_pct`
+  for v2 either: the number a person set — the call, the passport,
+  `diff.max_changed_area_pct` in vistest.yaml, `VISTEST_MAX_CHANGED_AREA_PCT`,
+  a global or project override in the interface (handed to a project's run
+  with `VISTEST_AREA_SOURCE`) — or else the default of `DiffConfig`, 0.15 %,
+  whatever the preset; strict's 0.02 % and loose's 0.8 % are v1's. Where it
+  came from is `DiffConfig.area_source` (`v2_area_limit`, `v2_area_source`)
+  and it is named next to the number — «threshold 25 (call), area limit
+  0.15% (default)» — in the failure message, the report and the API answer
+  (`threshold.area_limit`, `threshold.area_source`). A check failed on the
+  area says what to do: raise `max_changed_area_pct` or mask the area (the
+  owner's decision: the limit stays — a faint change over a paragraph is
+  more often real; for something small on an element's snapshot a mask is
+  the tool, not a threshold). **The canary:** a page from
+  `browser.new_page()` has a context of its own that opens no other tab;
+  its canary is now drawn in a new context of the same browser at the same
+  device scale factor and viewport, closed after it, and comes out pixel for
+  pixel as the one a context the user opened draws (a test in Chromium, at
+  scale 1 and 2 and at a 320 px viewport). The viewport is taken too
+  because the canary is 360 px wide and comes out otherwise in a narrower
+  one — that is how it was drawn before C2 as well, in the user's context;
+  the canary itself is not changed. A canary that could not be drawn is no
+  longer kept for the browser: the next check tries again. **examples/**: `existing-from-bytes.png` masks the
+  live counter in the project's own `page.screenshot` — bytes taken
+  elsewhere are not stabilised. **tests/test_licensing.py** takes today's
+  date in UTC, as `License.days_left` does; it failed for some hours of
+  every day away from UTC. The engine does not change: the output of both
+  benchmarks without `--final` is byte for byte what it was.
 
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 

@@ -1987,7 +1987,16 @@ Overrides saved in the interface before the switch are applied by v2 and
 named that way, so an old number that now lets something through is seen.
 `max_changed_area_pct` means what it means in v1: the share of the frame
 that fails on its own, whatever the severity — counted over the regions no
-rule explained, so under the default threshold of 0 it adds nothing.
+rule explained, so under the default threshold of 0 it adds nothing. Like
+the threshold, a preset does not set it for v2: the number a person set (the
+call, the passport, vistest.yaml, `VISTEST_MAX_CHANGED_AREA_PCT`, an
+override in the interface) or else the default, 0.15 %, named next to it —
+`area limit 0.15% (default)`. The threshold is there to let small things
+through: a counter, a speck. A faint change over a paragraph is more often
+real (the text colour of a whole theme changed), so it still fails, and the
+message says what to do: raise `max_changed_area_pct`, or mask the area —
+for something small on an element's snapshot a mask is the right tool, not
+a threshold.
 
 **Presets under v2.** `strict`, `balanced` and `loose` tune v1's cascade
 (ΔE00 and SSIM thresholds, morphology). v2 has one rule — unexplained

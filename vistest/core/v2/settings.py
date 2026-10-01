@@ -16,10 +16,12 @@ a number moved after looking at it stops meaning what the table says.
 What v2 reads of `DiffConfig` is listed in `DIFFCONFIG_READ`: the size
 policy, the memory limit, the kinds a user asked to ignore, the two fields
 severity is weighted with, and — only when a person set it, which
-`threshold_source` says — the threshold `fail_severity` with the share of
-the frame `max_changed_area_pct` (step C of f5). Every other field — the v1
-thresholds, consensus, SSIM, morphology, alignment, a preset's own
-`fail_severity` — has no effect on v2. `tests/test_engine_v2.py` holds that
+`threshold_source` says — the threshold `fail_severity` (step C of f5) with
+the share of the frame: `max_changed_area_pct` when a person set it too,
+which `area_source` says, and otherwise the default of `DiffConfig` (step C2).
+Every other field — the v1 thresholds, consensus, SSIM, morphology,
+alignment, a preset's own `fail_severity` and `max_changed_area_pct` — has
+no effect on v2. `tests/test_engine_v2.py` holds that
 list against the code.
 """
 
@@ -42,8 +44,10 @@ DIFFCONFIG_READ = (
     "above_fold_px", "above_fold_weight",          # severity
     #  A threshold a person set (core/engines.py): regions below it are
     #  listed apart, and the share of the frame they cover can still fail.
-    #  With `threshold_source` empty the other two are not read.
-    "threshold_source", "fail_severity", "max_changed_area_pct",
+    #  With `threshold_source` empty the rest are not read; with
+    #  `area_source` empty `max_changed_area_pct` is not either — the default
+    #  of DiffConfig is the limit, whatever the preset.
+    "threshold_source", "fail_severity", "area_source", "max_changed_area_pct",
 )
 
 #: (d) of the re-rasterisation rule: the share of the page's ink clusters that

@@ -41,6 +41,7 @@ from dataclasses import replace
 from ..config import VisTestConfig
 from ..core.thresholds import (
     EDITABLE,
+    SOURCE_FIELD,
     ThresholdError,
     ThresholdStore,
     env_patch,
@@ -230,10 +231,13 @@ def apply(cfg: VisTestConfig, db, project_key: str | None = None
     patch = overrides(db, project_key)
     if not patch:
         return cfg
-    if "fail_severity" in patch:
-        #  Named, because engine v2 applies a threshold only when a person
-        #  set one — and an override saved in the interface is exactly that.
-        patch["threshold_source"] = override_source(*SettingStore(db).layers(project_key))
+    #  Named, because engine v2 applies a threshold and an area limit only
+    #  when a person set them — and an override saved in the interface is
+    #  exactly that.
+    layers = SettingStore(db).layers(project_key)
+    for name, field in SOURCE_FIELD.items():
+        if name in patch:
+            patch[field] = override_source(*layers, name)
     return replace(cfg, diff=cfg.diff.merged(**patch))
 
 
@@ -245,8 +249,9 @@ def env_for(db, project_key: str | None = None) -> dict[str, str]:
     threshold set in the interface would apply to the service's own runs and
     silently not to project runs — a discrepancy that costs days to find.
     """
-    return env_patch(overrides(db, project_key),
-                     override_source(*SettingStore(db).layers(project_key)))
+    layers = SettingStore(db).layers(project_key)
+    return env_patch(overrides(db, project_key), override_source(*layers),
+                     area_source=override_source(*layers, "max_changed_area_pct"))
 
 
 #  A runtime assertion rather than a comment: if the protocol in the core ever
