@@ -2004,6 +2004,36 @@ fails — and your threshold, so a preset does not act on it; a preset other
 than `balanced` adds one line to a v2 result saying so. The table below is
 v1's.
 
+### What engine v2 does not tell apart
+
+What v2 cannot explain fails; these are the known places where that is a
+false failure, not a change. None of them has a rule of its own yet: for
+each, mask the element, set a threshold for the snapshot, or accept the new
+picture after looking at it.
+
+- **A page moved by a fraction of a pixel, on charts and SVG icons.** v2
+  explains a fractional move of the page when each region's drawing moved
+  with it: text, boxes and plain icons keep their shape and their coverage
+  moves by exactly the page's move. A chart (lines, areas, sparklines) or an
+  SVG icon can be re-rasterised at the new offset rather than moved — its
+  strokes come out a little different — and then the region is said in
+  words («ink shape changed», «strokes redrawn within 1 px») and fails.
+- **A native checkbox (and other native form controls) on a page moved by a
+  fraction of a pixel.** The browser draws them in its own theme, and the
+  page-shift rule does not take them as moved with the page: they are left
+  as a change.
+- **`opacity: 0.98` and changes as faint.** By pixels it is the same as a
+  real small edit — a colour moved by about ΔE00 1–2. v2 takes every pixel
+  above ΔE00 1, so it fails; it is not meant to tell the two apart. If such
+  faintness is expected on a snapshot, a threshold for that snapshot is the
+  tool.
+- **Another renderer.** When the canaries say the renderer changed (another
+  machine, OS, Chromium build or font hinting), v2 says so and explains the
+  text it re-rasterised — but what else the other renderer drew otherwise
+  (antialiasing of shapes, icons, form controls) still fails. The check
+  gives a diagnosis, not a pass: accept the baselines again on the renderer
+  the checks run on.
+
 ### Пресеты
 
 ```bash

@@ -282,6 +282,9 @@ fails; each region that counts is said in words.
   date in UTC, as `License.days_left` does; it failed for some hours of
   every day away from UTC. The engine does not change: the output of both
   benchmarks without `--final` is byte for byte what it was.
+- **Merged into main by the maintainer's decision** (`152f6b5`) with the
+  target on held-out-2 not met for false failures: v2 2/6 where it allowed
+  at most 1; misses 0/92 against Playwright 0.05/0's 5/92.
 
 ### E1: a second engine path that catches first and explains after (`engine="v2"`)
 
