@@ -6,124 +6,183 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""A second frame after a failure: one function for the server and the library.
+"""A second look after a failure: one function for the server and the library.
 
 It used to live inside `CheckService._retry`, which meant the server had it
 and the library did not. Both call this now, and the two can no longer drift.
 
-**The first frame is compared, not the second.** Taking the second would be
-choosing the luckier picture until it turns green. The second frame is a
-witness, not a replacement: it says which pixels of this page do not hold
-still, and exactly those go into the mask for a comparison of the *first*
-frame again.
+**The invariant: a change in data that arrived after `load` cannot be
+hidden.** The first version of this function took one more frame and masked
+whatever differed between the two; the capture-hazard stand (S1) showed what
+that does on a page whose data comes late: the first frame shows the spinner,
+the second the data, *everything* between them is «unstable», and the check
+is green — with a real change in that data as green as the plain page. So:
 
-Hence the property that matters: what gets suppressed is specific regions,
-never the verdict. A spinner that shivered goes into the mask; a header that
-moved stays red, because between the two frames it did not shiver anywhere. A
-steady regression cannot be hidden this way — steady means it reproduces.
+* **Nothing is masked on a page that was not ready.** When the wait for
+  readiness (capture/ready.py) gave up on a step, or the frames never held
+  still, the verdict stays the one from the frame that was taken, and the
+  note says so (`ready=False`).
+* **The verdict is from the last frame.** More frames are taken after the
+  failure, until two in a row are identical or the time is up. If the page
+  changed after it looked ready and then held still, that later frame is the
+  page as it is, and it is what gets compared. The picture a person opens is
+  that frame too.
+* **Nothing is masked as live either.** A pixel that changed in at least two
+  of the intervals between consecutive frames is live — a counter, an
+  animation that does not stop; one that changed once and held — the spinner
+  that became a table — is a one-off transition. Neither is masked: masking
+  the live pixels made a check pass by luck (on the stand, a counter one check
+  in seven). A live area is named in the note, and the check fails until it
+  is masked on purpose (`mask=[...]`).
 
-A **flickering** one can, and that is said rather than left out. If a break
-shows every other frame, the second frame may catch the page whole, the region
-goes into the mask, and the verdict turns green. Two frames are not enough for
-anyone — a person or an engine — to tell flickering noise from a flickering
-break. So the green is never silent: «failed on the first capture, passed on
-the second» is a note, with the share of the page that moved and the advice to
-fix it at the source. For a flickering break that is exactly the right text.
-
-**Nothing vanishes from the result either.** A region of the first comparison
-that is absent from the second — because its pixels were among those that
-moved — is kept, in `suppressed`, with `suppressed_by="unstable: …"`. Before,
-it simply disappeared: the pixels were masked out and the region with them,
-and a person reading a green result could not see that anything had been
-there. Now the report and the pytest summary count it like every other
-suppression.
+What is still said rather than hidden: regions of the first comparison that
+have no counterpart in the second — because the page changed under them —
+are kept in `suppressed` with
+`suppressed_by="unstable: …"`, and counted with every other suppression.
+And a check that passes on the later frame passes with a note: the page
+changed after it looked ready, which is worth fixing at the source.
 """
 
 from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from ..models import CompareResult, DiffRegion
 from . import noise as _noise
 
-__all__ = ["PREFIX", "SecondLook", "second_look"]
+__all__ = ["Later", "PREFIX", "SecondLook", "live_mask", "second_look"]
 
 #: The head of `suppressed_by` for a region that did not reproduce.
 PREFIX = "unstable"
 
+#: How many intervals a pixel must change in to count as live.
+LIVE_INTERVALS = 2
+
+
+@dataclass
+class Later:
+    """The frames taken after the one that failed, oldest first.
+
+    `settled` — the last two frames (the first one included) are identical.
+    """
+
+    frames: list[np.ndarray] = field(default_factory=list)
+    settled: bool = False
+
 
 @dataclass
 class SecondLook:
-    """What the second frame changed.
+    """What the second look found.
 
-    `result` is what to report: the first comparison when nothing changed, the
-    comparison of the first frame under the wider mask otherwise.
-    `unstable` is the mask of pixels that moved between the two frames, or
-    `None` when there was no second frame to compare with.
+    `result` is what to report. `unstable` is a mask that was added to the
+    comparison — always None now: nothing is masked (kept for the callers
+    that persist it). `frame` is the picture the verdict is from: the last
+    frame taken, or the first one when no other was taken. `live` — the
+    pixels that kept changing, when some did.
     """
 
     result: CompareResult
     unstable: np.ndarray | None = None
+    frame: np.ndarray | None = None
+    live: np.ndarray | None = None
+
+
+def live_mask(frames: list[np.ndarray]) -> np.ndarray:
+    """Pixels that changed in at least two intervals, in the last frame's shape."""
+    shape = frames[-1].shape[:2]
+    counts = np.zeros(shape, dtype=np.uint8)
+    for a, b in zip(frames, frames[1:], strict=False):
+        changed = _noise.stability_mask([b, a])
+        fitted = np.ones(shape, dtype=bool)
+        h, w = min(shape[0], changed.shape[0]), min(shape[1], changed.shape[1])
+        fitted[:h, :w] = changed[:h, :w]
+        counts += fitted
+    return counts >= LIVE_INTERVALS
 
 
 def second_look(
     first: CompareResult,
     frame: np.ndarray,
-    recapture: Callable[[], np.ndarray | None],
-    recompare: Callable[[np.ndarray], CompareResult],
+    recapture: Callable[[], Later | np.ndarray | None],
+    recompare: Callable[[np.ndarray, np.ndarray | None], CompareResult],
+    *,
+    ready: bool | None = True,
+    not_ready: str = "",
 ) -> SecondLook:
-    """Take one more frame, and recompare `frame` with what moved masked out.
+    """More frames after a failure, and the verdict from the last of them.
 
     first     — the comparison that failed.
-    frame     — the picture it was made from (the first frame).
-    recapture — takes one more frame of the same page, as RGB; may return
-                None (nothing to take) or raise (the browser is gone). Neither
-                touches the verdict already computed.
-    recompare — compares `frame` against the same baseline again, with the
-                given mask of moving pixels added to whatever it ignored the
-                first time. The caller owns the baseline, the thresholds and
-                the masks; this function only decides when and what to ask.
+    frame     — the picture it was made from.
+    recapture — the frames taken after it (`Later`), or one frame (an
+                array: then nothing can be called live), or None (nothing to
+                take); may raise (the browser is gone). Neither touches the
+                verdict already computed.
+    recompare — compares a frame against the same baseline again; the second
+                argument is a mask to add to whatever was ignored the first
+                time — None: nothing is added.
+    ready     — False when the page was not ready (a readiness step gave up,
+                or the frames never held still): nothing is taken and
+                nothing is masked, and `not_ready` says why in the note.
     """
+    if ready is False:
+        first.notes.append(
+            "The page was not ready" + (f" ({not_ready})" if not_ready else "")
+            + ": the second look masked nothing, and the verdict is from the "
+            "frame that was taken.")
+        return SecondLook(first, None, frame)
     try:
-        second = recapture()
+        later = recapture()
     except Exception as e:
         first.notes.append(
             f"Could not take a second capture ({type(e).__name__}: {e}) — "
             "the verdict is from a single frame.")
-        return SecondLook(first)
-    if second is None:
-        return SecondLook(first)
+        return SecondLook(first, None, frame)
+    if later is None:
+        return SecondLook(first, None, frame)
+    if isinstance(later, np.ndarray):
+        later = Later([later], settled=False)
+    if not later.frames:
+        return SecondLook(first, None, frame)
 
-    moved = _noise.stability_mask([frame, second])
-    if not moved.any():
-        #  Not one pixel shivered between the two frames. That is a strong
+    seq = [frame, *later.frames]
+    last = seq[-1]
+    if all(f.shape == frame.shape and np.array_equal(f, frame) for f in later.frames):
+        #  Not one pixel changed between the frames. That is a strong
         #  statement in favour of the failure, and worth saying aloud: whoever
         #  looks at it next is not wondering whether something blinked.
         first.notes.append(
             "Confirmed on a second capture: nothing on this page moved "
-            "between the two frames.")
-        return SecondLook(first, moved)
+            "between the frames.")
+        return SecondLook(first, np.zeros(frame.shape[:2], dtype=bool), frame)
 
-    again = recompare(moved)
-    share = float(moved.mean()) * 100
+    live = live_mask(seq) if len(seq) >= 3 else np.zeros(last.shape[:2], dtype=bool)
+    changed = _noise.stability_mask([last, frame])
+    share = float(changed.mean()) * 100
+    again = recompare(last, None)
     _keep_what_vanished(first, again, share)
 
+    if live.any():
+        what = (f"{float(live.mean()) * 100:.1f}% of the page kept changing after it "
+                "was ready — something on it lives (a counter, an animation that "
+                "does not stop). That part was not masked: mask it if it is meant "
+                "to change")
+    else:
+        what = (f"the page changed after it looked ready ({share:.1f}% of it) and "
+                "then held still")
     if again.failed:
         again.notes.append(
-            f"A second capture was taken: {share:.1f}% of the page is "
-            "unstable and was suppressed, but the difference remains.")
-        return SecondLook(again, moved)
-
-    again.notes.append(
-        f"Failed on the first capture and passed on the second: "
-        f"{share:.1f}% of the page does not hold still. The difference did "
-        "not reproduce, so it is noise — but this snapshot is unstable, and "
-        "that is worth fixing at the source.")
-    return SecondLook(again, moved)
+            f"A second look was taken: {what}. The verdict is from the later "
+            "frame, and the difference remains.")
+    else:
+        again.notes.append(
+            f"Failed on the first capture and passed on a later one: {what}. "
+            "The verdict is from the later frame — but this snapshot was taken "
+            "before the page was done, and that is worth fixing at the source.")
+    return SecondLook(again, None, last, live if live.any() else None)
 
 
 def _keep_what_vanished(first: CompareResult, again: CompareResult,
@@ -131,17 +190,19 @@ def _keep_what_vanished(first: CompareResult, again: CompareResult,
     """Regions of the first comparison with no counterpart in the second.
 
     A counterpart is any region of the second comparison — reported or
-    suppressed — whose box overlaps. What is left had its pixels masked out
-    as moving: a live region is moved to `suppressed` as unstable, and a
-    region that was already suppressed keeps the reason it had.
+    suppressed — whose box overlaps. What is left changed under the page's
+    feet — the later frame no longer has it: it is moved to `suppressed` as
+    unstable, and a region that was already suppressed keeps the reason it
+    had.
 
     Their pixels are not added back to `suppressed_pixels`: the second
     comparison ignored them, so they are not among its changed pixels, and the
     three-way split of `changed_pixels` still adds up.
     """
     present = [*again.regions, *again.suppressed]
-    reason = (f"{PREFIX}: did not reproduce on a second capture "
-              f"({share:.1f}% of the page moved between the two frames)")
+    reason = (f"{PREFIX}: did not reproduce on a later capture "
+              f"({share:.1f}% of the page changed between the frames; the later "
+              "frame was compared)")
     for region in first.regions:
         if not any(_overlap(region, other) for other in present):
             kept = copy.copy(region)

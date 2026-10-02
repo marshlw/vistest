@@ -15,7 +15,7 @@
 - [5.4. Что изменил этот мерж](#54-что-изменил-этот-мерж)
 - [6. Тест упал — что делать](#6-тест-упал--что-делать)
 - [7. Настройка порогов](#7-настройка-порогов)
-- [7.1. Пересъёмка при падении](#71-пересъёмка-при-падении)
+- [7.1. Readiness before the frames, and a second look after a failure](#71-readiness-before-the-frames-and-a-second-look-after-a-failure)
 - [8. Борьба с нестабильностью](#8-борьба-с-нестабильностью)
 - [9. Сервис, UI и метрики](#9-сервис-ui-и-метрики)
 - [9.1. Decisions: очередь решений](#91-decisions-очередь-решений)
@@ -2160,47 +2160,74 @@ VISTEST_IN_DOCKER=1
 
 ---
 
-## 7.1. Пересъёмка при падении
+## 7.1. Readiness before the frames, and a second look after a failure
 
-Визуальные тесты умирают не от отсутствия интеграций, а от того, что через месяц
-красному перестают верить и жмут «принять» не глядя. Одна анимация, один
-спиннер, одна подгрузка шрифта — и набор краснеет через раз.
+Visual tests die less of missing integrations than of a red that nobody
+believes a month later. Most of that red is born at capture: the picture was
+taken before the page was done. Stopping animations makes it worse, not
+better — a frozen spinner over data that is still on its way is two identical
+frames, and «two identical frames» is what screenshot tools wait for. The
+capture-hazard stand (`tests/capture_hazards/`) measured exactly that.
 
-Логика лечения давно доказана внутри [`doctor`](#8-борьба-с-нестабильностью): он
-грузит одну и ту же неизменную страницу несколько раз, и любое расхождение между
-загрузками ложное **по построению**. Теперь та же логика работает внутри
-прогона, но только там, где что-то упало:
+**Readiness.** Before its frames, every capture — `expect_screenshot` and the
+service alike, one piece of code (`vistest/capture/ready.py`) — asks the
+page, step by step:
 
-1. снимок упал — снимается **второй кадр** той же страницы;
-2. то, что дрожит между двумя кадрами, уходит в маску нестабильности;
-3. вердикт пересчитывается — по **первому** кадру, с расширенной маской.
+| step | holds when |
+|---|---|
+| load | `document.readyState` is `complete` |
+| fonts | `document.fonts.status` is `loaded` |
+| network | no request of this page is in flight — only when they are counted, see below |
+| loaders | nothing in the photographed area says it is loading: `aria-busy="true"`, `role="progressbar"`, an indeterminate `<progress>`, or an endless animation that is a loader rather than a decoration |
+| images | every image in the area has loaded and been decoded (a lazy one outside the viewport is not waited for) |
+| quiet | nothing in the area changed for `capture.quiet_ms`: no DOM mutation outside `<head>` and the masks, no layout shift, no finished response |
 
-Второй кадр здесь не замена картинки, а **свидетель**. Взять его как результат
-значило бы выбирать снимок поудачнее, пока не позеленеет; поэтому сравнивается
-по-прежнему первый, и `actual.png`, который человек открывает, — тоже первый.
+All of them must hold at the same moment. Each waits at most
+`capture.ready_timeout_ms` (5 s; `expect_screenshot(..., ready_timeout_ms=)`
+for one check, 0 turns the wait off); a step that gives up is named in the
+reason — `the page was not ready within the limits: 1 request still in flight
+after 5000 ms (https://…/api/poll) — it was photographed as it was` — and the
+picture is taken anyway.
 
-Подавляется не вердикт, а **конкретные области**. Дрожал спиннер — в маску уйдёт
-только спиннер, а съехавшая шапка останется красной: между двумя кадрами она
-никуда не дрожала. Устойчивый регресс спрятать таким образом нельзя — устойчивый
-это ровно тот, который воспроизводится.
+**Requests in flight.** From inside a check, a request the page started
+before the check cannot be seen. So the count has to run from the moment the
+browser context is created: the pytest plugin of the library does that for
+every context Playwright creates in the test process
+(`capture.track_requests: true`, the default), and the service does it for
+the contexts it opens. Without the plugin — `expect_screenshot` called from a
+script — the network step is not asked, and a page that loads data with no
+sign of it (no spinner, no skeleton, no `aria-busy`) can be photographed
+early. Mark such loading with `aria-busy="true"` and the wait sees it.
 
-**Честная граница.** Мерцающую поломку — ту, что проявляется через раз, — два
-кадра от мерцающего шума отличить не могут. Не могут в принципе, ни здесь, ни у
-человека. Поэтому зелёный в таком случае не молчит:
+**Loader or decoration.** An endless animation in the area counts as a
+loader when its element (or one of two ancestors) is named like one — class,
+id, aria-label or the animation's name containing `spin`, `load`,
+`skeleton`, `shimmer`, `placeholder`, `progress`, `busy`, `pending` — or when
+it turns the element by a quarter turn or more (a spinner) or moves a
+background across it (a shimmer). Pulsing, glowing, floating is decoration
+and is not waited for. Wrong when a decoration turns (a rotating logo — the
+wait runs to its limit and says so) or a loader is neither named nor turning
+(Tailwind's `animate-pulse` skeleton — not seen without the request count).
 
-```
-Failed on the first capture and passed on the second: 2.4% of the page does not
-hold still. The difference did not reproduce, so it is noise — but this snapshot
-is unstable, and that is worth fixing at the source.
-```
+**The second look.** A check that fails gets more frames, until two in a row
+are identical (and at least 300 ms have passed). Then:
 
-Для недетерминированного рендера это ровно тот текст, который нужен: чинить надо
-рендер, а не картинку. А найденная нестабильность уходит в накопленную маску
-снимка — второй раз за тот же спиннер платить не придётся.
+- the page changed after it looked ready and held still — the data replaced
+  a spinner after all: the **later frame** is compared, and the result says
+  the snapshot was taken before the page was done;
+- something keeps changing — a counter, an animation that does not stop: it
+  is named, **not masked**, and the check fails until it is masked on purpose
+  (`mask=["#counter"]`). Masking it quietly made checks pass by luck;
+- nothing changed: `Confirmed on a second capture: nothing on this page moved`.
 
-Платится один лишний кадр и только за упавшее; прошедшие снимки не дорожают.
-Выключается `capture.retry_on_fail: false` в `vistest.yaml` — законный выбор
-там, где важнее время прогона, а не тишина.
+Nothing the second look sees is masked, and nothing is remembered as a mask:
+a change in data that arrived after `load` cannot be hidden this way. On a
+page that was not ready — a step gave up, or the frames never held still —
+there is no second look at all, and the note says why. The picture a person
+opens, `actual.png`, is the frame the verdict is from.
+
+The cost is one or a few extra frames, and only for what has already failed.
+`capture.retry_on_fail: false` in `vistest.yaml` switches it off.
 
 ## 8. Борьба с нестабильностью
 

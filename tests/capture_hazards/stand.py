@@ -45,6 +45,10 @@ AFTER_READY_MS = 500
 READY_TIMEOUT_MS = 15000
 #: The range of every network delay, milliseconds.
 DELAY_MS = (50, 1500)
+#: silent_fetch's range: data with no sign that it is coming (S2 pre-registration).
+SILENT_MS = (300, 1500)
+#: pulse: the period of the decorative animation, milliseconds.
+PULSE_PERIOD_MS = (900, 2400)
 
 
 @dataclass(frozen=True)
@@ -55,8 +59,12 @@ class Hazard:
     what: str
     #: "" — the page; a CSS selector — that element (a Locator).
     target: str = ""
-    #: The previous step of the test: "" | "hover_focus" | "scroll".
+    #: The previous step of the test: "" | "hover_focus" | "scroll" | "click".
     step: str = ""
+    #: Is the step part of the state being photographed — taken before the
+    #: baseline too (a click that asks for data), or only left over by the
+    #: test's previous step (a hover, a scroll)?
+    step_in_baseline: bool = False
     #: Selectors masked in every picture of it (ours and Playwright's).
     mask: tuple[str, ...] = ()
     #: "default" — Playwright's headless launch, which passes --hide-scrollbars;
@@ -100,6 +108,14 @@ HAZARDS: tuple[Hazard, ...] = (
            "a number that setInterval changes every 200 ms", signal=False, ends=False),
     Hazard("counter_masked", "counter", "the same, the number masked",
            mask=("#counter",), ends=False),
+    #  Added in S2 (pre-registration, S2 addendum A).
+    Hazard("pulse", "pulse",
+           "a static page with a decorative dot that pulses for ever; nothing to wait for"),
+    Hazard("silent_fetch", "silent",
+           "data by request after 300–1500 ms, with no sign that it is coming"),
+    Hazard("after_click", "click",
+           "the test clicks a button; the click asks for data, answered after 50–1500 ms",
+           step="click", step_in_baseline=True),
 )
 
 BY_KEY = {h.key: h for h in HAZARDS}
@@ -112,8 +128,15 @@ def _rng(*parts) -> random.Random:
 
 def delay_ms(what: str, seed: int) -> int:
     """How long the server holds the answer `what` for this seed."""
-    lo, hi = DELAY_MS
+    lo, hi = SILENT_MS if what == "data:silent_fetch" else DELAY_MS
     return int(_rng("delay", what, seed).uniform(lo, hi))
+
+
+def pulse_ms(seed: int) -> tuple[int, int]:
+    """pulse: the period of the dot's animation and how far into it the page starts."""
+    rng = _rng("pulse", seed)
+    period = int(rng.uniform(*PULSE_PERIOD_MS))
+    return period, int(rng.uniform(0, period))
 
 
 HOVER_TARGETS = ("#save", "#export", "#docs", "#search", "#tip")
@@ -129,5 +152,13 @@ def scroll_y(seed: int) -> int:
     return int(_rng("scroll", seed).uniform(0, 1100))
 
 
+#: What the test clicks on the after_click page.
+CLICK_TARGET = "#show"
+
+
 def page_url(base: str, hazard: Hazard, seed: int, signal: bool = False) -> str:
-    return f"{base}/pages/{hazard.page}.html?seed={seed}&signal={int(signal)}"
+    url = f"{base}/pages/{hazard.page}.html?seed={seed}&signal={int(signal)}"
+    if hazard.page == "pulse":
+        period, phase = pulse_ms(seed)
+        url += f"&period={period}&phase={phase}"
+    return url

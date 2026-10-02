@@ -46,6 +46,9 @@ OVER = {
     "scrolled": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
     "raf": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
     "counter": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
+    "pulse": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
+    "silent": "document.querySelectorAll('#data tbody tr').length === 6",
+    "click": "document.querySelectorAll('#report tbody tr').length === 6",
 }
 
 #: The requests the server holds, per page: the hazard cannot be over sooner.
@@ -56,6 +59,9 @@ HELD = {
     "font": lambda s: stand.delay_ms("font", s),
     "banner": lambda s: stand.delay_ms("banner", s),
     "scrollbar": lambda s: stand.delay_ms("rows", s),
+    "silent": lambda s: stand.delay_ms("data:silent_fetch", s),
+    #  Held from the click, not from the start of the page.
+    "click": lambda s: stand.delay_ms("data:after_click", s),
 }
 
 #: `__ready` follows the end of the hazard by two frames; a few more of slack.
@@ -111,6 +117,8 @@ def test_ready_turns_true_exactly_when_the_hazard_is_over(base, browser, page, s
         context.add_init_script(WATCH % OVER[page])
         tab = context.new_page()
         tab.goto(stand.page_url(base, hazard, seed))
+        if hazard.step == "click":
+            tab.click(stand.CLICK_TARGET)
         tab.wait_for_function("window.__oracle && window.__oracle.ready !== null",
                               timeout=stand.READY_TIMEOUT_MS)
         o = tab.evaluate("window.__oracle")
@@ -119,7 +127,8 @@ def test_ready_turns_true_exactly_when_the_hazard_is_over(base, browser, page, s
         assert o["ready"] - o["over"] <= WITHIN_MS, o   # and says it at once
         if page in HELD:
             held = HELD[page](seed)
+            began = tab.evaluate("window.__events.click || 0")
             assert o["atStart"] is False, o             # not over before it began
-            assert o["over"] >= held, (o, held)         # the server really held it
+            assert o["over"] - began >= held, (o, held)  # the server really held it
     finally:
         context.close()

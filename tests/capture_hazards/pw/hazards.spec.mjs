@@ -40,6 +40,19 @@ async function step(page, job) {
   if (job.step.kind === 'hover') await page.hover(job.step.selector);
   else if (job.step.kind === 'focus') await page.click(job.step.selector);
   else if (job.step.kind === 'scroll') await page.evaluate((y) => window.scrollTo(0, y), job.step.y);
+  else if (job.step.kind === 'click') await page.click(job.step.selector);
+}
+
+/* When the assertion returned, minus when the page said it was ready (ms), on
+   this machine's wall clock; null when the page never said so. */
+async function lateness(page, ended) {
+  try {
+    await page.waitForFunction(() => window.__ready === true, null, { timeout: 15000 });
+    const ready = await page.evaluate(() => performance.timeOrigin + window.__events.ready);
+    return Math.round(ended - ready);
+  } catch (e) {
+    return null;
+  }
 }
 
 const target = (page, job) => (job.target ? page.locator(job.target) : page);
@@ -53,6 +66,7 @@ for (const job of JOBS) {
     test.skip(info.project.name !== job.launch, 'another launch');
     test.skip(existsSync(join(info.project.testDir, 'snaps', snapshot(job))), 'taken');
     await page.goto(job.url);
+    if (job.step_in_baseline) await step(page, job);
     await page.waitForFunction(() => window.__ready === true, null, { timeout: job.ready_timeout_ms });
     await page.waitForTimeout(job.after_ready_ms);
     try {
@@ -89,9 +103,12 @@ for (const job of JOBS) {
           error = String(e.message || e).split('\n').map((l) => l.trim()).filter(Boolean)
             .join(' | ');
         }
+        const ended = Date.now();
+        const late = await lateness(page, ended);
         appendFileSync(RESULTS, JSON.stringify({
           tool: 'playwright', hazard: job.key, seed: job.seed, kind, i, failed,
-          ms: Date.now() - started, error: error.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 600),
+          ms: ended - started, late_ms: late,
+          error: error.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 600),
         }) + '\n');
       });
     }

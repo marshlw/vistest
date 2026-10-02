@@ -41,6 +41,12 @@ the flakiness of screenshot tests is born at capture, not at comparison:
   (`caret="hide"`), and the picture is in CSS pixels (`scale="css"`), so a
   HiDPI laptop and a 1x CI runner take pictures of the same size;
 * web fonts are waited for (`document.fonts.ready`) before the first frame;
+* the page is asked whether it is ready (capture/ready.py, the same code the
+  service runs): loaded, no request of it in flight when the pytest plugin
+  counts them, no loader in the photographed area, its images loaded and
+  decoded, nothing in the area changing for a moment. Each step has a limit;
+  one that gives up is said in the result, and the page is photographed as
+  it is;
 * frames are taken until two in a row are identical byte for byte, within a
   time limit — five seconds unless the call or `capture.stable_timeout_ms`
   says otherwise. A page that never settles is not an error: the last frame is
@@ -60,7 +66,8 @@ from typing import Any
 
 from ..core import pngio
 
-__all__ = ["Capture", "Stability", "capture", "settle_frames", "split_masks"]
+__all__ = ["Capture", "Stability", "capture", "frames_after", "settle_frames",
+           "split_masks"]
 
 #: `scale=` values, as Playwright spells them. "css" is the default: one
 #: picture pixel per CSS pixel whatever the screen, which is what makes a
@@ -127,6 +134,22 @@ class Capture:
     #  itself has one; a picture handed in cannot be taken again.
     retake: Callable[[], bytes] | None = field(default=None, compare=False,
                                                repr=False)
+    #  What the wait for readiness found (capture/ready.py); None when the
+    #  target was a picture or the wait was off.
+    ready: Any = None
+
+    def was_ready(self) -> bool | None:
+        """Ready and held still: True; not ready or never still: False; unknown: None."""
+        if self.stability.stable is False:
+            return False
+        if self.ready is None or self.ready.ok is None:
+            return None if self.stability.stable is None else True
+        return bool(self.ready.ok)
+
+    def not_ready_text(self) -> str:
+        parts = [self.ready.text() if self.ready is not None else "",
+                 self.stability.unsettled_text()]
+        return "; ".join(p for p in parts if p)
 
 
 def split_masks(mask: Sequence[Any] | None) -> tuple[list, list]:
@@ -237,6 +260,43 @@ def check_timeout(value: Any, what: str = "stable_timeout_ms") -> int:
     return value
 
 
+#: The second look's schedule: no frame at once — the one that failed was
+#: just taken — and two identical frames count only once this much time has
+#: passed, so that a number ticking every 200 ms is not «confirmed» still by
+#: two frames taken within one tick.
+LOOK_PAUSES_MS = PAUSES_MS[1:]
+LOOK_MIN_MS = 300
+
+
+def frames_after(shoot: Callable[[], bytes], previous: bytes, *, timeout_ms: int,
+                 pauses: tuple[int, ...] = LOOK_PAUSES_MS, min_ms: int = LOOK_MIN_MS,
+                 clock: Callable[[], float] = time.monotonic,
+                 sleep: Callable[[float], None] = time.sleep,
+                 ) -> tuple[list[bytes], bool]:
+    """More frames after `previous`, until two in a row are identical or time is up.
+
+    Returns the frames taken (at least one) and whether the last two —
+    `previous` included — were identical with at least `min_ms` behind them:
+    the second look (core/retry.py) needs every frame, not only the last, to
+    tell a one-off change from a page that keeps changing.
+    """
+    started = clock()
+    frames: list[bytes] = []
+    attempt = 0
+    while True:
+        pause = pauses[attempt] if attempt < len(pauses) else LATER_PAUSE_MS
+        attempt += 1
+        if frames and (clock() - started) * 1000 + pause >= timeout_ms:
+            return frames, False
+        if pause:
+            sleep(pause / 1000)
+        current = shoot()
+        frames.append(current)
+        if current == previous and (clock() - started) * 1000 >= min_ms:
+            return frames, True
+        previous = current
+
+
 def settle_frames(shoot: Callable[[], bytes], *, timeout_ms: int,
                   clock: Callable[[], float] = time.monotonic,
                   sleep: Callable[[float], None] = time.sleep,
@@ -286,11 +346,19 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             full_page: bool | None = None,
             timeout_ms: int | None = None,
             scale: str = DEFAULT_SCALE,
-            stable_timeout_ms: int = 5000) -> Capture:
-    """Take the picture. Everything that can be wrong here is said out loud."""
+            stable_timeout_ms: int = 5000,
+            ready_timeout_ms: int = 0,
+            quiet_ms: int | None = None) -> Capture:
+    """Take the picture. Everything that can be wrong here is said out loud.
+
+    `ready_timeout_ms` — each step of the wait for readiness at most this
+    long (capture/ready.py); 0, the default here, does not wait: the caller
+    that wants it — `expect_screenshot` — passes the config's value.
+    """
     painted, boxes = split_masks(mask)
     check_scale(scale)
     check_timeout(stable_timeout_ms)
+    check_timeout(ready_timeout_ms, "ready_timeout_ms")
 
     # ---- already a picture ------------------------------------------- #
     if isinstance(target, (bytes, bytearray, memoryview)):
@@ -352,6 +420,11 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
     notes: list[str] = []
     if page is not None:
         _wait_for_fonts(page, notes)
+    readiness = None
+    if page is not None and ready_timeout_ms > 0:
+        readiness = _wait_ready(target, page, painted, boxes,
+                                bool(options.get("full_page")), ready_timeout_ms,
+                                quiet_ms)
 
     def shoot() -> bytes:
         return bytes(target.screenshot(**options))
@@ -369,7 +442,52 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         stability=stability,
         notes=tuple(notes),
         retake=shoot,
+        ready=readiness,
     )
+
+
+def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: bool,
+                limit_ms: int, quiet_ms: int | None):
+    """capture/ready.py on this target: the page, or a locator's element."""
+    from ..capture import inflight as _inflight
+    from ..capture import ready as _ready
+
+    owner = page if _is_page(target) else target
+    evaluate = getattr(owner, "evaluate", None)
+    if not callable(evaluate):
+        return _ready.Readiness(ok=None, note="the page could not be asked")
+    elements = []
+    for item in painted:
+        if isinstance(item, str):
+            continue
+        try:
+            elements.extend(item.element_handles())
+        except Exception:  # noqa: BLE001 - a mask we cannot resolve is not waited around
+            pass
+    arg = {"v": _ready.VERSION, "reset": True, "fullPage": full_page,
+           "masks": [m for m in painted if isinstance(m, str)], "maskEls": elements,
+           "boxes": [list(_box(b)) for b in boxes]}
+
+    def probe():
+        try:
+            if owner is page:
+                return evaluate(_ready.PAGE_PROBE_JS, arg)
+            return evaluate(_ready.PROBE_JS, arg, timeout=limit_ms)
+        finally:
+            arg["reset"] = False
+
+    pause = getattr(page, "wait_for_timeout", None)
+    sleep = (lambda s: pause(s * 1000)) if callable(pause) else time.sleep
+    count = _inflight.for_page(page)
+    return _ready.wait(probe, inflight=(lambda: count.inflight(page)) if count else None,
+                       quiet_ms=_ready.DEFAULT_QUIET_MS if quiet_ms is None else quiet_ms,
+                       limit_ms=limit_ms, sleep=sleep)
+
+
+def _box(b) -> tuple[int, int, int, int]:
+    if isinstance(b, dict):
+        return int(b["x"]), int(b["y"]), int(b["w"]), int(b["h"])
+    return tuple(int(v) for v in b)
 
 
 def _refuse_painted(painted: list, what: str) -> None:

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>silent fetch</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+#data { min-height: 260px; }
+.stat { font-size: 28px; font-weight: 700; }
+</style></head>
+<body>
+<header>Accounts</header>
+<main>
+  <div class="card"><h2>Balances</h2>
+    <!-- Nothing says the data is on its way: no spinner, no skeleton, no aria-busy. -->
+    <div id="data"></div>
+  </div>
+</main>
+<script>
+fetchJSON('/api/data', { h: 'silent_fetch' }).then((d) => {
+  document.getElementById('data').innerHTML =
+    `<div class="stat" style="color:${d.accent}">$${d.total}</div>` + table(d.rows);
+  done();
+});
+</script>
+</body></html>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>pulse</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+.status { display: flex; align-items: center; gap: 12px; }
+.live { position: relative; width: 14px; height: 14px; border-radius: 50%; background: #16a34a; }
+.live::after { content: ''; position: absolute; inset: -6px; border-radius: 50%;
+               border: 3px solid rgba(22, 163, 74, .45); }
+.big { font-size: 30px; font-weight: 700; margin: 6px 0; }
+</style></head>
+<body>
+<header>Status</header>
+<main>
+  <div class="card">
+    <div class="status"><span class="live" id="live"></span><h2 style="margin:0">All systems normal</h2></div>
+    <p class="big" id="uptime">99.95% uptime</p>
+    <p class="muted">Last incident: 3 Feb 2026, resolved in 14 minutes</p>
+  </div>
+</main>
+<script>
+/* Nothing on this page is on its way: the dot pulses for ever, as decoration.
+   Its period and phase come from the seed (page_url passes them). */
+const period = Number(Q.get('period') || 1600), phase = Number(Q.get('phase') || 0);
+document.head.insertAdjacentHTML('beforeend', `<style>
+  @keyframes pulse { 0% { transform: scale(1); opacity: 1; }
+                     50% { transform: scale(1.35); opacity: .55; }
+                     100% { transform: scale(1); opacity: 1; } }
+  .live { animation: pulse ${period}ms ease-in-out -${phase}ms infinite; }</style>`);
+if (SIGNAL) document.getElementById('uptime').textContent = '99.85% uptime';
+readyOnLoad();
+</script>
+</body></html>

@@ -6,7 +6,7 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 12583 lines in 217 files.
+# 12520 lines in 217 files.
 
 52	.github/workflows/ci.yml
 57	.gitlab-ci.example.yml
@@ -32,7 +32,7 @@
 4	docker/docker-compose.yml
 18	docker/entrypoint.sh
 4	docker/prometheus.yml
-1735	docs/GUIDE.md
+1707	docs/GUIDE.md
 154	docs/benchmark.md
 16	examples/demo_page.html
 10	examples/test_demo_visual.py
@@ -142,7 +142,7 @@
 17	tests/test_project_env.py
 57	tests/test_projects.py
 42	tests/test_retention.py
-93	tests/test_retry_on_fail.py
+60	tests/test_retry_on_fail.py
 24	tests/test_runners.py
 18	tests/test_settings_env.py
 39	tests/test_snapshot_source.py
@@ -200,7 +200,7 @@
 7	vistest/config.py
 211	vistest/external.py
 7	vistest/integrations/__init__.py
-48	vistest/integrations/driver.py
+46	vistest/integrations/driver.py
 14	vistest/integrations/session.py
 34	vistest/introspect.py
 143	vistest/matrix.py

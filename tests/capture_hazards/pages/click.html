@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>after a click</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid #2563eb;
+         background: #2563eb; color: #fff; cursor: pointer; }
+#report { min-height: 280px; margin-top: 14px; }
+.stat { font-size: 28px; font-weight: 700; }
+</style></head>
+<body>
+<header>Reports</header>
+<main>
+  <div class="card"><h2>Quarterly report</h2>
+    <button id="show">Show report</button>
+    <!-- The click asks for the data; nothing on the page says it is on its way. -->
+    <div id="report"><p class="muted">Press «Show report» to see the figures.</p></div>
+  </div>
+</main>
+<script>
+/* Loaded and quiet: the hazard begins with the test's click. The request the
+   click makes is held by the server for as long as the seed says; the block is
+   redrawn when it is answered. __ready waits for that, not for the load. */
+document.getElementById('show').addEventListener('click', () => {
+  window.__events.click = performance.now();
+  fetchJSON('/api/data', { h: 'after_click' }).then((d) => {
+    document.getElementById('report').innerHTML =
+      `<div class="stat" style="color:${d.accent}">$${d.total}</div>` + table(d.rows);
+    done();
+  });
+});
+</script>
+</body></html>
