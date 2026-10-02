@@ -202,7 +202,8 @@ def _ours_job(browsers, base: str, h: stand.Hazard, seed: int, work: Path,
         p.wait_for_function("window.__ready === true", timeout=stand.READY_TIMEOUT_MS)
         p.wait_for_timeout(stand.AFTER_READY_MS)
         ctx.update = True
-        expect_screenshot(p.locator(h.target) if h.target else p, name, mask=mask)
+        expect_screenshot(p.locator(h.target) if h.target else p, name, mask=mask,
+                          **dict(h.call))
         ctx.update = False
         c.close()
         for kind, n in counts(h).items():
@@ -216,7 +217,7 @@ def _ours_job(browsers, base: str, h: stand.Hazard, seed: int, work: Path,
                 started = time.perf_counter()
                 failed, error, res = False, "", None
                 try:
-                    res = expect_screenshot(target, name, mask=mask)
+                    res = expect_screenshot(target, name, mask=mask, **dict(h.call))
                 except ScreenshotMismatch as e:
                     failed, res = True, e.result
                 except Exception as e:  # noqa: BLE001 - every outcome is a row
@@ -239,7 +240,7 @@ def _ours_job(browsers, base: str, h: stand.Hazard, seed: int, work: Path,
                        #  own words: the notes it left on the result.
                        "second_look": _second(res),
                        "notes": [n[:160] for n in (getattr(res, "notes", None) or [])],
-                       "reason": (row.get("reason") or "")[:400],
+                       "reason": (row.get("reason") or "")[:3000],
                        "error": error}
                 with open(results, "a", encoding="utf-8") as f:
                     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -304,6 +305,8 @@ def run_playwright(todo, work: Path, workers: int) -> int:
     link = pw_dir / "node_modules"
     if not link.exists():
         link.symlink_to(BENCH / "node_modules", target_is_directory=True)
+    #  A row that only exists for an option of ours is not Playwright's.
+    todo = [(h, s) for h, s in todo if not h.call]
     with server.serve() as base:
         listing = [{"key": h.key, "seed": s, "url": stand.page_url(base, h, s),
                     "signal_url": stand.page_url(base, h, s, signal=True),

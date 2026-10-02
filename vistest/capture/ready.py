@@ -53,9 +53,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-__all__ = ["DEFAULT_LIMIT_MS", "DEFAULT_QUIET_MS", "LOADER_RULE", "PAGE_PROBE_JS",
-           "PROBE_JS", "Readiness", "SELECTOR_PROBE_JS", "STEPS", "Step", "VERSION",
-           "wait"]
+__all__ = ["CAPTURE_VERSION", "DEFAULT_LIMIT_MS", "DEFAULT_QUIET_MS", "LOADER_RULE",
+           "PAGE_PROBE_JS", "PROBE_JS", "Readiness", "SELECTOR_PROBE_JS", "STEPS", "Step",
+           "VERSION", "old_way", "wait"]
 
 #: The steps, in the order they are reported.
 STEPS = ("load", "fonts", "network", "loaders", "images", "quiet")
@@ -72,7 +72,25 @@ POLL_MS = 25
 
 #: A version tag for the page-side state: a page that a different version of
 #: this code looked at gets its observers put up again.
-VERSION = 1
+VERSION = 2
+
+#: The way pictures of a live page are taken, as a baseline's passport records
+#: it (the library's `capture.version`, the service's `capture_version`).
+#: 1 — before S2: frames until two match, nothing more (no record means 1).
+#: 2 — the readiness wait (this module) with images painted again once
+#: decoded, and in the library `data-vistest="ignore"` painted out and a
+#: Locator's element put back where its baseline had it. A change here that
+#: moves pixels of baselines already accepted comes with a new number: a
+#: baseline taken the old way can differ from a picture taken the new way for
+#: no fault of the page, and a failure against it says so (`old_way`).
+CAPTURE_VERSION = 2
+
+
+def old_way(how: str) -> str:
+    """The line for a failure against a baseline taken before CAPTURE_VERSION."""
+    return ("the baseline was taken the old way (before the readiness wait and the other "
+            f"changes of capture version {CAPTURE_VERSION}); if that is the difference, "
+            f"accept it again: {how}")
 
 #: Which endless animations are loaders. Written here in words, used in the JS.
 LOADER_RULE = """\
@@ -83,12 +101,19 @@ pending —, or when the animation turns the element by a quarter turn or more
 (a spinner), or moves a background across it (a shimmer). Anything else
 endless — pulsing, glowing, floating — is decoration, and is not waited for.
 
+With the requests counted, the exact signal beats this guess: an animation
+that only looks like a loader does not hold the picture once nothing is in
+flight and the area is quiet. `aria-busy` and `role=progressbar` — what the
+page says itself — always do.
+
 Wrong when: a decoration turns or moves a background (a rotating logo, an
-animated gradient) — waited for until the step's limit, then photographed and
-said; a loader is neither named nor turning (three pulsing dots called
-`dots`, Tailwind's `animate-pulse` skeleton) — not seen, photographed early:
-without the count of requests in flight that is a false failure, never a
-hidden change, because the second look does not mask what arrived late."""
+animated gradient) — without the request count it is waited for until the
+step's limit, then photographed and said; a loader is neither named nor
+turning (three pulsing dots called `dots`, Tailwind's `animate-pulse`
+skeleton) — without the request count not seen, photographed early; with the
+count, a spinner whose data comes over a WebSocket or an EventSource (not
+counted) is not waited for. Each of those is a false failure at worst, never
+a hidden change: the second look does not mask what arrived late."""
 
 PROBE_JS = r"""
 (el, a) => {
@@ -161,6 +186,8 @@ PROBE_JS = r"""
     } catch (e) {}
     s.decoded = new WeakSet();
     s.decoding = new WeakSet();
+    s.repainted = new WeakSet();
+    s.repainting = new WeakSet();
   }
   s.area = area();
   s.masks = masks();
@@ -173,12 +200,18 @@ PROBE_JS = r"""
     + (n.classList && n.classList.length
       ? '.' + Array.from(n.classList).slice(0, 2).join('.') : ''));
 
-  /* Loaders: what the page itself says, then endless animations by LOADER_RULE. */
+  /* Loaders: what the page itself says, then endless animations by LOADER_RULE.
+     The first kind is the page's own statement; the second is a guess, and
+     `said` counts only the first. */
   const loaders = [];
+  let said = 0;
   const BUSY = '[aria-busy="true"], [role="progressbar"], progress:not([value])';
   for (const n of document.querySelectorAll(BUSY)) {
     const r = n.getBoundingClientRect();
-    if (hits(r, s.area) && visible(n) && !masked(n) && !inBox(r)) loaders.push(name(n));
+    if (hits(r, s.area) && visible(n) && !masked(n) && !inBox(r)) {
+      loaders.push(name(n) + ' (busy)');
+      said++;
+    }
   }
   const WORDS = /spin|load|skeleton|shimmer|placeholder|progress|busy|pending/i;
   const named = (n, extra) => {
@@ -225,25 +258,50 @@ PROBE_JS = r"""
     }
   }
 
-  /* Images in the area: loaded, then decoded. */
+  /* Images in the area: loaded, decoded, then painted once more. An image
+     painted while it was still being decoded is not always painted the same
+     way: its rounded corners came out otherwise on three loads in eight on the
+     stand (lazy_images). Painting it again once it is decoded — an invisible
+     outline put on and taken off — gave one picture on every load of every
+     calibration seed (the S2b report). */
   const images = [];
+  const repaint = (img) => {
+    s.repainted.add(img);
+    s.repainting.add(img);
+    const had = img.hasAttribute('style');
+    const before = img.style.getPropertyValue('outline');
+    const priority = img.style.getPropertyPriority('outline');
+    img.style.setProperty('outline', '0px solid transparent', 'important');
+    const frames = (n, then) => (n ? requestAnimationFrame(() => frames(n - 1, then)) : then());
+    frames(2, () => {
+      if (before) img.style.setProperty('outline', before, priority);
+      else img.style.removeProperty('outline');
+      if (!had && !img.getAttribute('style')) img.removeAttribute('style');
+      frames(2, () => s.repainting.delete(img));
+    });
+  };
   for (const img of document.images) {
     const r = img.getBoundingClientRect();
     if (!hits(r, s.area) || masked(img) || inBox(r)) continue;
     if (img.loading === 'lazy' && !hits(r, [0, 0, innerWidth, innerHeight])) continue;
     if (!img.complete) { images.push(img.currentSrc || img.src); continue; }
-    if (img.naturalWidth === 0 || s.decoded.has(img)) continue;
-    images.push(img.currentSrc || img.src);
-    if (!s.decoding.has(img)) {
-      s.decoding.add(img);
-      const ok = () => s.decoded.add(img);
-      try { img.decode().then(ok, ok); } catch (e) { ok(); }
+    if (img.naturalWidth === 0) continue;
+    if (!s.decoded.has(img)) {
+      images.push(img.currentSrc || img.src);
+      if (!s.decoding.has(img)) {
+        s.decoding.add(img);
+        const ok = () => s.decoded.add(img);
+        try { img.decode().then(ok, ok); } catch (e) { ok(); }
+      }
+      continue;
     }
+    if (!s.repainted.has(img)) repaint(img);
+    if (s.repainting.has(img)) images.push(img.currentSrc || img.src);
   }
 
   return { readyState: document.readyState,
            fonts: document.fonts ? document.fonts.status : 'loaded',
-           loaders: loaders.slice(0, 5), images: images.slice(0, 5),
+           loaders: loaders.slice(0, 5), said, images: images.slice(0, 5),
            quiet: Math.round(now - s.last), what: s.what };
 }
 """
@@ -289,6 +347,9 @@ class Readiness:
     path: str = ""                  # "requests" — counted from the context's start; "page"
     steps: list[Step] = field(default_factory=list)
     note: str = ""                  # why it could not be asked
+    #  Animations that looked like loaders and were not waited for, because
+    #  nothing was in flight and the area was quiet (path "requests" only).
+    guessed: str = ""
 
     def failed_steps(self) -> list[Step]:
         return [s for s in self.steps if s.ok is False]
@@ -308,13 +369,17 @@ class Readiness:
                "steps": {s.name: s.as_dict() for s in self.steps if s.ok is not None}}
         if self.note:
             out["note"] = self.note
+        if self.guessed:
+            out["guessed"] = self.guessed
         return out
 
 
 _WORDS: dict[str, Callable[[Step], str]] = {
     "load": lambda s: f"still loading after {s.limit_ms} ms (document.readyState: {s.detail})",
     "fonts": lambda s: f"web fonts still loading after {s.limit_ms} ms",
-    "network": lambda s: f"{s.detail} still in flight after {s.limit_ms} ms",
+    "network": lambda s: (f"{s.detail} still in flight after {s.limit_ms} ms (a request "
+                          "the page never waits for, like a long poll, goes into "
+                          "capture.ignore_requests)"),
     "loaders": lambda s: f"still showing a loader after {s.limit_ms} ms: {s.detail}",
     "images": lambda s: f"images in the area not loaded after {s.limit_ms} ms: {s.detail}",
     "quiet": lambda s: f"the area kept changing for {s.limit_ms} ms ({s.detail})",
@@ -347,6 +412,7 @@ def wait(probe: Callable[[], object], *,
         steps["network"].ok = None
     since: dict[str, int | None] = {n: None for n in STEPS}
     given_up: set[str] = set()
+    overridden = ""
     path = "requests" if inflight is not None else "page"
 
     def elapsed() -> int:
@@ -366,7 +432,7 @@ def wait(probe: Callable[[], object], *,
             "load": (got.get("readyState") == "complete", got.get("readyState", "")),
             "fonts": (got.get("fonts") == "loaded", ""),
             "loaders": (not got.get("loaders"), ", ".join(got.get("loaders") or [])),
-            "images": (not got.get("images"), ", ".join(_short(u)
+            "images": (not got.get("images"), ", ".join(_short(_no_query(u))
                                                         for u in got.get("images") or [])),
             "quiet": (int(got.get("quiet") or 0) >= quiet_ms,
                       f"last: {got.get('what') or 'a change'}"),
@@ -374,6 +440,15 @@ def wait(probe: Callable[[], object], *,
         if inflight is not None:
             count, urls = inflight()
             holds["network"] = (count == 0, _requests(count, urls))
+            #  With requests counted, the exact signal beats the guess: an
+            #  endless animation that only looks like a loader (named like one,
+            #  turning, sweeping) does not hold the picture when nothing is in
+            #  flight and the area is quiet — a rotating logo is not loading.
+            #  What the page states itself (aria-busy, progressbar) still does.
+            if (not holds["loaders"][0] and not got.get("said")
+                    and holds["network"][0] and holds["quiet"][0]):
+                overridden = holds["loaders"][1]
+                holds["loaders"] = (True, "")
         for n, (ok, detail) in holds.items():
             if ok:
                 if since[n] is None:
@@ -400,7 +475,8 @@ def wait(probe: Callable[[], object], *,
         steps[n].ok = bool(ok)
         steps[n].ms = since[n] if since[n] is not None else total
     return Readiness(ok=all(ok for ok, _ in holds.values()), ms=total, quiet_ms=quiet_ms,
-                     path=path, steps=[steps[n] for n in STEPS])
+                     path=path, steps=[steps[n] for n in STEPS],
+                     guessed=overridden if holds["loaders"][0] else "")
 
 
 def _short(url: str) -> str:
@@ -408,6 +484,12 @@ def _short(url: str) -> str:
     return url if len(url) <= 80 else url[:77] + "…"
 
 
-def _requests(count: int, urls: list[str]) -> str:
+def _no_query(url: str) -> str:
+    """A URL without its query string and fragment: tokens live there."""
+    return str(url).split("?", 1)[0].split("#", 1)[0]
+
+
+def _requests(count: int, held: list[str]) -> str:
+    """`2 requests (GET /api/poll, POST /track)` — method and path, no query."""
     head = f"{count} request{'s' if count != 1 else ''}"
-    return head + (f" ({', '.join(_short(u) for u in urls[:3])})" if urls else "")
+    return head + (f" ({', '.join(_short(u) for u in held[:3])})" if held else "")

@@ -62,9 +62,12 @@ the page — and comes from the seed (`stand.delay_ms`, 50–1500 ms).
 | `pulse` | a static page with a decorative dot that pulses for ever: nothing to wait for |
 | `silent_fetch` | data by request after 300–1500 ms, with no sign that it is coming |
 | `after_click` | the test's click asks for data (50–1500 ms); `networkidle` has long passed |
+| `spinning_logo` | a static page with a decorative logo that turns for ever, named like nothing that loads: nothing to wait for |
+| `hover_focus_reset` | `hover_focus`, checked with `expect_screenshot(..., reset_hover_focus=True)` (Playwright has no such option: printed as `hover_focus`) |
 
-The last three were added in S2, before any of its runs (the S2 addendum to
-the pre-registration).
+`pulse`, `silent_fetch` and `after_click` were added in S2a, `spinning_logo`
+and `hover_focus_reset` in S2b, each before any run of its stop (the S2
+addenda to the pre-registration).
 
 Each page sets `window.__ready = true` when its hazard is over (the data in
 and painted, the font loaded, the banner inserted, …). That flag is the

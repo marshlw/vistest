@@ -30,10 +30,12 @@ Playwright is not imported here: a context is recognised by having `.on`.
 
 from __future__ import annotations
 
+import fnmatch
 import time
 import weakref
+from urllib.parse import urlsplit
 
-__all__ = ["RequestCount", "for_page", "install_hooks", "track"]
+__all__ = ["NOT_COUNTED", "RequestCount", "for_page", "install_hooks", "label", "track"]
 
 #: Resource types not counted: streams, which do not end, and what the
 #: readiness wait looks at in the area itself (images, fonts) or never waits
@@ -62,9 +64,19 @@ class RequestCount:
         if self._open.pop(request, None) is not None:
             self.last_end = time.monotonic()
 
-    def inflight(self, page=None) -> tuple[int, list[str]]:
-        """(how many, a few of their URLs) — of `page`'s requests, or of all."""
-        urls = []
+    def inflight(self, page=None, ignore: tuple[str, ...] = ()) -> tuple[int, list[str]]:
+        """(how many, a few of them) — `page`'s requests in flight, or all of them.
+
+        Each is named by its method and path — `GET /api/poll` — and never by
+        its query string, where tokens live. `ignore` — glob patterns
+        (`capture.ignore_requests`) matched against the URL without its query:
+        a long poll or an analytics beacon the page never waits for itself.
+        """
+        held = []
+        try:
+            home = urlsplit(str(page.url)).netloc if page is not None else ""
+        except Exception:  # noqa: BLE001
+            home = ""
         for request in list(self._open):
             if page is not None:
                 try:
@@ -74,10 +86,34 @@ class RequestCount:
                 except Exception:  # noqa: BLE001 - a service worker's: counted
                     pass
             try:
-                urls.append(str(request.url))
+                url = str(request.url)
             except Exception:  # noqa: BLE001
-                urls.append("?")
-        return len(urls), urls[:3]
+                url = ""
+            bare = url.split("?", 1)[0].split("#", 1)[0]
+            if ignore and any(fnmatch.fnmatchcase(bare, p) for p in ignore):
+                continue
+            held.append(label(request, url, home))
+        return len(held), held[:3]
+
+
+def label(request, url: str, home: str = "") -> str:
+    """`GET /api/poll` — the method and the path, without the query string.
+
+    The host is added only when it is not the page's own (`home`): an
+    analytics beacon is recognised by where it goes.
+    """
+    try:
+        method = str(request.method)
+    except Exception:  # noqa: BLE001
+        method = "?"
+    try:
+        parts = urlsplit(url)
+        where = parts.path or "/"
+        if parts.netloc and parts.netloc != home:
+            where = f"{parts.netloc}{where}"
+    except ValueError:
+        where = "?"
+    return f"{method} {where}"
 
 
 def track(context) -> RequestCount | None:

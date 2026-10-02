@@ -49,6 +49,8 @@ DELAY_MS = (50, 1500)
 SILENT_MS = (300, 1500)
 #: pulse: the period of the decorative animation, milliseconds.
 PULSE_PERIOD_MS = (900, 2400)
+#: spinning_logo: the period of one turn, milliseconds.
+LOGO_PERIOD_MS = (2000, 6000)
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,9 @@ class Hazard:
     #: Does the hazard end? A counter or an endless animation never does:
     #: waiting cannot help there, only a mask.
     ends: bool = True
+    #: Options of our `expect_screenshot` for this row (Playwright has none of
+    #: them: the row is not run under it).
+    call: tuple[tuple[str, object], ...] = ()
 
 
 HAZARDS: tuple[Hazard, ...] = (
@@ -116,6 +121,13 @@ HAZARDS: tuple[Hazard, ...] = (
     Hazard("after_click", "click",
            "the test clicks a button; the click asks for data, answered after 50–1500 ms",
            step="click", step_in_baseline=True),
+    #  Added in S2b (the second addendum to the pre-registration).
+    Hazard("spinning_logo", "logo",
+           "a static page with a decorative mark that turns for ever; no request"),
+    Hazard("hover_focus_reset", "hover",
+           "hover_focus, photographed with the option that moves the pointer away and "
+           "takes the focus off", step="hover_focus",
+           call=(("reset_hover_focus", True),)),
 )
 
 BY_KEY = {h.key: h for h in HAZARDS}
@@ -130,6 +142,13 @@ def delay_ms(what: str, seed: int) -> int:
     """How long the server holds the answer `what` for this seed."""
     lo, hi = SILENT_MS if what == "data:silent_fetch" else DELAY_MS
     return int(_rng("delay", what, seed).uniform(lo, hi))
+
+
+def logo_ms(seed: int) -> tuple[int, int]:
+    """spinning_logo: the period of one turn and how far into it the page starts."""
+    rng = _rng("logo", seed)
+    period = int(rng.uniform(*LOGO_PERIOD_MS))
+    return period, int(rng.uniform(0, period))
 
 
 def pulse_ms(seed: int) -> tuple[int, int]:
@@ -160,5 +179,8 @@ def page_url(base: str, hazard: Hazard, seed: int, signal: bool = False) -> str:
     url = f"{base}/pages/{hazard.page}.html?seed={seed}&signal={int(signal)}"
     if hazard.page == "pulse":
         period, phase = pulse_ms(seed)
+        url += f"&period={period}&phase={phase}"
+    if hazard.page == "logo":
+        period, phase = logo_ms(seed)
         url += f"&period={period}&phase={phase}"
     return url

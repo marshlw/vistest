@@ -78,7 +78,8 @@ def test_the_signal_variant_fails(base, browsers, hazard, counted, tmp_path):
         p.wait_for_function("window.__ready === true", timeout=stand.READY_TIMEOUT_MS)
         p.wait_for_timeout(stand.AFTER_READY_MS)
         ctx.update = True
-        expect_screenshot(p.locator(hazard.target) if hazard.target else p, name, mask=mask)
+        expect_screenshot(p.locator(hazard.target) if hazard.target else p, name, mask=mask,
+                          **dict(hazard.call))
         ctx.update = False
         c.close()
 
@@ -90,7 +91,7 @@ def test_the_signal_variant_fails(base, browsers, hazard, counted, tmp_path):
         measure._do_step(p, step)
         with pytest.raises(ScreenshotMismatch):
             expect_screenshot(p.locator(hazard.target) if hazard.target else p, name,
-                              mask=mask)
+                              mask=mask, **dict(hazard.call))
         c.close()
     finally:
         _context.uninstall()

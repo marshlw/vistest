@@ -7,6 +7,34 @@
 
 ### Phase 2: the engine on pairs from elsewhere
 
+- **S2b: what a failure names; the place, the launch and the way a baseline
+  was taken.** A later frame of the second look turns a failure into a pass
+  only when the later frames held still and nothing in them kept changing;
+  otherwise it is luck and the check fails, naming what changes (frames A, B,
+  A, B with A matching the baseline fail). With the requests counted, the
+  exact signal beats the loader guess: nothing in flight and a quiet area —
+  a rotating logo no longer holds the picture (`aria-busy` and
+  `role=progressbar` still always do). A network step at its limit names the
+  request by method and path, never its query; `capture.ignore_requests`
+  (glob patterns) leaves long polls and beacons out of the wait. Images in
+  the area are repainted once after they decode, which removed the
+  load-to-load difference in their anti-aliased rounded corners
+  (lazy_images). For a Locator the passport keeps where its element was in
+  the window, and the page is scrolled back there, in whole pixels, before
+  the picture. `reset_hover_focus` (in the call or `capture.reset_hover_focus`,
+  off by default) moves the pointer away and takes the focus off before the
+  picture; without it a failure at the element under the pointer or in focus
+  names it and the option. An element that changes by itself is named by a
+  selector with `mask=["…"]` or `data-vistest="ignore"` (now painted out by
+  the library too); for a canvas the message says `animations="disabled"`
+  does not stop it. The passport records the launch (headless or with a
+  window, scroll bar width) — a different one is said in one line — and the
+  capture version (2); a failing check against an older baseline says it was
+  taken the old way and how to accept it again. Without the pytest plugin
+  (scripts, `unittest`, the async API) late data with no loading sign can
+  still give a false failure; misses stay at zero on both paths. The stand
+  gained spinning_logo and hover_focus_reset. The engine is untouched.
+
 - **S2a: readiness before the frames; the second look hides nothing.** The
   capture-hazard stand (`tests/capture_hazards/`, S1) showed two things about
   the capture of a page whose data comes late. Frames «held still» at once,

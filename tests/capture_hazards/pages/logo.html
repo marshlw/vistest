@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>spinning logo</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+.brand { display: flex; align-items: center; gap: 14px; }
+.mark { width: 44px; height: 44px; border-radius: 12px;
+        background: conic-gradient(#2563eb 0 25%, #16a34a 0 50%, #f59e0b 0 75%, #dc2626 0); }
+.big { font-size: 26px; font-weight: 700; margin: 10px 0 4px; }
+</style></head>
+<body>
+<header>Northwind</header>
+<main>
+  <div class="card">
+    <div class="brand"><div class="mark" id="mark"></div><h2 style="margin:0">Northwind Trading</h2></div>
+    <p class="big" id="founded">Since 1987, 42 countries</p>
+    <p class="muted">The mark turns slowly, for ever: decoration, nothing is on its way.</p>
+  </div>
+</main>
+<script>
+/* A rotating brand mark. No request, no loader: its period and phase come
+   from the seed (page_url passes them). Its names say nothing about loading. */
+const period = Number(Q.get('period') || 4000), phase = Number(Q.get('phase') || 0);
+document.head.insertAdjacentHTML('beforeend', `<style>
+  @keyframes turn { to { transform: rotate(360deg); } }
+  .mark { animation: turn ${period}ms linear -${phase}ms infinite; }</style>`);
+if (SIGNAL) document.getElementById('founded').textContent = 'Since 1987, 44 countries';
+readyOnLoad();
+</script>
+</body></html>

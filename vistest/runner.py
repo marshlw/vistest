@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .capture.playwright_capture import read_png
+from .capture.ready import CAPTURE_VERSION
 from .config import VisTestConfig, platform_key
 from .core.comparator import compare, strip_internal
 from .models import CompareResult, Verdict
@@ -226,6 +227,9 @@ class VisualTester:
             # входа: адреса недостаточно, а тест знает и про логин, и про
             # переходы. Известен тест ровно здесь и теряется сразу после.
             "source": detect(),
+            # How the picture was taken (capture/ready.py): a failure against
+            # a baseline taken an older way says so.
+            "capture_version": CAPTURE_VERSION,
         }
 
     def _api_client(self):

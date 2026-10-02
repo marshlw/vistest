@@ -355,6 +355,7 @@ def _snapshot_name(args, kwargs) -> str:
 # --------------------------------------------------------------------------- #
 def _check(owner, name: str, kwargs: dict):
     from . import source as _source
+    from .capture import ready as _ready
     from .config import VisTestConfig
     from .integrations.driver import wrap_driver
     from .service import CheckService
@@ -409,7 +410,8 @@ def _check(owner, name: str, kwargs: dict):
         # не пытаясь повторить логин своими силами.
         meta={"external": True,
               "source_method": os.getenv("VISTEST_ADAPTER_TARGET", ""),
-              "source": _source.detect()},
+              "source": _source.detect(),
+              "capture_version": _ready.CAPTURE_VERSION},
     )
 
     # We always save the captured frame, not only on failure. A snapshot that

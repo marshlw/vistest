@@ -27,6 +27,11 @@ is green — with a real change in that data as green as the plain page. So:
   changed after it looked ready and then held still, that later frame is the
   page as it is, and it is what gets compared. The picture a person opens is
   that frame too.
+* **A later frame passes only when the page held still.** Two identical
+  frames in a row at the end, and nothing live: otherwise a page that
+  switches between two states — a carousel, a blinking banner, a flickering
+  break — would pass whenever the last frame happened to be the right one.
+  It fails, and the note says the matching frame was luck.
 * **Nothing is masked as live either.** A pixel that changed in at least two
   of the intervals between consecutive frames is live — a counter, an
   animation that does not stop; one that changed once and held — the spinner
@@ -170,9 +175,22 @@ def second_look(
                 "was ready — something on it lives (a counter, an animation that "
                 "does not stop). That part was not masked: mask it if it is meant "
                 "to change")
-    else:
+    elif later.settled:
         what = (f"the page changed after it looked ready ({share:.1f}% of it) and "
                 "then held still")
+    else:
+        what = (f"the page changed after it looked ready ({share:.1f}% of it) and "
+                "did not hold still again within the time")
+    if not again.failed and (live.any() or not later.settled):
+        #  A later frame that matches the baseline is a pass only when the
+        #  page then held still. A page that switches between two states — a
+        #  carousel, a blinking banner, a flickering break — would otherwise
+        #  pass whenever the last frame happened to be the right one.
+        first.notes.append(
+            f"A second look was taken: {what}. A later frame matched the "
+            "baseline, but the page did not hold still after it, so that is luck, "
+            "not a pass: the verdict stays the failure.")
+        return SecondLook(first, None, frame, live if live.any() else None)
     if again.failed:
         again.notes.append(
             f"A second look was taken: {what}. The verdict is from the later "

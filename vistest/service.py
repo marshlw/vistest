@@ -48,6 +48,25 @@ _snapshot_thresholds = _thresholds.from_meta
 RETRY_FRAMES = 4
 
 
+def _old_way(then: dict | None, now: dict | None) -> list[str]:
+    """A failure against a baseline taken an older way says so (capture/ready.py).
+
+    Only when this picture was taken by our capture — its meta carries
+    `capture_version` — and the baseline's is lower or absent: a picture
+    uploaded from elsewhere has no way of being taken to compare.
+    """
+    from .capture.ready import old_way
+
+    try:
+        version = int((now or {}).get("capture_version") or 0)
+        before = int((then or {}).get("capture_version") or 1)
+    except (TypeError, ValueError):
+        return []
+    if not version or before >= version:
+        return []
+    return [old_way("in the review screen, or with --update")]
+
+
 class CheckService:
     """Comparison of a snapshot against a baseline + artifacts. No browser and no network."""
 
@@ -194,6 +213,8 @@ class CheckService:
                 if extra is not None else unstable
 
         res.notes = notes + res.notes
+        if res.failed:
+            res.notes.extend(_old_way(baseline.meta, meta))
 
         # The noise profile accumulates even on a successful run.
         if unstable.any() and self.cfg.capture.stability_sticky:
