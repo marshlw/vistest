@@ -316,6 +316,22 @@ class CaptureConfig:
     # stable_timeout_ms=...)` overrides it for one check.
     stable_timeout_ms: int = 5000
 
+    # Before the frames: is the page ready? (capture/ready.py) — loaded, fonts
+    # in, no request of the page in flight, no loader in the area, its images
+    # loaded and decoded, and nothing in the area changed for `quiet_ms`. Each
+    # step waits at most `ready_timeout_ms`; a step that gives up is said in
+    # the result, and the page is photographed as it is. 0 turns the wait off.
+    ready_timeout_ms: int = 5000
+    # The quiet window: how long nothing may change in the area. Chosen on the
+    # calibration seeds of the capture-hazard stand (the S2a report has the
+    # Gap record): long enough for the last late re-render of a page the stand
+    # knows, short enough not to tax a page that has nothing to wait for.
+    quiet_ms: int = 40
+    # The pytest plugin counts the requests of every browser context Playwright
+    # creates in the test process, so that the readiness wait knows what is
+    # still in flight. Off: the wait sees only what the page itself shows.
+    track_requests: bool = True
+
     freeze_css: bool = True
     hide_scrollbars: bool = True
     hide_caret: bool = True
@@ -366,11 +382,12 @@ class CaptureConfig:
         #  Checked here, where every way of building one passes — the YAML
         #  loader, `replace()`, a test — rather than at the first capture,
         #  which in the library mode is the middle of somebody's run.
-        value = self.stable_timeout_ms
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise ConfigError(
-                f"capture.stable_timeout_ms must be a whole number of "
-                f"milliseconds, 0 or more; got {value!r}")
+        for key in ("stable_timeout_ms", "ready_timeout_ms", "quiet_ms"):
+            value = getattr(self, key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ConfigError(
+                    f"capture.{key} must be a whole number of "
+                    f"milliseconds, 0 or more; got {value!r}")
 
 
 # --------------------------------------------------------------------------- #

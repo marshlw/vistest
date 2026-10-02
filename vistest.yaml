@@ -66,6 +66,9 @@ capture:
   stability_delay_ms: 120
   stability_sticky: true
   stable_timeout_ms: 5000       # library mode: frames until two match, at most this long
+  ready_timeout_ms: 5000        # before the frames: each readiness step at most this long (0: off)
+  quiet_ms: 40                  # readiness: nothing in the area changed for this long
+  track_requests: true          # pytest plugin: count each browser context's requests in flight
   scroll_through_page: true     # прогрев lazy-load перед full_page
   auto_mask_media: true         # video/canvas/iframe/[data-vistest=ignore]
   auto_mask_animated: true

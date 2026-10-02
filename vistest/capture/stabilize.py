@@ -234,8 +234,17 @@ def install(context, *, determinism: bool = True, cfg=None) -> None:
     """Повесить заморозку на BrowserContext до открытия страниц.
 
     context: playwright BrowserContext
+
+    It also starts counting the context's requests in flight
+    (`capture.inflight`): the readiness wait before the frames needs to know
+    what is still on its way, and only a count running from the context's
+    start can tell.
     """
     import json
+
+    from .inflight import track
+
+    track(context)
 
     if determinism:
         cap = getattr(cfg, "capture", None)

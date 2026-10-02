@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..capture import dom as _dom
+from ..capture import ready as _ready
 from ..capture import stabilize as _stab
 from ..config import CaptureConfig
 from ..core import noise as _noise
@@ -52,6 +53,10 @@ class Capture:
     dom: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     device_scale: float = 1.0
+    #  Was the page ready when the frames were taken (capture/ready.py)?
+    #  None — it could not be asked. The second look masks nothing when False.
+    ready: bool | None = None
+    not_ready: str = ""
 
 
 def _png_to_rgb(data: bytes) -> np.ndarray:
@@ -106,7 +111,30 @@ class Driver:
     def install_init_scripts(self, cfg: CaptureConfig) -> None:
         """Подмена Math.random / Date до первого рендера. Наследники переопределяют."""
 
-    def settle(self, cfg: CaptureConfig, progress=_noop) -> list[str]:
+    def inflight(self):
+        """(count, URLs) of the page's requests in flight, or None when nobody counts."""
+        return None
+
+    def wait_until_ready(self, cfg: CaptureConfig,
+                         clip_selector: str | None = None) -> _ready.Readiness:
+        """capture/ready.py — the same wait the library runs before its frames."""
+        arg = {"v": _ready.VERSION, "reset": True, "fullPage": bool(cfg.full_page),
+               "masks": list(cfg.mask_selectors), "boxes": [],
+               "selector": clip_selector or ""}
+        step = cfg.step_timeout_ms
+
+        def probe():
+            try:
+                return self.evaluate(_ready.SELECTOR_PROBE_JS, arg, timeout_ms=step)
+            finally:
+                arg["reset"] = False
+
+        return _ready.wait(probe, inflight=self.inflight(), quiet_ms=cfg.quiet_ms,
+                           limit_ms=cfg.ready_timeout_ms,
+                           sleep=lambda s: self.sleep_ms(int(s * 1000)))
+
+    def settle(self, cfg: CaptureConfig, progress=_noop,
+               clip_selector: str | None = None) -> list[str]:
         """Довести страницу до устойчивого состояния.
 
         Каждый шаг ограничен по времени и рапортует о себе. Без этого на любом
@@ -139,6 +167,19 @@ class Driver:
             self._try(lambda: self.evaluate(_SCROLL_SYNC_JS, cfg.scroll_step_ratio,
                                             timeout_ms=step),
                       notes, "lazy-load warm-up")
+
+        self.readiness = None
+        if cfg.ready_timeout_ms > 0:
+            #  The same wait the library runs (capture/ready.py): loaded,
+            #  fonts, requests in flight when the context is counted, loaders,
+            #  images in the area, a quiet window. It replaces the fixed pause
+            #  this used to end with.
+            progress("waiting for the page to be ready")
+            self.readiness = self.wait_until_ready(cfg, clip_selector)
+            text = self.readiness.text()
+            if text:
+                notes.append(text)
+            return notes
 
         if cfg.wait_images or cfg.wait_fonts:
             progress("waiting for fonts and images")
@@ -184,7 +225,9 @@ class Driver:
     ) -> Capture:
         """progress(text) — колбэк для отображения этапа снаружи."""
         cfg = cfg or CaptureConfig()
-        notes = self.settle(cfg, progress)
+        notes = self.settle(cfg, progress, clip_selector)
+        readiness = getattr(self, "readiness", None)
+        ready = None if readiness is None else readiness.ok
 
         full_page = cfg.full_page
         if full_page and not clip_selector and cfg.max_full_page_px:
@@ -213,10 +256,24 @@ class Driver:
                                          timeout_ms=cfg.screenshot_timeout_ms))
             frames.append(_png_to_rgb(data))
 
-        rgb = frames[0]
+        #  The frames are taken after the page was found ready, and the last of
+        #  them is the page as it is: that is the one compared. What changed in
+        #  at least two intervals between them is live and becomes the
+        #  instability mask; what changed once — data that arrived late — is
+        #  not, and on a page that was not ready nothing is (core/retry.py).
+        rgb = frames[-1]
         progress("computing the instability mask")
-        unstable = (_noise.stability_mask(frames) if len(frames) > 1
-                    else np.zeros(rgb.shape[:2], dtype=bool))
+        if ready is False:
+            unstable = np.zeros(rgb.shape[:2], dtype=bool)
+            if len(frames) > 1:
+                notes.append("The page was not ready: differences between its frames "
+                             "were not taken as an instability mask.")
+        elif len(frames) >= 3:
+            from ..core.retry import live_mask
+
+            unstable = live_mask(frames)
+        else:
+            unstable = np.zeros(rgb.shape[:2], dtype=bool)
 
         dpr = self.device_scale()
         boxes = self.auto_mask_boxes(cfg)
@@ -244,7 +301,8 @@ class Driver:
                 notes.append(f"DOM snapshot not captured: {e}")
 
         return Capture(rgb=rgb, unstable=unstable, dom=dom_data,
-                       notes=notes, device_scale=dpr)
+                       notes=notes, device_scale=dpr, ready=ready,
+                       not_ready=readiness.text() if readiness is not None else "")
 
     @staticmethod
     def _try(fn, notes: list[str], what: str) -> None:
@@ -286,6 +344,12 @@ class PlaywrightDriver(Driver):
         except Exception:
             pass
 
+    def inflight(self):
+        from ..capture import inflight as _inflight
+
+        count = _inflight.for_page(self.page)
+        return (lambda: count.inflight(self.page)) if count is not None else None
+
     def evaluate(self, expression: str, arg=None, *, timeout_ms: int | None = None):
         # Playwright не даёт таймаут на evaluate: если JS страницы ушёл в
         # бесконечный цикл, ждать можно вечно. Ограничиваем срок жизни всей
@@ -320,15 +384,14 @@ class PlaywrightDriver(Driver):
         self.page.wait_for_timeout(ms)
 
     def wait_ready(self, timeout_ms: int) -> None:
+        #  Only the DOM here. What `networkidle` used to stand for — the page
+        #  has stopped fetching — is a step of the readiness wait in `settle`
+        #  (capture/ready.py), counted per request when the context is, and
+        #  shared with the library; `networkidle` itself never says anything
+        #  about a request the test's own click started.
         try:
             self.page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
         except Exception:
-            pass
-        try:
-            self.page.wait_for_load_state("networkidle", timeout=timeout_ms)
-        except Exception:
-            # Реальные сайты почти никогда не доходят до networkidle: аналитика,
-            # вебсокеты, реклама. Это ожидаемо, а не ошибка.
             pass
 
     def goto(self, url: str) -> None:

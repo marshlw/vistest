@@ -7,6 +7,38 @@
 
 ### Phase 2: the engine on pairs from elsewhere
 
+- **S2a: readiness before the frames; the second look hides nothing.** The
+  capture-hazard stand (`tests/capture_hazards/`, S1) showed two things about
+  the capture of a page whose data comes late. Frames «held still» at once,
+  because a spinner frozen for the screenshot is two identical frames: the
+  loading state was photographed. And the second look after a failure masked
+  whatever differed between two frames — the data that had arrived between
+  them — so the check was green, with a real change in that data as green as
+  the plain page (misses 50/50 on four pages). Now, before its frames, every
+  capture — `expect_screenshot` and the service, one module
+  (`vistest/capture/ready.py`) — waits until, at the same moment, the page is
+  loaded, its fonts are in, none of its requests is in flight (counted from
+  the creation of the context: the pytest plugin does it for every context
+  Playwright makes, `capture.track_requests`; the service for the contexts it
+  opens; `capture/inflight.py`), nothing in the area says it is loading
+  (`aria-busy`, `role=progressbar`, an endless animation that is a loader —
+  the rule and where it errs are in the module), the images in the area are
+  loaded and decoded, and nothing in the area changed for `capture.quiet_ms`
+  (40 ms, chosen on the stand's calibration seeds). Each step waits at most
+  `capture.ready_timeout_ms` (5 s; `expect_screenshot(ready_timeout_ms=)`), and
+  one that gives up is named in the reason. The second look
+  (`core/retry.py`) takes frames until two in a row are identical and judges
+  the **last** one; it masks nothing — a one-off change is compared as the
+  page became, what keeps changing is named and fails until it is masked on
+  purpose — and on a page that was not ready it does not look at all.
+  `actual.png` is the frame the verdict is from. In the service the frames
+  of a capture are taken after the wait, the last is compared, and only what
+  changed in two intervals or more becomes the instability mask; `networkidle`
+  and the fixed pause are gone. `/api/stabilize.js` gets `ready()` with the
+  same probe. Three hazards were added to the stand first (pulse,
+  silent_fetch, after_click). The engine is untouched: both benchmarks are
+  byte for byte what they were.
+
 - **Step 0b: the canary does not depend on the window.** The canary is
   360×156 px, and in a tab smaller than that in either direction one of its
   lines came out otherwise (765 px of it: a 320 px wide window, or a 1280 px

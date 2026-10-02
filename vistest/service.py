@@ -44,6 +44,10 @@ SNAPSHOT_THRESHOLDS = _thresholds.SNAPSHOT_THRESHOLDS
 _snapshot_thresholds = _thresholds.from_meta
 
 
+#: Later frames the second look asks a caller's `recapture` for, at most.
+RETRY_FRAMES = 4
+
+
 class CheckService:
     """Comparison of a snapshot against a baseline + artifacts. No browser and no network."""
 
@@ -87,6 +91,8 @@ class CheckService:
         notes: list[str] | None = None,
         meta: dict | None = None,
         recapture=None,
+        ready: bool | None = None,
+        not_ready: str = "",
     ) -> CompareResult:
         """Compare a snapshot against a baseline.
 
@@ -97,6 +103,9 @@ class CheckService:
                   при падении: движок решает, что делать, а вызывающий умеет
                   снимать — сюда одинаково подходят и наш раннер, и адаптер
                   чужих тестов, и съёмка по адресу.
+        ready   — was the page ready when `rgb` was taken (capture/ready.py)?
+                  False: the second look masks nothing (`not_ready` says why);
+                  None: not known.
         """
         notes = list(notes or [])
 
@@ -179,7 +188,8 @@ class CheckService:
         # ---------- упало? снимем ещё кадр и посмотрим, что не повторяется ----
         if res.failed and recapture is not None and self.cfg.capture.retry_on_fail:
             extra, res = self._retry(
-                name, rgb, baseline, ignore, diff_cfg, ai_hooks, res, recapture)
+                name, rgb, baseline, ignore, diff_cfg, ai_hooks, res, recapture,
+                ready=ready, not_ready=not_ready)
             unstable = _noise.merge_masks(unstable, extra, sticky=True) \
                 if extra is not None else unstable
 
@@ -216,21 +226,44 @@ class CheckService:
 
     # ------------------------------------------------------------------ #
     def _retry(self, name, rgb, baseline, ignore, diff_cfg, ai_hooks, first,
-               recapture):
-        """A second frame of the same page, and the verdict recomputed with it.
+               recapture, *, ready=None, not_ready=""):
+        """More frames of the same page, and the verdict from the last of them.
 
         The logic is `core.retry.second_look`, shared with the library mode;
-        what is here is only how this service compares: the stored baseline,
-        the masks it already had, the thresholds of this snapshot.
+        what is here is only how this service compares — the stored baseline,
+        the masks it already had, the thresholds of this snapshot — and how it
+        gets the later frames: `recapture` gives one, so it is asked until two
+        in a row are identical, `RETRY_FRAMES` at most, within the capture's
+        `stable_timeout_ms`.
         """
-        from .core.retry import second_look
+        import time
 
-        def recompare(moved):
-            wider = _noise.merge_masks(ignore, moved, sticky=True)
-            return compare(baseline.image, rgb, cfg=diff_cfg, name=name,
+        from .core.retry import Later, second_look
+
+        def later():
+            frames, previous = [], rgb
+            started = time.monotonic()
+            limit = max(self.cfg.capture.stable_timeout_ms, 1) / 1000
+            while True:
+                frame = recapture()
+                if frame is None:
+                    break
+                frames.append(frame)
+                if frame.shape == previous.shape and np.array_equal(frame, previous):
+                    return Later(frames, settled=True)
+                previous = frame
+                if len(frames) >= RETRY_FRAMES or time.monotonic() - started >= limit:
+                    break
+            return Later(frames, settled=False) if frames else None
+
+        def recompare(frame, live):
+            wider = (_noise.merge_masks(ignore, live, sticky=True)
+                     if live is not None else ignore)
+            return compare(baseline.image, frame, cfg=diff_cfg, name=name,
                            ignore_mask=wider, ai_hooks=ai_hooks)
 
-        look = second_look(first, rgb, recapture, recompare)
+        look = second_look(first, rgb, later, recompare, ready=ready,
+                           not_ready=not_ready)
         return look.unstable, look.result
 
     # ------------------------------------------------------------------ #

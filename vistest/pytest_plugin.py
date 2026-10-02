@@ -208,6 +208,30 @@ def pytest_configure(config):
             shutil.rmtree(ctx.parts_dir, ignore_errors=True)
 
 
+def pytest_collection_finish(session):
+    """Count the requests of every browser context the tests will create.
+
+    The readiness wait before a screenshot (capture/ready.py) cannot see a
+    request the page started before the check: the count has to run from the
+    moment the context is created. Playwright gives no event for that, so its
+    sync API's three ways of making a context are wrapped
+    (`capture.inflight.install_hooks`). Only when the tests imported
+    Playwright — by the end of collection they have — and
+    `capture.track_requests` is on (the default).
+    """
+    import sys
+
+    if "playwright.sync_api" not in sys.modules:
+        return
+    ctx = getattr(session.config, "_vistest_context", None)
+    with _advisory("could not count the requests of browser contexts"):
+        if ctx is not None and not ctx.config.capture.track_requests:
+            return
+        from .capture.inflight import install_hooks
+
+        install_hooks()
+
+
 def pytest_unconfigure(config):
     with _advisory("could not release the library context"):
         from .library import context as _context

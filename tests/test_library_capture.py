@@ -414,16 +414,23 @@ def test_a_bare_screenshot_of_this_page_really_does_move(page):
     assert len(shots) > 1
 
 
+#  The animated page spins for ever: by the loader rule (capture/ready.py) that
+#  is a page still loading, and the readiness wait would hold each check for
+#  its whole limit. The frames are what these tests are about; the wait gets a
+#  short limit here, and has tests of its own below.
+SHORT = {"ready_timeout_ms": 300}
+
+
 def test_css_animation_and_a_blinking_caret_give_a_stable_frame(ctx, page):
     page.set_content(ANIMATED_PAGE)
     page.focus("#field")
-    accept(ctx, page, "animated.png")
+    accept(ctx, page, "animated.png", **SHORT)
     first = rows(ctx)[-1]["capture"]
     assert first["stable"] is True, first
 
     for _ in range(3):
         page.wait_for_timeout(130)            # a different moment of every cycle
-        result = expect_screenshot(page, "animated.png")
+        result = expect_screenshot(page, "animated.png", **SHORT)
         assert result.verdict.value == "pass"
         captured = rows(ctx)[-1]["capture"]
         assert captured["stable"] is True and captured["frames"] == 2, captured
@@ -432,10 +439,10 @@ def test_css_animation_and_a_blinking_caret_give_a_stable_frame(ctx, page):
 def test_a_restless_page_is_judged_on_its_last_frame_and_says_so(ctx, page):
     page.set_content(RESTLESS_PAGE)
     with pytest.warns(Warning, match="did not settle"):
-        accept(ctx, page, "restless.png", stable_timeout_ms=600)
+        accept(ctx, page, "restless.png", stable_timeout_ms=600, **SHORT)
 
     try:
-        expect_screenshot(page, "restless.png", stable_timeout_ms=600)
+        expect_screenshot(page, "restless.png", stable_timeout_ms=600, **SHORT)
     except ScreenshotMismatch as e:
         assert "did not settle" in str(e)
     row = rows(ctx)[-1]
@@ -447,16 +454,78 @@ def test_a_restless_page_is_judged_on_its_last_frame_and_says_so(ctx, page):
 
 def test_a_locator_is_photographed_the_same_way(ctx, page):
     page.set_content(ANIMATED_PAGE)
-    accept(ctx, page.locator(".spinner"), "spinner.png")
+    accept(ctx, page.locator(".spinner"), "spinner.png", **SHORT)
     page.wait_for_timeout(170)
-    assert expect_screenshot(page.locator(".spinner"),
-                             "spinner.png").verdict.value == "pass"
+    assert expect_screenshot(page.locator(".spinner"), "spinner.png",
+                             **SHORT).verdict.value == "pass"
 
 
 def test_missing_baseline_still_raises_with_a_live_page(ctx, page):
     page.set_content(ANIMATED_PAGE)
     with pytest.raises(BaselineMissing):
-        expect_screenshot(page, "nothing-yet.png")
+        expect_screenshot(page, "nothing-yet.png", **SHORT)
+
+
+# --------------------------------------------------------------------------- #
+#  Readiness before the frames, in a real browser
+# --------------------------------------------------------------------------- #
+LATE_PAGE = """<!doctype html>
+<html><head><style>
+  body { margin: 0; font: 18px sans-serif; }
+  .spinner { width: 30px; height: 30px; margin: 20px; border: 5px solid #ddd;
+             border-top-color: #06c; border-radius: 50%; animation: spin .5s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge { width: 14px; height: 14px; margin: 20px; border-radius: 50%; background: #1a3;
+           animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.4); opacity: .5; } }
+</style></head>
+<body><div class="badge"></div><div id="slot"><div class="spinner"></div></div>
+<script>
+  setTimeout(() => { document.getElementById('slot').innerHTML = '<p>Total: $DATA</p>'; },
+             DELAY);
+</script></body></html>"""
+
+
+def late(data: str, delay_ms: int) -> str:
+    return LATE_PAGE.replace("DATA", data).replace("DELAY", str(delay_ms))
+
+
+def test_a_spinner_is_waited_for_and_the_data_photographed(ctx, page):
+    page.set_content(late("120", 0))
+    page.wait_for_timeout(100)
+    accept(ctx, page, "late.png")
+    page.set_content(late("120", 400))
+    result = expect_screenshot(page, "late.png")       # the spinner is still there
+    assert result.verdict.value == "pass"
+    ready = rows(ctx)[-1]["capture"]["ready"]
+    assert ready["ok"] is True and ready["steps"]["loaders"]["ms"] >= 300, ready
+
+
+def test_a_change_in_the_late_data_fails(ctx, page):
+    page.set_content(late("120", 0))
+    page.wait_for_timeout(100)
+    accept(ctx, page, "late.png")
+    page.set_content(late("170", 400))
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(page, "late.png")
+
+
+def test_a_decoration_is_not_waited_for(ctx, page):
+    """The pulsing badge is endless too, and not a loader: no wait for it."""
+    page.set_content(late("120", 0))
+    page.wait_for_timeout(100)
+    accept(ctx, page, "badge.png")
+    ready = rows(ctx)[-1]["capture"]["ready"]
+    assert ready["ok"] is True and ready["ms"] < 1000, ready
+
+
+def test_a_loader_that_never_goes_away_is_given_up_and_said(ctx, page):
+    page.set_content(ANIMATED_PAGE)
+    accept(ctx, page, "forever.png", ready_timeout_ms=300)
+    row = rows(ctx)[-1]
+    assert row["capture"]["ready"]["ok"] is False
+    assert "still showing a loader after 300 ms" in row["reason"]
+    assert "div.spinner" in row["reason"]
 
 
 # --------------------------------------------------------------------------- #
@@ -475,25 +544,37 @@ def page_png(*, spinner: int = 10, header_shift: bool = False) -> bytes:
 
 def test_a_failure_that_does_not_reproduce_is_suppressed_as_unstable(ctx):
     accept(ctx, FakePage(page_png(spinner=10)))
-    #  Two identical frames settle the loop; the third is the second look.
+    #  Two identical frames settle the loop; then the second look: frames
+    #  until two in a row are identical — the page as it ended up.
     page = FakePage(page_png(spinner=250), page_png(spinner=250),
-                    page_png(spinner=120))
+                    page_png(spinner=10))
     result = expect_screenshot(page, "page.png")
     assert result.verdict.value == "pass"
     assert any((r.suppressed_by or "").startswith("unstable:")
                for r in result.suppressed)
-    assert any("passed on the second" in n for n in result.notes)
-    assert len(page.calls) == 3
+    assert any("passed on a later one" in n for n in result.notes)
+    assert len(page.calls) == 4
     row = rows(ctx)[-1]
     assert row["suppressed_by_reason"] == {
         "suppressed: did not reproduce on a second capture": 1}
+
+
+def test_a_change_that_stays_in_the_later_frame_fails(ctx):
+    """S1's hole: what arrived late and stayed is compared, never masked."""
+    accept(ctx, FakePage(page_png(spinner=10)))
+    page = FakePage(page_png(spinner=250), page_png(spinner=250),
+                    page_png(spinner=120))
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(page, "page.png")
+    assert any("changed after it looked ready" in n for n in e.value.result.notes)
+    assert "changed after it looked ready" in str(e.value), "and the message says it"
 
 
 def test_a_steady_regression_survives_the_second_look(ctx):
     accept(ctx, FakePage(page_png(spinner=10)))
     page = FakePage(page_png(spinner=250, header_shift=True),
                     page_png(spinner=250, header_shift=True),
-                    page_png(spinner=120, header_shift=True))
+                    page_png(spinner=10, header_shift=True))
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(page, "page.png")
     result = e.value.result
@@ -502,12 +583,17 @@ def test_a_steady_regression_survives_the_second_look(ctx):
                for r in result.suppressed)
 
 
-def test_the_picture_compared_is_the_first_frame(ctx):
+def test_the_picture_compared_is_the_last_frame(ctx):
+    """The verdict is from the page as it ended up, and so is `actual.png`."""
+    from vistest.core import pngio
+
     accept(ctx, FakePage(page_png(spinner=10)))
     first = page_png(spinner=250)
-    page = FakePage(first, first, page_png(spinner=120))
+    later = page_png(spinner=10)
+    page = FakePage(first, first, later)
     expect_screenshot(page, "page.png")
-    assert Path(rows(ctx)[-1]["images"]["actual"]).read_bytes() == first
+    saved = pngio.decode(Path(rows(ctx)[-1]["images"]["actual"]).read_bytes())
+    assert (saved == pngio.decode(later)).all()
 
 
 def test_a_passing_check_takes_no_extra_frame(ctx):
@@ -545,5 +631,5 @@ def test_the_library_goes_through_the_shared_function(ctx, monkeypatch):
                         lambda *a, **k: seen.append(1) or real(*a, **k))
     accept(ctx, FakePage(page_png(spinner=10)))
     expect_screenshot(FakePage(page_png(spinner=250), page_png(spinner=250),
-                               page_png(spinner=120)), "page.png")
+                               page_png(spinner=10)), "page.png")
     assert seen == [1]

@@ -15,16 +15,24 @@ none of them reads the pages' readiness flag: the stand only calls them.
 ## Commands
 
 ```bash
-python -m tests.capture_hazards.measure                 # both tools, seeds 0–9: ~1 h ours + ~35 min Playwright, 2 cores
+python -m tests.capture_hazards.measure                 # ours and Playwright, seeds 0–9
+python -m tests.capture_hazards.measure --tool all      # + ours with the plugin's request count
 python -m tests.capture_hazards.measure --table --no-timing   # print the table again, deterministic
-pytest -m capture_hazards tests/capture_hazards         # the oracle test (below), about a minute
+python -m tests.capture_hazards.measure --table --before DIR  # a «before» column from another run
+python -m tests.capture_hazards.gaps                    # the quiet window's Gap record
+pytest -m capture_hazards tests/capture_hazards         # the oracle, and every signal variant fails
 ```
 
-`--tool ours|playwright`, `--only spinner,web_font`, `--jobs N`,
+Tools: `ours` — `expect_screenshot` as a script calls it, without the pytest
+plugin, so the library sees only the page; `ours_plugin` — the same with the
+requests of every context counted from its creation, as the plugin does it;
+`playwright` — `toHaveScreenshot()`. `--only spinner,web_font`, `--jobs N`,
 `--work DIR` (default `bench_out/capture_hazards/`, ignored by git) and
 `--smoke` (one seed, two checks, one signal check) narrow a run. Results are
-written line by line to `<work>/results.<tool>*.jsonl`; a run that was cut
-off goes on where it stopped when started again with the same `--work`.
+written line by line to `<work>/results.<tool>.*jsonl`; a run that was cut
+off goes on where it stopped when started again with the same `--work`. A
+`no-vistest.yaml` in the work directory is the config the library runs under
+(absent — its defaults). On 2 cores a full run of one tool takes about an hour.
 
 Playwright's side runs `@playwright/test` from `scripts/bench/node_modules`
 (`npm ci --prefix scripts/bench`) with the headless shell the Python
@@ -51,6 +59,12 @@ the page — and comes from the seed (`stand.delay_ms`, 50–1500 ms).
 | `raf_canvas_masked` | the same, the canvas masked |
 | `counter` | a number `setInterval` changes every 200 ms (the control: only a mask helps) |
 | `counter_masked` | the same, the number masked |
+| `pulse` | a static page with a decorative dot that pulses for ever: nothing to wait for |
+| `silent_fetch` | data by request after 300–1500 ms, with no sign that it is coming |
+| `after_click` | the test's click asks for data (50–1500 ms); `networkidle` has long passed |
+
+The last three were added in S2, before any of its runs (the S2 addendum to
+the pre-registration).
 
 Each page sets `window.__ready = true` when its hazard is over (the data in
 and painted, the font loaded, the banner inserted, …). That flag is the
@@ -58,7 +72,10 @@ oracle for the baseline; neither tool reads it during a check. The pages that
 never hold still (`raf`, `counter`) set it once loaded: their hazard does not
 end, and waiting cannot help there.
 
-`test_oracle.py` checks the oracle without the library: a watcher installed
+`test_signals.py` takes a baseline of every page with a signal variant and
+checks the signal variant the way a test does, with and without the request
+count: every one of them must fail. `test_oracle.py` checks the oracle
+without the library: a watcher installed
 before the page's scripts tests a condition of its own, from the DOM, on every
 animation frame, and the test asserts that the condition holds when `__ready`
 turns true, that `__ready` follows it within 150 ms, and — where the server

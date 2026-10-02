@@ -130,6 +130,7 @@ class VisualTester:
             # дешевле этого второго кадра нет ничего.
             recapture=lambda: self.driver.capture(
                 cfg=cap_cfg, clip_selector=clip_selector).rgb,
+            ready=shot.ready, not_ready=shot.not_ready,
         )
         self.results.append(res)
         if res.failed and not soft:

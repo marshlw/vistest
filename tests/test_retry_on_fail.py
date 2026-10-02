@@ -21,17 +21,17 @@
 регресс**. Механизм, который тихо превращает красное в зелёное, был бы хуже, чем
 его отсутствие: он снимает единственный сигнал, ради которого всё написано.
 
-Три свойства держат это:
+Since S2a (the capture-hazard stand found the first version masking data
+that arrived late — a real change in it as green as the plain page), the
+properties are:
 
-* сравнивается **первый** кадр, а не второй — второй только свидетель;
-* подавляются **конкретные области**, а не вердикт целиком;
-* «прошло со второго раза» пишется в заметку, а не проглатывается.
-
-И одна честная граница, у которой тоже есть тест: **мерцающую** поломку два
-кадра отличить от мерцающего шума не могут — не могут в принципе, ни здесь, ни у
-человека. Поэтому зелёный в таком случае не молчит, а говорит «страница здесь
-нестабильна, чините в источнике» — для недетерминированного рендера это ровно
-тот текст, который нужен.
+* nothing is masked: neither a one-off change between the frames (the data
+  replacing a spinner) nor what keeps changing (a counter) — the latter is
+  named in the note, and fails until it is masked on purpose;
+* the verdict is from the **last** frame — the page as it is once it held
+  still — and that is also the picture a person opens;
+* a page that was not ready gets no second look at all;
+* «passed on a later frame» is a note, never silence.
 """
 
 from __future__ import annotations
@@ -102,48 +102,39 @@ def test_a_real_change_survives_even_when_the_page_is_alive(svc):
     assert any("the difference remains" in n for n in res.notes)
 
 
-def test_a_flickering_break_is_named_instability_not_success(svc):
-    """Честная граница механизма, и она должна быть проверена, а не умолчана.
+def test_a_page_that_was_still_changing_is_judged_on_how_it_ended(svc):
+    """The first frame was broken, the page then settled whole.
 
-    Если поломка проявляется через раз, второй кадр может застать страницу
-    целой — область попадёт в маску, и вердикт станет зелёным. Двух кадров,
-    чтобы отличить мерцающий шум от мерцающей поломки, не хватает никому.
-
-    Поэтому зелёный здесь обязан быть **не молчаливым**: для мерцающей поломки
-    «страница здесь нестабильна, чините в источнике» — ровно тот текст, который
-    нужен, потому что чинить надо недетерминированный рендер.
+    The later frame is the page as it is, and it is the verdict — never
+    silently: the note says the snapshot was taken before the page was done,
+    which is what to fix.
     """
     broken = _page(spinner=10, header_shift=True)
-    clean = _page(spinner=10)                    # второй кадр «как эталон»
+    clean = _page(spinner=10)
     res = _check(svc, broken, recapture=lambda: clean)
 
     assert not res.failed
-    note = next(n for n in res.notes if "did not reproduce" in n)
-    assert "unstable" in note and "fixing at the source" in note
+    note = next(n for n in res.notes if "passed on a later one" in n)
+    assert "changed after it looked ready" in note and "fixing at the source" in note
 
 
-def test_the_verdict_is_about_the_first_frame(svc):
-    """Второй кадр — свидетель, а не замена картинки.
+def test_the_verdict_is_about_the_last_frame(svc):
+    """The page as it ended up — the later frame that held still — is judged.
 
-    Проверяется по размеру: у кадров разная высота (обычное дело на живой
-    странице — что-то догрузилось), и отчёт обязан описывать тот кадр, который
-    упал. Сравнивать второй значило бы выбирать снимок поудачнее, пока не
-    позеленеет.
+    Checked by size: something loaded and the page grew; the result describes
+    the frame it is about, the later one.
     """
     first = _page(spinner=10, header_shift=True)
     second = np.vstack([_page(spinner=250, header_shift=True),
                         np.full((40, W, 3), 240, dtype=np.uint8)])
     res = _check(svc, first, recapture=lambda: second)
 
-    assert res.size_actual == (W, H), f"отчёт про второй кадр: {res.size_actual}"
+    assert res.failed
+    assert res.size_actual == (W, H + 40), f"not the later frame: {res.size_actual}"
 
 
-def test_the_picture_a_person_opens_is_the_one_that_failed(svc):
-    """`actual.png` — первый кадр.
-
-    Человек идёт смотреть на то, что упало; подсунуть ему удачный кадр значит
-    показать картинку, к которой вердикт не относится.
-    """
+def test_the_picture_a_person_opens_is_the_one_the_verdict_is_about(svc):
+    """`actual.png` is the frame that was judged — the later one."""
     first = _page(spinner=250, header_shift=True)
     second = _page(spinner=120, header_shift=True)
     res = svc.check("page.png", first, render=True, recapture=lambda: second)
@@ -151,25 +142,31 @@ def test_the_picture_a_person_opens_is_the_one_that_failed(svc):
     from vistest.capture.playwright_capture import read_png
 
     saved = read_png(res.artifacts["actual"])
-    assert np.array_equal(saved, first)
+    assert np.array_equal(saved, second)
 
 
 # --------------------------------------------------------------------------- #
 #  Что должно становиться зелёным
 # --------------------------------------------------------------------------- #
-def test_a_difference_that_does_not_reproduce_is_noise(svc):
-    """Дрожит только то, что и разошлось с эталоном.
-
-    Такое расхождение ложное по построению — ровно то, что `doctor` меряет на
-    неизменной странице.
-    """
+def test_a_difference_that_is_gone_in_the_later_frame_passes(svc):
+    """The first frame caught the page mid-change; it then held still, whole."""
     first = _page(spinner=250)
-    second = _page(spinner=120)
-    assert _check(svc, first).failed, "без пересъёмки это падение"
+    later = _page(spinner=10)
+    assert _check(svc, first).failed, "without a second look this fails"
 
-    res = _check(svc, first, recapture=lambda: second)
+    res = _check(svc, first, recapture=lambda: later)
     assert not res.failed
-    assert any("did not reproduce" in n for n in res.notes)
+    assert any("passed on a later one" in n for n in res.notes)
+
+
+def test_what_keeps_changing_is_named_and_not_masked(svc):
+    """A corner that changes on every frame is life, not noise: it fails, named."""
+    values = iter([120, 30, 200, 70, 160])
+    res = _check(svc, _page(spinner=250),
+                 recapture=lambda: _page(spinner=next(values)))
+    assert res.failed
+    assert any("kept changing" in n and "not masked" in n for n in res.notes)
+    assert not (svc.store.dir_for("page.png") / "stability.png").exists()
 
 
 def test_passing_on_retry_is_not_silent(svc):
@@ -178,28 +175,26 @@ def test_passing_on_retry_is_not_silent(svc):
     Это «страница здесь нестабильна», и человек обязан это прочитать: снимок,
     который лечится пересъёмкой из раза в раз, надо чинить в источнике.
     """
-    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
-    note = next(n for n in res.notes if "did not reproduce" in n)
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=10))
+    note = next(n for n in res.notes if "passed on a later one" in n)
     # Заголовок заметки — сам факт «упало, потом прошло». Без него остальное
     # читается как обычное описание шума, а не как то, что произошло с этим
     # снимком в этом прогоне.
-    assert "Failed on the first capture and passed on the second" in note
-    assert "unstable" in note
+    assert "Failed on the first capture and passed on a later one" in note
     assert "fixing at the source" in note
-    assert "%" in note, "доля дрожащей площади названа числом"
+    assert "%" in note, "доля изменившейся площади названа числом"
 
 
-def test_the_lesson_is_remembered(svc, tmp_path):
-    """Найденная нестабильность уходит в накопленную маску снимка.
+def test_the_second_look_leaves_no_mask_behind(svc, tmp_path):
+    """It used to: the pixels that moved went into the snapshot's mask for good.
 
-    Иначе пересъёмка платила бы за один и тот же спиннер каждый прогон, вечно.
+    On a page whose data came late that was the data's area, masked in every
+    run after. Nothing the second look sees is remembered as a mask now.
     """
-    _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=10))
     # Каталог спрашиваем у хранилища: имя снимка и имя каталога — разные вещи.
-    assert (svc.store.dir_for("page.png") / "stability.png").exists()
-
-    # И следующий прогон падать уже не должен — маска накоплена.
-    assert not _check(svc, _page(spinner=200)).failed
+    assert not (svc.store.dir_for("page.png") / "stability.png").exists()
+    assert _check(svc, _page(spinner=200)).failed
 
 
 # --------------------------------------------------------------------------- #
@@ -381,19 +376,19 @@ def test_a_snapshot_can_be_made_stricter_too(svc):
 #  suppression.
 # --------------------------------------------------------------------------- #
 def test_a_region_that_did_not_reproduce_is_suppressed_as_unstable(svc):
-    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=10))
     assert not res.failed
     unstable = [r for r in res.suppressed
                 if (r.suppressed_by or "").startswith("unstable:")]
     assert len(unstable) == 1
     r = unstable[0]
     assert (r.x, r.y) >= (90, 55) and r.x + r.w <= W and r.y + r.h <= H
-    assert "second capture" in r.suppressed_by and "%" in r.suppressed_by
+    assert "later capture" in r.suppressed_by and "%" in r.suppressed_by
 
 
 def test_only_what_moved_is_suppressed_the_rest_stays_red(svc):
     first = _page(spinner=250, header_shift=True)
-    res = _check(svc, first, recapture=lambda: _page(spinner=120, header_shift=True))
+    res = _check(svc, first, recapture=lambda: _page(spinner=10, header_shift=True))
     assert res.failed
     assert all(r.y < 40 for r in res.regions), "the header is what fails"
     assert any((r.suppressed_by or "").startswith("unstable:") and r.y > 40
@@ -403,14 +398,14 @@ def test_only_what_moved_is_suppressed_the_rest_stays_red(svc):
 def test_the_unstable_suppression_is_counted_under_its_own_name(svc):
     from vistest.plugins.runtime import count_suppressed
 
-    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=10))
     counts = count_suppressed(res.suppressed)
     assert counts.get("suppressed: did not reproduce on a second capture") == 1
 
 
 def test_the_accounting_still_adds_up(svc):
-    """The masked pixels are not changed pixels of the second comparison."""
-    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
+    """The vanished regions are not changed pixels of the second comparison."""
+    res = _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=10))
     assert res.region_pixels + res.suppressed_pixels + res.unassigned_pixels \
         == res.changed_pixels
 
@@ -428,3 +423,12 @@ def test_the_server_goes_through_the_shared_function(svc, monkeypatch):
     monkeypatch.setattr(retry, "second_look", spy)
     _check(svc, _page(spinner=250), recapture=lambda: _page(spinner=120))
     assert seen == [1]
+
+
+def test_a_page_that_was_not_ready_gets_no_second_look(svc):
+    calls = []
+    res = _check(svc, _page(spinner=250),
+                 recapture=lambda: calls.append(1) or _page(spinner=10),
+                 ready=False, not_ready="1 request still in flight after 5000 ms")
+    assert res.failed and calls == []
+    assert any("not ready" in n and "in flight" in n for n in res.notes)

@@ -124,6 +124,7 @@ def expect_screenshot(
     scale: str = "css",
     stable_timeout_ms: int | None = None,
     engine: str | None = None,
+    ready_timeout_ms: int | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -165,7 +166,19 @@ def expect_screenshot(
     until two in a row are identical — for at most `stable_timeout_ms`
     (default `capture.stable_timeout_ms`, five seconds; 0 takes one frame).
     A page that does not settle in that time is compared on its last frame,
-    and the reason says so. `scale` is `"css"` (the default: one picture pixel
+    and the reason says so. Before the frames the page is asked whether it is
+    ready — loaded, no request in flight (counted when the pytest plugin is
+    active), no loader in the area, its images in, nothing changing for a
+    moment —, each step for at most `ready_timeout_ms` (default
+    `capture.ready_timeout_ms`, five seconds; 0 does not ask); a step that
+    gives up is said in the reason.
+
+    A check that fails gets a second look (core/retry.py): more frames, until
+    two in a row are identical. What keeps changing between them is masked as
+    live; what changed once — data that arrived late — is not, and the verdict
+    is from the last frame. On a page that was not ready nothing is masked.
+
+    `scale` is `"css"` (the default: one picture pixel
     per CSS pixel on any screen) or `"device"` (the screen's own pixels); the
     platform directory carries the scale of the picture, so the two never
     share a baseline.
@@ -180,10 +193,13 @@ def expect_screenshot(
     call_patch = _call_thresholds(threshold)
     wait = (ctx.config.capture.stable_timeout_ms if stable_timeout_ms is None
             else _targets.check_timeout(stable_timeout_ms))
+    ready_wait = (ctx.config.capture.ready_timeout_ms if ready_timeout_ms is None
+                  else _targets.check_timeout(ready_timeout_ms, "ready_timeout_ms"))
 
     shot = _targets.capture(target, mask=mask, full_page=full_page,
                             scale=_targets.check_scale(scale),
-                            stable_timeout_ms=wait)
+                            stable_timeout_ms=wait, ready_timeout_ms=ready_wait,
+                            quiet_ms=ctx.config.capture.quiet_ms)
     platform = platform if platform is not None else ctx.platform_for(shot)
     key = ctx.key(name, platform)
     #  From here on the check has a name, and it must leave a row in the
@@ -205,7 +221,9 @@ def expect_screenshot(
         #  What the capture has to say for itself: a page that would not hold
         #  still, a font wait that failed. It goes into every reason below, so
         #  the report and the CI log carry it whatever the verdict.
-        said = [*shot.notes, *filter(None, [shot.stability.unsettled_text()])]
+        said = [*shot.notes, *filter(None, [
+            shot.ready.text() if shot.ready is not None else "",
+            shot.stability.unsettled_text()])]
         captured = _capture_row(shot)
 
         actual_path = atomic.write_bytes(ctx.artifact_path("actual", key), shot.png)
@@ -281,14 +299,23 @@ def expect_screenshot(
         _canary_row(captured, run_canary)
         run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
 
-        #  Failed: one more frame, and whatever did not hold still between the two
-        #  is masked for a second comparison of the FIRST frame. The same function
-        #  the server uses — see core/retry.py for why it cannot hide a steady
-        #  regression, and what it says when it turns a check green.
+        #  Failed: more frames, until two in a row are identical. What keeps
+        #  changing is masked as live; what changed once (late data) is not,
+        #  and the verdict is from the last frame. Nothing is masked on a page
+        #  that was not ready. The same function the server uses — see
+        #  core/retry.py for why late data cannot be hidden this way.
+        final_png = shot.png
         if result.failed and shot.retake is not None \
                 and ctx.config.capture.retry_on_fail:
-            result = _second_look(shot, key, result, expected_rgb, actual_rgb,
-                                  cfg, ignore, hooks, renderer)
+            result, frame = _second_look(shot, key, result, expected_rgb, actual_rgb,
+                                         cfg, ignore, hooks, renderer, wait)
+            if frame is not None and frame is not actual_rgb:
+                #  The verdict is from a later frame: that is the picture a
+                #  person opens, the one the diff is drawn on, and the one an
+                #  accept would write.
+                actual_rgb = frame
+                final_png = pngio.encode(frame)
+                atomic.write_bytes(actual_path, final_png)
         result.duration_ms = _ms(started)
 
         #  Let go of the full-frame maps. `compare` hands back four arrays the size
@@ -307,7 +334,11 @@ def expect_screenshot(
 
         from ..report.library import describe
 
-        reason = _with(said, describe(result))
+        #  What the second look found goes into the message too — a page that
+        #  was not ready and got no masking, a later frame that was judged,
+        #  something that keeps changing: the person reading the failure needs
+        #  it more than the report does. It is already among the notes.
+        reason = _with([*said, *_look_notes(result)], describe(result))
         limits = _limits(cfg)
         images = {"baseline": str(baseline_path), "actual": str(actual_path)}
 
@@ -326,13 +357,13 @@ def expect_screenshot(
         #  behaviour: anything that differs by a byte is written.
         failed = result.verdict is Verdict.FAIL
         if mode == "all" or (mode == "changed" and failed):
-            if _sha_of(shot.png) != _sha_of(baseline):
+            if _sha_of(final_png) != _sha_of(baseline):
                 _warn_unsettled_accept(shot, key)
             if run_canary is _fingerprint.NOT_DRAWN:
                 this_run()              # writing a baseline: its sha is kept
                 _canary_row(captured, run_canary)
                 run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
-            meta = store.put(key, shot.png,
+            meta = store.put(key, final_png,
                              meta=_passport_with_renderer(store, key, run_canary))
             record(verdict="new_baseline",
                    action="unchanged" if meta.sha256 == _sha_of(baseline)
@@ -406,25 +437,40 @@ def _fresh_result(key: SnapshotKey, meta: SnapshotMeta,
 
 
 def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
-                 cfg, ignore, hooks, renderer=None):
+                 cfg, ignore, hooks, renderer=None, wait: int = 5000):
+    """core/retry.second_look for a live target: (the result, the verdict frame)."""
     from ..core import noise
     from ..core.comparator import compare
-    from ..core.retry import second_look
+    from ..core.retry import Later, second_look
 
     def recapture():
-        return pngio.decode(shot.retake(),
-                            source=f"the second screenshot of {key.name}")
+        frames, settled = _targets.frames_after(shot.retake, shot.png,
+                                                timeout_ms=max(wait, 1))
+        return Later([pngio.decode(f, source=f"a later screenshot of {key.name}")
+                      for f in frames], settled=settled)
 
-    def recompare(moved):
+    def recompare(frame, live):
         #  The masks are in different frames of reference only when the
         #  sizes differ; `merge_masks` crops to the common part, and
         #  `compare` fits the result to the padded frame.
-        wider = noise.merge_masks(ignore, moved, sticky=True) \
-            if ignore is not None else moved
-        return compare(expected_rgb, actual_rgb, cfg=cfg, name=key.name,
+        wider = live if ignore is None else (
+            noise.merge_masks(ignore, live, sticky=True) if live is not None else ignore)
+        return compare(expected_rgb, frame, cfg=cfg, name=key.name,
                        ignore_mask=wider, ai_hooks=hooks, renderer=renderer)
 
-    return second_look(first, actual_rgb, recapture, recompare).result
+    look = second_look(first, actual_rgb, recapture, recompare,
+                       ready=shot.was_ready(), not_ready=shot.not_ready_text())
+    return look.result, look.frame
+
+
+#: The heads of the notes `core/retry.second_look` leaves.
+_LOOK_HEADS = ("Confirmed on a second capture", "A second look was taken",
+               "Failed on the first capture and passed on a later one",
+               "The page was not ready", "Could not take a second capture")
+
+
+def _look_notes(result) -> list[str]:
+    return [n for n in result.notes if n.startswith(_LOOK_HEADS)]
 
 
 def _canary_row(captured: dict | None, run) -> None:
@@ -457,6 +503,8 @@ def _with(said: list[str], reason: str) -> str:
 def _capture_row(shot) -> dict:
     """How the picture was taken, for the report row."""
     row = {"source": shot.source, **shot.stability.as_dict()}
+    if shot.ready is not None:
+        row["ready"] = shot.ready.as_dict()
     if shot.scale_mode:
         row["scale"] = shot.scale_mode
         if shot.scale is not None:

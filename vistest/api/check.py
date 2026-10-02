@@ -35,6 +35,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from ..capture import dom as _dom
+from ..capture import ready as _ready
 from ..capture import stabilize as _stab
 from ..config import VisTestConfig, env_int
 from ..models import Verdict
@@ -441,7 +442,12 @@ def stabilize_js():
 
     After injection the following is available:
         window.__vistest.freeze()        freeze CSS
-        window.__vistest.settle()        promise: fonts, images, lazy-load
+        window.__vistest.ready(opts)     promise: the readiness wait of
+                                         capture/ready.py, page side — the same
+                                         probe, every step at once, each with
+                                         its limit (no request count here:
+                                         the page cannot see its own requests)
+        window.__vistest.settle()        promise: fonts, images, lazy-load, ready
         window.__vistest.dom(dpr)        DOM snapshot for attribution
         window.__vistest.maskBoxes()     bboxes of dynamic elements
     """
@@ -455,6 +461,9 @@ def stabilize_js():
         "const waitMedia = " + _stab.WAIT_MEDIA_JS + ";",
         "const scrollThrough = " + _stab.SCROLL_THROUGH_JS + ";",
         "const domSnapshot = " + _dom.SNAPSHOT_JS + ";",
+        "const probe = " + _ready.PROBE_JS.strip() + ";",
+        f"const READY = {{ v: {_ready.VERSION}, quietMs: {_ready.DEFAULT_QUIET_MS}, "
+        f"limitMs: {_ready.DEFAULT_LIMIT_MS} }};",
         """
         function freeze() {
           let s = document.getElementById('__vistest_freeze');
@@ -467,12 +476,34 @@ def stabilize_js():
           return true;
         }
 
+        async function ready(opts) {
+          opts = opts || {};
+          const quiet = opts.quietMs ?? READY.quietMs, limit = opts.limitMs ?? READY.limitMs;
+          const arg = { v: READY.v, reset: true, masks: opts.masks || [], boxes: [],
+                        fullPage: !!opts.fullPage };
+          const t0 = performance.now(), given = new Set();
+          for (;;) {
+            const r = probe(opts.element || null, arg);
+            arg.reset = false;
+            const holds = { load: r.readyState === 'complete', fonts: r.fonts === 'loaded',
+                            loaders: !r.loaders.length, images: !r.images.length,
+                            quiet: r.quiet >= quiet };
+            const now = performance.now() - t0;
+            for (const k in holds) if (!holds[k] && now >= limit) given.add(k);
+            if (Object.keys(holds).every((k) => holds[k] || given.has(k))) {
+              return { ok: Object.values(holds).every(Boolean), ms: Math.round(now),
+                       steps: holds, loaders: r.loaders, images: r.images };
+            }
+            await new Promise((res) => setTimeout(res, 25));
+          }
+        }
+
         async function settle(opts) {
           opts = opts || {};
           freeze();
           if (opts.scroll !== false) await scrollThrough(opts.stepRatio || 0.8);
           await waitMedia();
-          return true;
+          return ready(opts);
         }
 
         function maskBoxes(extraSelectors) {
@@ -482,7 +513,7 @@ def stabilize_js():
         }
 
         window.__vistest = {
-          freeze, settle, maskBoxes,
+          freeze, settle, ready, maskBoxes,
           dom: (dpr) => domSnapshot(dpr || window.devicePixelRatio || 1),
           version: '0.1.0',
         };

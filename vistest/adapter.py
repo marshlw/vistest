@@ -113,6 +113,19 @@ def pytest_collection_modifyitems(session, config, items) -> None:
     number to compare the snapshot count against.
     """
     _STATE["collected"] = len(items)
+    #  Their contexts are created by their fixtures: count each one's requests
+    #  from its start, so that the readiness wait before our frames
+    #  (capture/ready.py) knows what is still in flight — the same thing the
+    #  library's own plugin does.
+    import sys
+
+    if _STATE["patched"] and "playwright.sync_api" in sys.modules:
+        try:
+            from .capture.inflight import install_hooks
+
+            install_hooks()
+        except Exception as e:  # noqa: BLE001 - never in the way of their run
+            _STATE["errors"].append(f"counting requests failed: {type(e).__name__}: {e}")
 
 
 def pytest_runtest_logreport(report) -> None:
@@ -388,6 +401,7 @@ def _check(owner, name: str, kwargs: dict):
         # Чужой тест остановился ровно на этой странице и ждёт нашего ответа —
         # второй кадр снимается тем же их драйвером и им ничего не стоит.
         recapture=lambda: driver.capture(cfg=cfg.capture).rgb,
+        ready=shot.ready, not_ready=shot.not_ready,
         # `source` — тот же паспорт, что пишет наш раннер. Здесь он особенно
         # важен: чужой тест умеет логиниться, готовить данные и ходить по
         # страницам, а мы про это не знаем ничего и знать не должны. Запомнить,
