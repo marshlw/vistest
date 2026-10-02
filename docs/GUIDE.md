@@ -2185,19 +2185,40 @@ page, step by step:
 All of them must hold at the same moment. Each waits at most
 `capture.ready_timeout_ms` (5 s; `expect_screenshot(..., ready_timeout_ms=)`
 for one check, 0 turns the wait off); a step that gives up is named in the
-reason — `the page was not ready within the limits: 1 request still in flight
-after 5000 ms (https://…/api/poll) — it was photographed as it was` — and the
-picture is taken anyway.
+reason — `the page was not ready within the limits: 1 request (GET /api/poll)
+still in flight after 5000 ms (a request the page never waits for, like a long
+poll, goes into capture.ignore_requests) — it was photographed as it was` —
+and the picture is taken anyway. A request is named by its method and path,
+never by its query string: tokens live there.
 
 **Requests in flight.** From inside a check, a request the page started
 before the check cannot be seen. So the count has to run from the moment the
 browser context is created: the pytest plugin of the library does that for
 every context Playwright creates in the test process
 (`capture.track_requests: true`, the default), and the service does it for
-the contexts it opens. Without the plugin — `expect_screenshot` called from a
-script — the network step is not asked, and a page that loads data with no
-sign of it (no spinner, no skeleton, no `aria-busy`) can be photographed
-early. Mark such loading with `aria-busy="true"` and the wait sees it.
+the contexts it opens. Images, media, fonts and streams are not counted: the
+images step and the quiet window cover what of them is in the picture, and a
+lazy image below the fold would hold the wait for nothing.
+
+A request the page never waits for — a long poll, an analytics beacon — would
+hold every check to its limit. List it in `vistest.yaml`:
+
+```yaml
+capture:
+  ignore_requests: ["*/api/poll*", "https://stats.example/*"]
+```
+
+Glob patterns, matched against the URL without its query string.
+
+**Without the plugin** — `expect_screenshot` called from a plain script, from
+`unittest`, or with Playwright's async API (the plugin's hooks wrap the sync
+API only) — the network step is not asked. Misses stay at zero on this path
+too: the second look masks nothing, so late data is never hidden. But a page
+that loads data with no sign of it (no spinner, no skeleton, no `aria-busy`)
+can be photographed early, and that is a **false failure**. Mark such loading
+with `aria-busy="true"` and the wait sees it. The stand measures this path
+separately and prints its false failures and time; they are not held to the
+plugin path's numbers.
 
 **Loader or decoration.** An endless animation in the area counts as a
 loader when its element (or one of two ancestors) is named like one — class,
@@ -2205,16 +2226,31 @@ id, aria-label or the animation's name containing `spin`, `load`,
 `skeleton`, `shimmer`, `placeholder`, `progress`, `busy`, `pending` — or when
 it turns the element by a quarter turn or more (a spinner) or moves a
 background across it (a shimmer). Pulsing, glowing, floating is decoration
-and is not waited for. Wrong when a decoration turns (a rotating logo — the
-wait runs to its limit and says so) or a loader is neither named nor turning
-(Tailwind's `animate-pulse` skeleton — not seen without the request count).
+and is not waited for. With the requests counted, the exact signal beats this
+guess: when nothing is in flight and the area is quiet, an animation that only
+looks like a loader — a rotating logo — does not hold the picture.
+`aria-busy` and `role="progressbar"`, what the page says itself, always do.
+Wrong without the count: a decoration that turns — the wait runs to its limit
+and says so; a loader that is neither named nor turning (Tailwind's
+`animate-pulse` skeleton) — not seen. Wrong with it: a spinner whose data
+comes over a WebSocket or an EventSource, which are not counted — not waited
+for. Each is a false failure at worst, never a hidden change.
+
+Images in the area are repainted once after they decode (an invisible
+outline, for two animation frames) before the picture: without it Chromium
+sometimes photographed the anti-aliased rounded corners of a freshly decoded
+image differently from one load to the next.
 
 **The second look.** A check that fails gets more frames, until two in a row
 are identical (and at least 300 ms have passed). Then:
 
 - the page changed after it looked ready and held still — the data replaced
   a spinner after all: the **later frame** is compared, and the result says
-  the snapshot was taken before the page was done;
+  the snapshot was taken before the page was done. A later frame can turn a
+  failure into a pass only when the later frames held still (two identical in
+  a row) and nothing in them kept changing; otherwise a later frame that
+  happens to match the baseline is luck, and the check fails, naming what
+  changes;
 - something keeps changing — a counter, an animation that does not stop: it
   is named, **not masked**, and the check fails until it is masked on purpose
   (`mask=["#counter"]`). Masking it quietly made checks pass by luck;
@@ -2228,6 +2264,46 @@ opens, `actual.png`, is the frame the verdict is from.
 
 The cost is one or a few extra frames, and only for what has already failed.
 `capture.retry_on_fail: false` in `vistest.yaml` switches it off.
+
+**What a failure names.** The picture's pixels say what differs; the live
+page can say what it is. When a check fails:
+
+- *the element under the pointer or in focus* — a hover or a focus ring left
+  by the previous step — is named when the failed region is that element,
+  with the option that fixes it: `expect_screenshot(...,
+  reset_hover_focus=True)`, or `capture.reset_hover_focus: true` in
+  `vistest.yaml`, moves the pointer off the page and takes the focus off
+  before the picture. It is off by default: a check that photographs a hover
+  on purpose must keep working;
+- *an element that changes by itself* — a counter, a clock, a canvas a
+  script redraws — is named by a selector of the place that moves (its id,
+  its `data-testid`, otherwise a short path) with one action:
+  `mask=["#counter"]`, or `data-vistest="ignore"` on the element (the library
+  paints it out like a mask, as the service does). For a `<canvas>` the
+  message adds that `animations="disabled"` does not stop it: that freezes CSS
+  animations, and a script draws on a canvas;
+- *the launch* — the passport keeps whether the baseline was taken headless
+  or in a browser with a window, and the width of the scroll bars; when the
+  check runs in a different one, the reason says so in one line.
+
+**Where an element was.** For a Locator, the passport keeps where its element
+was in the window and how far the page was scrolled. Before the picture the
+page is scrolled so that the element is in the same place again, in whole
+pixels — a `position: fixed` background or a sticky header behind the element
+then looks the same. A baseline without that record is photographed as
+before.
+
+**How the baseline was taken.** The passport records the capture's version
+(`capture.version`). A change in how pictures are taken that changes pixels
+of baselines already accepted comes with a new version, and a check against a
+baseline of an older one (or of none: a passport written before the record
+existed) says, when it fails: `the baseline was taken the old way (before the
+readiness wait and the other changes of capture version 2); if that is the
+difference, accept it again: pytest --vistest-update=changed`. The service
+keeps the same number as `capture_version` in a baseline's meta when its own
+capture (the runner, the adapter) took the picture, and says the same on a
+failure against an older one; a picture uploaded from elsewhere is not judged
+by it.
 
 ## 8. Борьба с нестабильностью
 

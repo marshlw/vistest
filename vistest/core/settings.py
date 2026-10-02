@@ -331,6 +331,18 @@ class CaptureConfig:
     # creates in the test process, so that the readiness wait knows what is
     # still in flight. Off: the wait sees only what the page itself shows.
     track_requests: bool = True
+    # Requests the readiness wait does not wait for: glob patterns matched
+    # against the URL without its query string — a long poll, an analytics
+    # beacon, a stream the page never waits for itself. Example:
+    # ["*/api/poll*", "https://www.google-analytics.com/*"].
+    ignore_requests: tuple[str, ...] = ()
+    # Before the picture: move the pointer off the page and take the focus off
+    # whatever has it, so that a hover or a focus ring left by the previous
+    # step is not photographed. Off by default — a check that photographs a
+    # hover on purpose must keep working. `expect_screenshot(...,
+    # reset_hover_focus=True)` for one check. Without it, a failure whose
+    # region is the element under the pointer or in focus says so.
+    reset_hover_focus: bool = False
 
     freeze_css: bool = True
     hide_scrollbars: bool = True

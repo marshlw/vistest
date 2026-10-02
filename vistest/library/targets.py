@@ -137,6 +137,16 @@ class Capture:
     #  What the wait for readiness found (capture/ready.py); None when the
     #  target was a picture or the wait was off.
     ready: Any = None
+    #  What the live page told about the picture (library/page_facts.py):
+    #  what was under the pointer and in focus, the kind of launch, where a
+    #  Locator's element was in the window. Empty for a picture handed in.
+    facts: dict = field(default_factory=dict, compare=False)
+    #  The elements that were moving when the frames never held still.
+    moving: tuple = ()
+    #  Names the elements at points of the picture, on the live page.
+    namer: Callable[[list], list] | None = field(default=None, compare=False, repr=False)
+    #  The element was put back where its baseline had it.
+    placed: bool = False
 
     def was_ready(self) -> bool | None:
         """Ready and held still: True; not ready or never still: False; unknown: None."""
@@ -348,12 +358,19 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             scale: str = DEFAULT_SCALE,
             stable_timeout_ms: int = 5000,
             ready_timeout_ms: int = 0,
-            quiet_ms: int | None = None) -> Capture:
+            quiet_ms: int | None = None,
+            ignore_requests: Sequence[str] = (),
+            reset_hover_focus: bool = False,
+            place: dict | None = None) -> Capture:
     """Take the picture. Everything that can be wrong here is said out loud.
 
     `ready_timeout_ms` — each step of the wait for readiness at most this
     long (capture/ready.py); 0, the default here, does not wait: the caller
     that wants it — `expect_screenshot` — passes the config's value.
+    `reset_hover_focus` — the pointer off the page and the focus off whatever
+    has it, before anything else. `place` — where a Locator's element was in
+    the window when its baseline was taken (`{"x", "y"}`, the passport's): the
+    page is scrolled to put it there again.
     """
     painted, boxes = split_masks(mask)
     check_scale(scale)
@@ -401,6 +418,21 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             "a numpy array or a path to a PNG.")
 
     page = _page_of(target)
+    from . import page_facts as _facts
+
+    element = not _is_page(target)
+    owner = target if element else page
+    notes: list[str] = []
+    if page is not None:
+        _wait_for_fonts(page, notes)
+    if reset_hover_focus and page is not None:
+        _pointer_away(page)
+    prepared = _facts.prepare(owner, element, place=place if element else None,
+                              blur=reset_hover_focus) if page is not None else {}
+    if prepared.get("ignored"):
+        #  `data-vistest="ignore"` — the page's own way to say «not this»,
+        #  the same mark the service honours: painted, like a selector mask.
+        painted = [*painted, '[data-vistest="ignore"]']
     #  What `toHaveScreenshot()` passes, where it concerns the picture.
     options: dict = {"type": "png", "animations": "disabled", "caret": "hide",
                      "scale": scale}
@@ -417,20 +449,38 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             "expect_screenshot: full_page has no meaning for a Locator — "
             "it already captures exactly that element. Pass the Page instead.")
 
-    notes: list[str] = []
-    if page is not None:
-        _wait_for_fonts(page, notes)
     readiness = None
     if page is not None and ready_timeout_ms > 0:
         readiness = _wait_ready(target, page, painted, boxes,
                                 bool(options.get("full_page")), ready_timeout_ms,
-                                quiet_ms)
+                                quiet_ms, tuple(ignore_requests))
+
+    last_two: list[bytes] = []
 
     def shoot() -> bytes:
-        return bytes(target.screenshot(**options))
+        got = bytes(target.screenshot(**options))
+        last_two[:] = [*last_two[-1:], got]
+        return got
 
     png, stability = settle_frames(shoot, timeout_ms=stable_timeout_ms)
     pngio.dimensions(png, source=f"the screenshot of {_describe(target)}")
+    full = bool(options.get("full_page"))
+    seen = _facts.facts(owner, element, full) if page is not None else {}
+
+    def namer(points):
+        return _facts.name_points(owner, element, full, points)
+
+    moving: list = []
+    if stability.stable is False and len(last_two) == 2:
+        #  Frames that never held still: which elements were moving?
+        from ..core import noise as _noise
+
+        try:
+            a, b = (pngio.decode(x, source="a frame") for x in last_two)
+            if a.shape == b.shape:
+                moving = _named(namer, _noise.stability_mask([a, b], dilate_px=1))
+        except Exception:  # noqa: BLE001 - naming is help, not the verdict
+            moving = []
     return Capture(
         png=png,
         browser=_browser_of(page) if page is not None else "",
@@ -443,11 +493,66 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         notes=tuple(notes),
         retake=shoot,
         ready=readiness,
+        facts=seen,
+        moving=tuple(moving),
+        namer=namer if page is not None else None,
+        placed=bool(prepared.get("placed")),
     )
 
 
+def is_page_like(target: Any) -> bool:
+    return _is_page(target)
+
+
+def is_live(target: Any) -> bool:
+    """Something that photographs itself — a page, a locator — not a picture."""
+    if isinstance(target, (bytes, bytearray, memoryview, str, os.PathLike)):
+        return False
+    if hasattr(target, "shape") and hasattr(target, "dtype"):
+        return False
+    return callable(getattr(target, "screenshot", None))
+
+
+def describe(target: Any, scale: str = DEFAULT_SCALE) -> Capture:
+    """What `capture` would say about the target's platform, without a picture."""
+    page = _page_of(target)
+    return Capture(png=b"", browser=_browser_of(page) if page is not None else "",
+                   viewport=_viewport_of(page) if page is not None else "",
+                   source=_describe(target),
+                   scale=1.0 if scale == "css" else _device_ratio(page), scale_mode=scale)
+
+
+def name_parts(namer, mask) -> list[dict]:
+    """The elements under the largest parts of a mask, named on the live page."""
+    return _named(namer, mask)
+
+
+def _pointer_away(page: Any) -> None:
+    """The pointer off the page: at (-1, -1) nothing is under it, nothing hovered."""
+    mouse = getattr(page, "mouse", None)
+    move = getattr(mouse, "move", None)
+    if callable(move):
+        try:
+            move(-1, -1)
+        except Exception:  # noqa: BLE001 - a page that has no pointer to move
+            pass
+
+
+def _named(namer, mask) -> list[dict]:
+    """The elements under the largest parts of a mask: [{sel, tag, box}]."""
+    from .page_facts import regions_of
+
+    parts = regions_of(mask)
+    names = namer([(x + w // 2, y + h // 2) for x, y, w, h in parts])
+    out = []
+    for (x, y, w, h), got in zip(parts, names, strict=False):
+        if isinstance(got, dict) and got.get("sel"):
+            out.append({"sel": got["sel"], "tag": got.get("tag", ""), "box": [x, y, w, h]})
+    return out
+
+
 def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: bool,
-                limit_ms: int, quiet_ms: int | None):
+                limit_ms: int, quiet_ms: int | None, ignore: tuple[str, ...] = ()):
     """capture/ready.py on this target: the page, or a locator's element."""
     from ..capture import inflight as _inflight
     from ..capture import ready as _ready
@@ -479,7 +584,8 @@ def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: b
     pause = getattr(page, "wait_for_timeout", None)
     sleep = (lambda s: pause(s * 1000)) if callable(pause) else time.sleep
     count = _inflight.for_page(page)
-    return _ready.wait(probe, inflight=(lambda: count.inflight(page)) if count else None,
+    held = (lambda: count.inflight(page, ignore)) if count else None
+    return _ready.wait(probe, inflight=held,
                        quiet_ms=_ready.DEFAULT_QUIET_MS if quiet_ms is None else quiet_ms,
                        limit_ms=limit_ms, sleep=sleep)
 

@@ -119,8 +119,8 @@ def test_the_loader_rule_is_written_down_with_where_it_errs():
 #  Counting requests
 # --------------------------------------------------------------------------- #
 class FakeRequest:
-    def __init__(self, url, kind="fetch", page=None):
-        self.url, self.resource_type = url, kind
+    def __init__(self, url, kind="fetch", page=None, method="GET"):
+        self.url, self.resource_type, self.method = url, kind, method
         self.frame = type("F", (), {"page": page})()
 
 
@@ -147,8 +147,8 @@ def test_requests_are_counted_per_page_and_streams_and_images_are_not():
     picture = FakeRequest("http://x/below-the-fold.png", "image", page)
     for r in (api, sse, theirs, picture):
         context.emit("request", r)
-    assert count.inflight(page) == (1, ["http://x/api"])
-    assert count.inflight() == (2, ["http://x/api", "http://x/other"])
+    assert count.inflight(page) == (1, ["GET x/api"])
+    assert count.inflight() == (2, ["GET x/api", "GET x/other"])
     context.emit("requestfinished", api)
     context.emit("requestfailed", theirs)
     assert count.inflight() == (0, [])
@@ -270,3 +270,171 @@ def test_the_second_look_does_not_confirm_within_one_tick(pauses_ms):
                                    sleep=clock.sleep)
     assert not settled
     assert frames[0] == b"1" and len(frames) >= 3
+
+
+# --------------------------------------------------------------------------- #
+#  S2b
+# --------------------------------------------------------------------------- #
+def test_a_page_that_switches_between_two_states_does_not_pass_by_luck():
+    """Frames A, B, A, B after the failure, A the baseline: a fail, and named.
+
+    A carousel, a blinking banner, a flickering break: the last frame being the
+    right one is luck, and the page did not hold still after it.
+    """
+    baseline = frame(data=90)
+    cmp = comparer(baseline)
+    a, b = frame(data=90), frame(data=160)
+    look = second_look(cmp(b), b, lambda: Later([a, b, a], settled=False),
+                       lambda f, m: cmp(f, m))
+    assert look.result.failed
+    assert look.live is not None and look.live[25, 40]
+    assert any("luck, not a pass" in n for n in look.result.notes)
+
+
+def test_a_later_frame_that_never_settled_does_not_pass_either():
+    baseline = frame(data=90)
+    cmp = comparer(baseline)
+    first = frame(spinner=True)
+    look = second_look(cmp(first), first,
+                       lambda: Later([frame(data=90)], settled=False),
+                       lambda f, m: cmp(f, m))
+    assert look.result.failed
+    assert any("did not hold still" in n for n in look.result.notes)
+
+
+def test_a_request_is_named_by_method_and_path_never_by_its_query():
+    context = FakeContext()
+    count = inflight.track(context)
+    page = type("P", (), {"url": "https://shop.example/cart"})()
+    poll = FakeRequest("https://shop.example/api/poll?token=SECRET&x=1", page=page)
+    poll.method = "GET"
+    beacon = FakeRequest("https://stats.example/collect?id=7", page=page)
+    beacon.method = "POST"
+    for r in (poll, beacon):
+        context.emit("request", r)
+    n, held = count.inflight(page)
+    assert n == 2
+    assert held == ["GET /api/poll", "POST stats.example/collect"]
+    assert not any("SECRET" in h or "?" in h for h in held)
+
+
+def test_ignore_requests_takes_a_long_poll_out_of_the_wait():
+    context = FakeContext()
+    count = inflight.track(context)
+    page = type("P", (), {"url": "https://shop.example/"})()
+    poll = FakeRequest("https://shop.example/api/poll?since=1", page=page)
+    poll.method = "GET"
+    context.emit("request", poll)
+    assert count.inflight(page, ("*/api/poll*",)) == (0, [])
+    assert count.inflight(page, ("*/other/*",))[0] == 1
+
+
+def test_with_requests_counted_a_rotating_decoration_does_not_hold_the_picture():
+    """The exact signal beats the guess: nothing in flight, the area quiet."""
+    clock = Clock()
+    logo = _page(loaders=["div.mark (turning)"], said=0)
+    got = ready.wait(lambda: logo, inflight=lambda: (0, []), quiet_ms=40, limit_ms=5000,
+                     sleep=clock.sleep, clock=clock)
+    assert got.ok is True and got.ms == 0
+    assert got.guessed == "div.mark (turning)"
+
+
+def test_without_the_count_the_guess_still_holds_the_picture():
+    clock = Clock()
+    logo = _page(loaders=["div.mark (turning)"], said=0)
+    got = ready.wait(lambda: logo, quiet_ms=40, limit_ms=1000, sleep=clock.sleep,
+                     clock=clock)
+    assert got.ok is False and "still showing a loader" in got.text()
+
+
+def test_what_the_page_says_itself_is_never_overridden():
+    clock = Clock()
+    busy = _page(loaders=["section#list (busy)"], said=1)
+    got = ready.wait(lambda: busy, inflight=lambda: (0, []), quiet_ms=40, limit_ms=1000,
+                     sleep=clock.sleep, clock=clock)
+    assert got.ok is False and "section#list (busy)" in got.text()
+
+
+def test_a_request_in_flight_keeps_the_guess_standing():
+    clock = Clock()
+    spinner = _page(loaders=["div.spinner (named)"], said=0)
+    counts = iter([(1, ["GET /api/data"])] * 3 + [(0, [])] * 50)
+    got = ready.wait(lambda: spinner, inflight=lambda: next(counts), quiet_ms=40,
+                     limit_ms=5000, sleep=clock.sleep, clock=clock)
+    loaders = next(s for s in got.steps if s.name == "loaders")
+    assert got.ok is True and loaders.ms > 0, "waited while the data was in flight"
+
+
+def test_the_service_driver_passes_ignore_requests_and_resets_when_asked():
+    """`capture.ignore_requests` and `capture.reset_hover_focus` reach the service path too."""
+    from vistest.config import CaptureConfig
+    from vistest.integrations.driver import Driver
+
+    seen: dict = {}
+
+    class Fake(Driver):
+        def inflight(self, ignore=()):
+            seen["ignore"] = ignore
+            return lambda: (0, [])
+
+        def reset_hover_focus(self):
+            seen["reset"] = True
+
+        def evaluate(self, expression, arg=None, *, timeout_ms=None):
+            if isinstance(arg, dict) and "selector" in arg:
+                return _page()
+            return True
+
+        def wait_ready(self, timeout_ms):
+            return None
+
+        def sleep_ms(self, ms):
+            return None
+
+    cfg = CaptureConfig(ignore_requests=("*/api/poll*",), reset_hover_focus=True,
+                        full_page=False, freeze_css=False, determinism=False)
+    Fake().settle(cfg)
+    assert seen == {"ignore": ("*/api/poll*",), "reset": True}
+    seen.clear()
+    Fake().settle(CaptureConfig(full_page=False, freeze_css=False, determinism=False))
+    assert seen == {"ignore": ()}
+
+
+def test_a_network_step_at_its_limit_names_the_request_and_the_way_out():
+    clock = Clock()
+    got = ready.wait(lambda: _page(), inflight=lambda: (1, ["GET /api/poll"]), quiet_ms=40,
+                     limit_ms=1000, sleep=clock.sleep, clock=clock)
+    text = got.text()
+    assert "1 request (GET /api/poll) still in flight after 1000 ms" in text
+    assert "capture.ignore_requests" in text
+
+
+def test_the_service_says_when_a_baseline_was_taken_an_older_way(tmp_path):
+    from vistest.config import VisTestConfig
+    from vistest.models import Verdict
+    from vistest.service import CheckService
+
+    from . import synthetic as syn
+
+    cfg = VisTestConfig.preset_of("balanced")
+    cfg.paths.root = str(tmp_path / ".vistest")
+    cfg.ai.attribution_enabled = False
+    svc = CheckService(cfg, platform="test-chromium-1x", run_dir=tmp_path / "run")
+    ours = {"capture_version": ready.CAPTURE_VERSION}
+    base = syn.page()
+    changed = syn.regress_button_removed(base)
+
+    svc.check("old.png", base, render=False)                    # no record: version 1
+    res = svc.check("old.png", changed, render=False, meta=ours)
+    assert res.verdict is Verdict.FAIL
+    assert any("taken the old way" in n for n in res.notes)
+    assert not any("taken the old way" in n
+                   for n in svc.check("old.png", changed, render=False).notes), \
+        "a picture from elsewhere is not compared by how it was taken"
+
+    svc.check("new.png", base, render=False, meta=ours)
+    res = svc.check("new.png", changed, render=False, meta=ours)
+    assert res.verdict is Verdict.FAIL
+    assert not any("taken the old way" in n for n in res.notes)
+    assert not any("taken the old way" in n
+                   for n in svc.check("old.png", base, render=False, meta=ours).notes)

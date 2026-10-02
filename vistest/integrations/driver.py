@@ -111,8 +111,21 @@ class Driver:
     def install_init_scripts(self, cfg: CaptureConfig) -> None:
         """Подмена Math.random / Date до первого рендера. Наследники переопределяют."""
 
-    def inflight(self):
-        """(count, URLs) of the page's requests in flight, or None when nobody counts."""
+    def reset_hover_focus(self) -> None:
+        """The focus off whatever has it (`capture.reset_hover_focus`).
+
+        The pointer is moved away by drivers that have one to move.
+        """
+        try:
+            self.evaluate(_BLUR_JS, timeout_ms=2000)
+        except Exception:  # noqa: BLE001 - a page that will not blur is photographed as is
+            pass
+
+    def inflight(self, ignore: tuple[str, ...] = ()):
+        """(count, labels) of the page's requests in flight, or None when nobody counts.
+
+        ignore — URL patterns (`capture.ignore_requests`) left out of the count.
+        """
         return None
 
     def wait_until_ready(self, cfg: CaptureConfig,
@@ -129,7 +142,8 @@ class Driver:
             finally:
                 arg["reset"] = False
 
-        return _ready.wait(probe, inflight=self.inflight(), quiet_ms=cfg.quiet_ms,
+        held = self.inflight(tuple(getattr(cfg, "ignore_requests", ()) or ()))
+        return _ready.wait(probe, inflight=held, quiet_ms=cfg.quiet_ms,
                            limit_ms=cfg.ready_timeout_ms,
                            sleep=lambda s: self.sleep_ms(int(s * 1000)))
 
@@ -167,6 +181,10 @@ class Driver:
             self._try(lambda: self.evaluate(_SCROLL_SYNC_JS, cfg.scroll_step_ratio,
                                             timeout_ms=step),
                       notes, "lazy-load warm-up")
+
+        if getattr(cfg, "reset_hover_focus", False):
+            progress("moving the pointer away and taking the focus off")
+            self.reset_hover_focus()
 
         self.readiness = None
         if cfg.ready_timeout_ms > 0:
@@ -344,11 +362,20 @@ class PlaywrightDriver(Driver):
         except Exception:
             pass
 
-    def inflight(self):
+    def reset_hover_focus(self) -> None:
+        try:
+            self.page.mouse.move(-1, -1)
+        except Exception:  # noqa: BLE001 - no pointer to move
+            pass
+        super().reset_hover_focus()
+
+    def inflight(self, ignore: tuple[str, ...] = ()):
         from ..capture import inflight as _inflight
 
         count = _inflight.for_page(self.page)
-        return (lambda: count.inflight(self.page)) if count is not None else None
+        if count is None:
+            return None
+        return lambda: count.inflight(self.page, ignore)
 
     def evaluate(self, expression: str, arg=None, *, timeout_ms: int | None = None):
         # Playwright не даёт таймаут на evaluate: если JS страницы ушёл в
@@ -576,6 +603,15 @@ _SCROLL_SYNC_JS = """
   for (let y = 0; y < H; y += step) window.scrollTo(0, y);
   window.scrollTo(0, 0);
   return H;
+}
+"""
+
+# The focus off whatever has it, before the picture (`capture.reset_hover_focus`).
+_BLUR_JS = """
+() => {
+  const n = document.activeElement;
+  if (n && n !== document.body && n !== document.documentElement && n.blur) n.blur();
+  return true;
 }
 """
 

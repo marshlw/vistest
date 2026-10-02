@@ -490,7 +490,21 @@ def late(data: str, delay_ms: int) -> str:
     return LATE_PAGE.replace("DATA", data).replace("DELAY", str(delay_ms))
 
 
-def test_a_spinner_is_waited_for_and_the_data_photographed(ctx, page):
+@pytest.fixture
+def page_only(page, monkeypatch):
+    """The page with its requests not counted: the way a script, `unittest` or
+    the async API sees it (path 2). Whether the pytest plugin counted this
+    context depends on what else the run collected, and since S2b the count
+    changes what a spinner over no request means — so the tests of the guess
+    say which way they look."""
+    from vistest.capture import inflight
+
+    monkeypatch.setattr(inflight, "for_page", lambda _page: None)
+    return page
+
+
+def test_a_spinner_is_waited_for_and_the_data_photographed(ctx, page_only):
+    page = page_only
     page.set_content(late("120", 0))
     page.wait_for_timeout(100)
     accept(ctx, page, "late.png")
@@ -519,13 +533,26 @@ def test_a_decoration_is_not_waited_for(ctx, page):
     assert ready["ok"] is True and ready["ms"] < 1000, ready
 
 
-def test_a_loader_that_never_goes_away_is_given_up_and_said(ctx, page):
+def test_a_loader_that_never_goes_away_is_given_up_and_said(ctx, page_only):
+    page = page_only
     page.set_content(ANIMATED_PAGE)
     accept(ctx, page, "forever.png", ready_timeout_ms=300)
     row = rows(ctx)[-1]
     assert row["capture"]["ready"]["ok"] is False
     assert "still showing a loader after 300 ms" in row["reason"]
     assert "div.spinner" in row["reason"]
+
+
+def test_with_requests_counted_a_spinner_over_no_request_does_not_hold_it(ctx, page):
+    """S2b: the exact signal beats the guess — nothing in flight, the area quiet."""
+    from vistest.capture import inflight
+
+    inflight.track(page.context)
+    page.set_content(ANIMATED_PAGE)
+    accept(ctx, page, "forever.png", ready_timeout_ms=300)
+    ready = rows(ctx)[-1]["capture"]["ready"]
+    assert ready["ok"] is True and ready["path"] == "requests", ready
+    assert "div.spinner" in ready["guessed"]
 
 
 # --------------------------------------------------------------------------- #

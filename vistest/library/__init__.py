@@ -34,6 +34,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+#  CAPTURE_VERSION — the way pictures of a live page are taken, as the
+#  passport records it (`capture/ready.py` says what each number means).
+from ..capture.ready import CAPTURE_VERSION, old_way
 from ..core import pngio
 from ..core.thresholds import ThresholdError, clean, patch_for
 from ..models import CompareResult, Verdict
@@ -125,6 +128,7 @@ def expect_screenshot(
     stable_timeout_ms: int | None = None,
     engine: str | None = None,
     ready_timeout_ms: int | None = None,
+    reset_hover_focus: bool | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -178,6 +182,13 @@ def expect_screenshot(
     live; what changed once — data that arrived late — is not, and the verdict
     is from the last frame. On a page that was not ready nothing is masked.
 
+    `reset_hover_focus=True` (default `capture.reset_hover_focus`, off) moves
+    the pointer off the page and takes the focus off whatever has it before
+    the picture. Off, a failure whose region is the element under the pointer
+    or in focus names it and says how to turn this on. A Locator's element is
+    put back where it was in the window when its baseline was taken, when the
+    baseline's passport records that place.
+
     `scale` is `"css"` (the default: one picture pixel
     per CSS pixel on any screen) or `"device"` (the screen's own pixels); the
     platform directory carries the scale of the picture, so the two never
@@ -196,10 +207,19 @@ def expect_screenshot(
     ready_wait = (ctx.config.capture.ready_timeout_ms if ready_timeout_ms is None
                   else _targets.check_timeout(ready_timeout_ms, "ready_timeout_ms"))
 
+    scale = _targets.check_scale(scale)
+    reset = (ctx.config.capture.reset_hover_focus if reset_hover_focus is None
+             else bool(reset_hover_focus))
+    store = store or ctx.store
+    #  A Locator goes back where its baseline had it: the passport is read
+    #  before the picture, under the key the picture will have.
+    place = _place_from_passport(ctx, store, target, name, platform, scale)
     shot = _targets.capture(target, mask=mask, full_page=full_page,
-                            scale=_targets.check_scale(scale),
+                            scale=scale,
                             stable_timeout_ms=wait, ready_timeout_ms=ready_wait,
-                            quiet_ms=ctx.config.capture.quiet_ms)
+                            quiet_ms=ctx.config.capture.quiet_ms,
+                            ignore_requests=ctx.config.capture.ignore_requests,
+                            reset_hover_focus=reset, place=place)
     platform = platform if platform is not None else ctx.platform_for(shot)
     key = ctx.key(name, platform)
     #  From here on the check has a name, and it must leave a row in the
@@ -217,7 +237,6 @@ def expect_screenshot(
         written.append(fields["verdict"])
 
     try:
-        store = store or ctx.store
         #  What the capture has to say for itself: a page that would not hold
         #  still, a font wait that failed. It goes into every reason below, so
         #  the report and the CI log carry it whatever the verdict.
@@ -248,7 +267,7 @@ def expect_screenshot(
             run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
             _canary_row(captured, run_canary)
             meta = store.put(key, shot.png,
-                             meta=_passport_with_renderer(store, key, run_canary))
+                             meta=_passport_for(store, key, run_canary, shot))
             record(verdict="new_baseline", action="created",
                    reason=_with(said, f"baseline created by --vistest-update={mode}"),
                    images={"actual": str(actual_path),
@@ -261,6 +280,9 @@ def expect_screenshot(
         actual_rgb = pngio.decode(shot.png, source=f"the screenshot of {key.name}")
 
         passport = store.meta(key)
+        launch_line = _launch_line(passport, shot)
+        if launch_line:
+            said.append(launch_line)
         cfg = ctx.config.diff.merged(
             engine=engine,
             **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
@@ -305,10 +327,11 @@ def expect_screenshot(
         #  that was not ready. The same function the server uses — see
         #  core/retry.py for why late data cannot be hidden this way.
         final_png = shot.png
+        live = None
         if result.failed and shot.retake is not None \
                 and ctx.config.capture.retry_on_fail:
-            result, frame = _second_look(shot, key, result, expected_rgb, actual_rgb,
-                                         cfg, ignore, hooks, renderer, wait)
+            result, frame, live = _second_look(shot, key, result, expected_rgb, actual_rgb,
+                                               cfg, ignore, hooks, renderer, wait)
             if frame is not None and frame is not actual_rgb:
                 #  The verdict is from a later frame: that is the picture a
                 #  person opens, the one the diff is drawn on, and the one an
@@ -338,7 +361,9 @@ def expect_screenshot(
         #  was not ready and got no masking, a later frame that was judged,
         #  something that keeps changing: the person reading the failure needs
         #  it more than the report does. It is already among the notes.
-        reason = _with([*said, *_look_notes(result)], describe(result))
+        hints = _failure_hints(shot, result, live, passport, reset) \
+            if result.verdict is Verdict.FAIL else []
+        reason = _with([*said, *_look_notes(result), *hints], describe(result))
         limits = _limits(cfg)
         images = {"baseline": str(baseline_path), "actual": str(actual_path)}
 
@@ -364,7 +389,7 @@ def expect_screenshot(
                 _canary_row(captured, run_canary)
                 run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
             meta = store.put(key, final_png,
-                             meta=_passport_with_renderer(store, key, run_canary))
+                             meta=_passport_for(store, key, run_canary, shot))
             record(verdict="new_baseline",
                    action="unchanged" if meta.sha256 == _sha_of(baseline)
                    else "updated",
@@ -438,7 +463,8 @@ def _fresh_result(key: SnapshotKey, meta: SnapshotMeta,
 
 def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
                  cfg, ignore, hooks, renderer=None, wait: int = 5000):
-    """core/retry.second_look for a live target: (the result, the verdict frame)."""
+    """core/retry.second_look for a live target: (the result, the verdict frame,
+    the pixels that kept changing or None)."""
     from ..core import noise
     from ..core.comparator import compare
     from ..core.retry import Later, second_look
@@ -458,9 +484,11 @@ def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
         return compare(expected_rgb, frame, cfg=cfg, name=key.name,
                        ignore_mask=wider, ai_hooks=hooks, renderer=renderer)
 
+    #  Why the page was not ready is in the reason already (the capture's own
+    #  words); the second look only says what it did about it.
     look = second_look(first, actual_rgb, recapture, recompare,
-                       ready=shot.was_ready(), not_ready=shot.not_ready_text())
-    return look.result, look.frame
+                       ready=shot.was_ready())
+    return look.result, look.frame, look.live
 
 
 #: The heads of the notes `core/retry.second_look` leaves.
@@ -479,20 +507,136 @@ def _canary_row(captured: dict | None, run) -> None:
         captured["canary_ms"] = run.drawn_ms
 
 
-def _passport_with_renderer(store, key: SnapshotKey, run) -> SnapshotMeta | None:
-    """The passport to write with a new picture: the canary of its renderer.
+def _passport_for(store, key: SnapshotKey, run, shot) -> SnapshotMeta | None:
+    """The passport to write with a new picture: its renderer's canary, how it was taken.
 
     `None` — the store writes the passport as it always did — when there is
-    no canary to keep, or the passport already names this one: an accept
-    that changes nothing must not touch the file.
+    nothing to add, or the passport already says all of it: an accept that
+    changes nothing must not touch the file.
     """
     rec = _fingerprint.keep(store, run)
-    if rec is None:
-        return None
+    taken = _capture_record(shot)
     current = store.meta(key)
-    if current is not None and current.renderer == rec:
+    base = current or SnapshotMeta()
+    new = base
+    if rec is not None and base.renderer != rec:
+        new = new.with_(renderer=rec)
+    if taken and base.capture != taken:
+        new = new.with_(capture=taken)
+    return None if new == base else new
+
+
+def _capture_record(shot) -> dict:
+    """How a live page's picture was taken, for its passport: {} for a picture."""
+    if shot.retake is None:
+        return {}
+    out: dict = {"version": CAPTURE_VERSION}
+    launch = (shot.facts or {}).get("launch")
+    if isinstance(launch, dict):
+        out["launch"] = {"headless": launch.get("headless"),
+                         "scrollbar_px": int(launch.get("scrollbar_px") or 0)}
+    place = (shot.facts or {}).get("place")
+    if isinstance(place, dict):
+        out["place"] = {k: int(place[k]) for k in ("x", "y", "scroll_x", "scroll_y")
+                        if k in place}
+    return out
+
+
+def _place_from_passport(ctx, store, target, name: str, platform, scale: str):
+    """Where a Locator's element was in the window when its baseline was taken."""
+    if _targets.is_page_like(target) or not _targets.is_live(target):
         return None
-    return (current or SnapshotMeta()).with_(renderer=rec)
+    try:
+        stub = _targets.describe(target, scale)
+        key = ctx.key(name, platform if platform is not None else ctx.platform_for(stub))
+        passport = store.meta(key)
+    except Exception:  # noqa: BLE001 - no place is the old behaviour, not an error
+        return None
+    if passport is None or not passport.capture:
+        return None
+    from .page_facts import place
+
+    return place(passport.capture.get("place"))
+
+
+def _launch_line(passport, shot) -> str:
+    """One line when the baseline and this check were taken in different launches."""
+    if passport is None or not passport.capture or not shot.facts:
+        return ""
+    then = passport.capture.get("launch")
+    now = shot.facts.get("launch")
+    if not isinstance(then, dict) or not isinstance(now, dict):
+        return ""
+    if then.get("headless") == now.get("headless") and \
+            int(then.get("scrollbar_px") or 0) == int(now.get("scrollbar_px") or 0):
+        return ""
+    from .page_facts import LAUNCH_HEADS
+
+    def said(x):
+        bar = int(x.get("scrollbar_px") or 0)
+        return (f"{LAUNCH_HEADS.get(x.get('headless'), LAUNCH_HEADS[None])}, "
+                + (f"{bar} px scroll bars" if bar else "no scroll bars"))
+
+    return (f"the baseline was taken in a browser {said(then)}, this check in one "
+            f"{said(now)}: take both the same way")
+
+
+#: How far around the element under the pointer or in focus a failing region
+#: still counts as its own: a hover's tooltip, a focus ring, an underline.
+NEAR_PX = 16
+
+
+def _failure_hints(shot, result, live, passport, reset: bool) -> list[str]:
+    """What the page can tell about a failure: the element to blame, what to do."""
+    out: list[str] = []
+    facts = shot.facts or {}
+    regions = list(result.regions)
+    if not reset:
+        for what, words in (("hover", "is under the pointer — the previous step left it "
+                                      "there"),
+                            ("focus", "has the focus")):
+            item = facts.get(what)
+            if not isinstance(item, dict) or not item.get("sel"):
+                continue
+            x, y, w, h = item.get("box") or (0, 0, 0, 0)
+            near = (x - NEAR_PX, y - NEAR_PX, w + 2 * NEAR_PX, h + 2 * NEAR_PX)
+            if any(_overlaps(near, (r.x, r.y, r.w, r.h)) for r in regions):
+                out.append(f"the failing region is at {item['sel']}, which {words}: pass "
+                           "reset_hover_focus=True to expect_screenshot (or set "
+                           "capture.reset_hover_focus: true in vistest.yaml) to move the "
+                           "pointer away and take the focus off before the picture")
+    named = list(shot.moving)
+    if live is not None and shot.namer is not None:
+        from .targets import name_parts
+
+        named += name_parts(shot.namer, live)
+    seen = set()
+    for item in named:
+        sel = item.get("sel")
+        if not sel or sel in seen:
+            continue
+        seen.add(sel)
+        if item.get("tag") == "canvas":
+            out.append(f"{sel} is a canvas a script redraws on every frame — "
+                       'animations="disabled" stops CSS animations, not this: if it is '
+                       f'meant to move, mask it: expect_screenshot(..., mask=["{sel}"])')
+        else:
+            out.append(f"{sel} changes by itself: if it is meant to, mask it — "
+                       f'expect_screenshot(..., mask=["{sel}"]) — or mark it '
+                       'data-vistest="ignore"')
+        if len(seen) >= 2:
+            break
+    if shot.retake is not None and (passport is None or not passport.capture
+                                    or int(passport.capture.get("version", 1))
+                                    < CAPTURE_VERSION):
+        out.append(old_way("pytest --vistest-update=changed"))
+    return out
+
+
+def _overlaps(a, b) -> bool:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
 
 def _with(said: list[str], reason: str) -> str:

@@ -49,6 +49,7 @@ OVER = {
     "pulse": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
     "silent": "document.querySelectorAll('#data tbody tr').length === 6",
     "click": "document.querySelectorAll('#report tbody tr').length === 6",
+    "logo": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
 }
 
 #: The requests the server holds, per page: the hazard cannot be over sooner.

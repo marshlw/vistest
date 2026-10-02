@@ -158,8 +158,13 @@ class SnapshotKey:
 #  hand there.
 _META_KEYS = (
     "version", "width", "height", "sha256", "updated_at", "tool_version",
-    "thresholds", "ignore_boxes", "renderer",
+    "thresholds", "ignore_boxes", "renderer", "capture",
 )
+
+#: What `capture` in a passport may say, and of what type each part is.
+_CAPTURE_KEYS = {"version": int, "launch": dict, "place": dict}
+_LAUNCH_KEYS = {"headless": (bool, type(None)), "scrollbar_px": int}
+_PLACE_KEYS = ("x", "y", "scroll_x", "scroll_y")
 
 
 @dataclass(frozen=True)
@@ -191,6 +196,12 @@ class SnapshotMeta:
     #  baseline from before the canary, or one not taken from a page. Written
     #  only when set, so a passport without it reads as it always did.
     renderer: dict = field(default_factory=dict)
+    #  How the picture of a live page was taken (library: CAPTURE_VERSION):
+    #  {"version": 2, "launch": {"headless": true, "scrollbar_px": 0},
+    #  "place": {"x", "y", "scroll_x", "scroll_y"}} — the last one for a
+    #  Locator: where its element was in the window, so that a check can put
+    #  it back there. Written only when set.
+    capture: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -203,6 +214,7 @@ class SnapshotMeta:
             "thresholds": dict(self.thresholds),
             "ignore_boxes": [dict(b) for b in self.ignore_boxes],
             **({"renderer": dict(self.renderer)} if self.renderer else {}),
+            **({"capture": _copy(self.capture)} if self.capture else {}),
         }
 
     def to_json(self) -> str:
@@ -281,6 +293,9 @@ class SnapshotMeta:
                 f"{where}renderer must be {{\"sha256\": <64 hex digits>, "
                 f"\"canary_version\": <a whole number>}}, got {renderer!r}")
 
+        capture = raw.get("capture")
+        capture = _check_capture({} if capture is None else capture, where)
+
         return cls(
             version=int(number("version", int) or 1),
             width=int(number("width", int)),
@@ -291,6 +306,7 @@ class SnapshotMeta:
             thresholds=thresholds,
             ignore_boxes=tuple(dict(b) for b in boxes),
             renderer=dict(renderer),
+            capture=capture,
         )
 
     @classmethod
@@ -367,3 +383,47 @@ class SnapshotStore(Protocol):
     def path_of(self, key: SnapshotKey) -> Path | None:
         """Where this baseline lives, for a message a human will read."""
         ...
+
+
+def _copy(capture: dict) -> dict:
+    return {k: (dict(v) if isinstance(v, dict) else v) for k, v in capture.items()}
+
+
+def _check_capture(raw, where: str) -> dict:
+    """`capture` of a passport, checked part by part; {} when absent."""
+    def bad(what: str) -> ConfigError:
+        return ConfigError(f"{where}capture{what}")
+
+    if not isinstance(raw, dict):
+        raise bad(f" must be an object, got {type(raw).__name__}")
+    unknown = sorted(set(raw) - set(_CAPTURE_KEYS))
+    if unknown:
+        raise bad(f": unknown {', '.join(repr(k) for k in unknown)}. "
+                  f"Known: {', '.join(_CAPTURE_KEYS)}.")
+    out: dict = {}
+    for key, kind in _CAPTURE_KEYS.items():
+        if key not in raw:
+            continue
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, kind):
+            noun = "a whole number" if kind is int else "an object"
+            raise bad(f".{key}: {value!r} is not {noun}")
+        out[key] = value
+    if "version" in out and out["version"] < 1:
+        raise bad(f".version: {out['version']!r} is below 1")
+    launch = out.get("launch")
+    if launch is not None:
+        for key, kind in _LAUNCH_KEYS.items():
+            value = launch.get(key)
+            if key in launch and (not isinstance(value, kind)
+                                  or (kind is int and isinstance(value, bool))):
+                raise bad(f".launch.{key}: {value!r} is not of the right kind")
+        out["launch"] = {k: launch[k] for k in _LAUNCH_KEYS if k in launch}
+    place = out.get("place")
+    if place is not None:
+        for key in _PLACE_KEYS:
+            value = place.get(key)
+            if key in place and (isinstance(value, bool) or not isinstance(value, int)):
+                raise bad(f".place.{key}: {value!r} is not a whole number")
+        out["place"] = {k: place[k] for k in _PLACE_KEYS if k in place}
+    return out
