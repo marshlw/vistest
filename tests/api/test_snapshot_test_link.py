@@ -102,7 +102,7 @@ def wired(tmp_path, monkeypatch):
     suite.mkdir(parents=True)
     (suite / "login_test.py").write_text("def test_login(): pass\n",
                                          encoding="utf-8")
-    project = Project(key="aeron", name="Aeron", root=str(repo),
+    project = Project(key="demo", name="Demo", root=str(repo),
                       tests="UiTests/tests/screenshot_tests")
     ProjectRegistry(cfg).save(project)
 
@@ -116,7 +116,7 @@ def wired(tmp_path, monkeypatch):
               "source": {"kind": "test",
                          "file": "tests/screenshot_tests/login_test.py",
                          "test": "tests/screenshot_tests/login_test.py::test_login",
-                         "project_key": "aeron"}}))
+                         "project_key": "demo"}}))
 
     app = FastAPI()
     app.include_router(mod.router)
@@ -128,7 +128,7 @@ def test_a_projects_test_finds_the_snapshots_it_captured(wired):
     client, _, _, _ = wired
     body = client.get("/api/tests/source", params={
         "name": "UiTests/tests/screenshot_tests/login_test.py",
-        "project": "aeron"}).json()
+        "project": "demo"}).json()
     assert [s["name"] for s in body["snapshots"]] == ["login.png"]
     assert body["snapshots"][0]["via"] == "captured"
 
@@ -148,11 +148,11 @@ def test_assembling_writes_the_link_into_the_passport(wired):
         def say(self, text, level="info"):
             said.append(text)
 
-    out = mod._run_codegen(_Job(), pf, None, "tests", "project:aeron")
+    out = mod._run_codegen(_Job(), pf, None, "tests", "project:demo")
     assert out["files"], said
     assert out["linked"] == 1
 
-    meta = json.loads((cfg.root_path / "external" / "aeron" / "baselines" / pf
+    meta = json.loads((cfg.root_path / "external" / "demo" / "baselines" / pf
                        / "login" / "meta.json").read_text("utf-8"))
     link = meta["generated_by"]
     assert link["file"] == "tests/test_visual_recorded.py"
@@ -172,7 +172,7 @@ def test_the_assembled_test_lists_its_baselines_right_away(wired):
         def say(self, text, level="info"):
             pass
 
-    mod._run_codegen(_Job(), pf, None, "tests", "project:aeron")
+    mod._run_codegen(_Job(), pf, None, "tests", "project:demo")
     body = client.get("/api/tests/source",
                       params={"name": "test_visual_recorded.py"}).json()
     assert [s["name"] for s in body["snapshots"]] == ["login.png"]
@@ -301,13 +301,13 @@ def test_recapture_reproduces_the_area_from_the_passport(wired, monkeypatch):
     """Иначе спека есть, а пересъёмка снимает по-другому."""
     client, mod, cfg, pf = wired
     mod._write_meta(pf, "login.png",
-                    {"area": "viewport", "full_page": False}, "project:aeron")
+                    {"area": "viewport", "full_page": False}, "project:demo")
 
     seen: list[dict] = []
     monkeypatch.setattr(mod, "_run_snap",
                         lambda job, targets, *a, **k: seen.extend(targets) or {})
     r = client.post("/api/baselines/resnap", json={
-        "platform": pf, "names": ["login.png"], "scope": "project:aeron"})
+        "platform": pf, "names": ["login.png"], "scope": "project:demo"})
     assert r.status_code == 200, r.text
     for _ in range(200):
         if seen:
@@ -390,7 +390,7 @@ def declared(tmp_path, monkeypatch):
         "def test_mailbox(logged_in_page, visual):\n"
         "    visual.assert_screenshot('mailbox.png')\n"
         "    visual.assert_screenshot('mailbox_empty.png')\n", encoding="utf-8")
-    project = Project(key="aeron", name="Aeron", root=str(repo),
+    project = Project(key="demo", name="Demo", root=str(repo),
                       tests="UiTests/tests/screenshot_tests")
     ProjectRegistry(cfg).save(project)
 
@@ -411,7 +411,7 @@ def test_every_snapshot_finds_its_test_without_a_single_run(declared):
     """Жалоба целиком: связался один снимок, остальные — нет."""
     client, _, _ = declared
     body = client.get("/api/baselines/detail",
-                      params={"scope": "project:aeron"}).json()
+                      params={"scope": "project:demo"}).json()
     items = {i["name"]: i for p in body["platforms"] for i in p["items"]}
     assert len(items) == 3
     for name, item in items.items():
@@ -428,7 +428,7 @@ def test_a_snapshot_bound_to_a_test_can_be_rechecked_by_it(declared):
     """
     client, _, _ = declared
     body = client.get("/api/baselines/detail",
-                      params={"scope": "project:aeron"}).json()
+                      params={"scope": "project:demo"}).json()
     items = [i for p in body["platforms"] for i in p["items"]]
     assert all(i["runnable"] for i in items)
 
@@ -437,9 +437,9 @@ def test_a_recorded_source_is_never_overwritten_by_the_code(declared):
     """Что снимок был снят, знает прогон. Код знает только, что объявлен."""
     client, mod, pf = declared
     mod._write_meta(pf, "login_page.png",
-                    {"source": {"kind": "url"}}, "project:aeron")
+                    {"source": {"kind": "url"}}, "project:demo")
     body = client.get("/api/baselines/detail",
-                      params={"scope": "project:aeron"}).json()
+                      params={"scope": "project:demo"}).json()
     item = next(i for p in body["platforms"] for i in p["items"]
                 if i["name"] == "login_page.png")
     assert item["source"]["kind"] == "url"
@@ -460,7 +460,7 @@ def test_a_snapshot_named_by_two_tests_is_left_unbound(declared):
         "    visual.assert_screenshot('mailbox.png')\n", encoding="utf-8")
     mod._DECL_CACHE.clear()
     body = client.get("/api/baselines/detail",
-                      params={"scope": "project:aeron"}).json()
+                      params={"scope": "project:demo"}).json()
     item = next(i for p in body["platforms"] for i in p["items"]
                 if i["name"] == "mailbox.png")
     assert item["source"]["kind"] == "unknown"
@@ -471,7 +471,7 @@ def test_the_test_page_lists_the_snapshots_the_code_says_it_takes(declared):
     client, _, _ = declared
     body = client.get("/api/tests/source", params={
         "name": "UiTests/tests/screenshot_tests/mailbox_page_screen_test.py",
-        "project": "aeron"}).json()
+        "project": "demo"}).json()
     assert sorted(s["name"] for s in body["snapshots"]) == [
         "mailbox.png", "mailbox_empty.png"]
     assert {s["via"] for s in body["snapshots"]} == {"declared"}
@@ -487,7 +487,7 @@ def test_editing_a_test_changes_the_links_at_once(declared):
     """
     client, mod, _ = declared
     ask = {"name": "UiTests/tests/screenshot_tests/mailbox_page_screen_test.py",
-           "project": "aeron"}
+           "project": "demo"}
     first = client.get("/api/tests/source", params=ask).json()
     assert len(first["snapshots"]) == 2, "карта не построилась до правки"
 

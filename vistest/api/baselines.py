@@ -181,7 +181,7 @@ GLOBAL_SCOPE = "global"
 
 
 def parse_scope(scope: str | None) -> tuple[str, str | None]:
-    """`"project:aeron"` → `("vistest", "aeron")`; anything empty → global."""
+    """`"project:demo"` → `("vistest", "demo")`; anything empty → global."""
     text = (scope or "").strip()
     if not text or text == GLOBAL_SCOPE:
         return GLOBAL_SCOPE, None

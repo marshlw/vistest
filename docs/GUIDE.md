@@ -694,7 +694,7 @@ def test_auth_account(page, visual):
 ### Подключение
 
 ```bash
-vistest project add D:\project\aeron-api-tests
+vistest project add D:\project\my-app-tests
 vistest project list
 ```
 
@@ -711,11 +711,11 @@ vistest project list
 
 ```yaml
 projects:
-  aeron-api-tests:
-    name: aeron-api-tests
-    root: D:\project\aeron-api-tests
+  my-app-tests:
+    name: my-app-tests
+    root: D:\project\my-app-tests
     tests: UiTests/tests/screenshot_tests
-    python: D:\project\aeron-api-tests\.venv\Scripts\python.exe
+    python: D:\project\my-app-tests\.venv\Scripts\python.exe
     pytest_args: ["-m", "screenshot"]
     # Чем до их тестов доходит имя браузера, когда прогон запускают в
     # нескольких. `auto` (по умолчанию) — переменная VISTEST_BROWSER всегда,
@@ -988,8 +988,8 @@ DOM-снепшот, паспорт), лежит в «спутнике» внут
 угадывается** в момент прогона:
 
 ```bash
-vistest project run aeron-api-tests              # snapshots/
-vistest project run aeron-api-tests --env CI=true  # snapshots_ci/
+vistest project run my-app-tests              # snapshots/
+vistest project run my-app-tests --env CI=true  # snapshots_ci/
 ```
 
 В UI это две кнопки: «▶ Прогнать» и «▶ Как в CI».
@@ -1000,10 +1000,10 @@ vistest project run aeron-api-tests --env CI=true  # snapshots_ci/
 ### Прогон
 
 ```bash
-vistest project check aeron-api-tests            # собрать, ничего не запуская
-vistest project run aeron-api-tests
-vistest project run aeron-api-tests --env CI=true --update
-vistest project run aeron-api-tests -- -k login -v
+vistest project check my-app-tests            # собрать, ничего не запуская
+vistest project run my-app-tests
+vistest project run my-app-tests --env CI=true --update
+vistest project run my-app-tests -- -k login -v
 ```
 
 Перед прогоном VisTest сам делает `check`: если их тесты не собираются, вы
@@ -2636,7 +2636,7 @@ vistest user approve vic --role reviewer
 накатке образа оставляет команду без человека, способного утвердить эталон,
 была бы хуже той дыры, которую она закрывает.
 
-Что считается проектом: ключ подключённого набора (`aeron-api-tests`), а для
+Что считается проектом: ключ подключённого набора (`my-app-tests`), а для
 собственного набора сервиса — имя его проекта (`service.project` в
 `vistest.yaml`, по умолчанию `default`). Собственный набор — тоже проект: иначе
 `global` оказался бы единственным местом, где право не спрашивают вовсе, а
@@ -2660,9 +2660,9 @@ vistest user approve vic --role reviewer
 недоступен, и когда права раздаются скриптом при развёртывании):
 
 ```bash
-vistest user grant vic aeron-api-tests reviewer
+vistest user grant vic my-app-tests reviewer
 vistest user rights            # кто, где и что может
-vistest user revoke vic aeron-api-tests
+vistest user revoke vic my-app-tests
 ```
 
 ## 9.1. Decisions: очередь решений

@@ -63,19 +63,19 @@ def _scope(key, *counts):
 
 def test_an_empty_default_gives_way_to_a_non_empty_set():
     """Та самая жалоба: свой набор пуст, у проекта — одиннадцать."""
-    scopes = [_scope("global", 0), _scope("project:aeron", 11)]
-    assert _call(scopes, "global") == "project:aeron"
+    scopes = [_scope("global", 0), _scope("project:demo", 11)]
+    assert _call(scopes, "global") == "project:demo"
 
 
 def test_a_non_empty_default_is_kept_even_next_to_a_fuller_one():
     """Иначе экран уезжает в чужой набор у человека, который ничего не нажимал."""
-    scopes = [_scope("global", 3), _scope("project:aeron", 11)]
+    scopes = [_scope("global", 3), _scope("project:demo", 11)]
     assert _call(scopes, "global") == "global"
 
 
 def test_everything_empty_stays_on_the_default():
     """Пустой экран своего набора хотя бы объясняет, что делать дальше."""
-    scopes = [_scope("global", 0), _scope("project:aeron", 0)]
+    scopes = [_scope("global", 0), _scope("project:demo", 0)]
     assert _call(scopes, "global") == "global"
 
 
