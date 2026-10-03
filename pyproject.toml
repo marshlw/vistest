@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vistest"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Precise visual regression testing: ΔE00 + SSIM + alignment + automatic noise suppression"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -83,9 +83,9 @@ full    = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/marshlw/visual-testing"
-Source = "https://github.com/marshlw/visual-testing"
-Issues = "https://github.com/marshlw/visual-testing/issues"
+Homepage = "https://github.com/marshlw/vistest"
+Source = "https://github.com/marshlw/vistest"
+Issues = "https://github.com/marshlw/vistest/issues"
 
 [project.scripts]
 vistest = "vistest.cli:main"
@@ -99,6 +99,12 @@ vistest = "vistest.pytest_plugin"
 # (`pip install -e .`): entry points are read from the installed metadata.
 [project.entry-points."vistest.plugins"]
 bundled-extensions = "vistest._extensions"
+
+# One source of the version: `vistest/__init__.py`. setuptools reads the
+# assignment without importing the package (it is a plain string literal, keep
+# it one), so `pip install` and `vistest.__version__` cannot disagree.
+[tool.setuptools.dynamic]
+version = { attr = "vistest.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["vistest*"]

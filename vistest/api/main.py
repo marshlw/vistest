@@ -33,6 +33,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
+from .. import __version__ as _TOOL_VERSION
 from ..config import VisTestConfig
 from . import decisions as _decisions
 from . import license as _license
@@ -442,7 +443,7 @@ async def _lifespan(_app: FastAPI):
 
 
 _docs = _docs_enabled()
-app = FastAPI(title="VisTest", version="0.1.0",
+app = FastAPI(title="VisTest", version=_TOOL_VERSION,
               dependencies=[Depends(_access_gate)],
               lifespan=_lifespan,
               docs_url="/docs" if _docs else None,

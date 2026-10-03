@@ -1,7 +1,7 @@
 # vistest-client
 
 Send screenshots from a JavaScript test suite to a self-hosted
-[VisTest](https://github.com/marshlw/visual-testing) service and get back a
+[VisTest](https://github.com/marshlw/vistest) service and get back a
 verdict from its engine — regions, change classes, severity, artifacts,
 history, review with approval.
 

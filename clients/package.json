@@ -29,11 +29,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/marshlw/visual-testing.git",
+    "url": "git+https://github.com/marshlw/vistest.git",
     "directory": "clients"
   },
-  "homepage": "https://github.com/marshlw/visual-testing#readme",
-  "bugs": "https://github.com/marshlw/visual-testing/issues",
+  "homepage": "https://github.com/marshlw/vistest#readme",
+  "bugs": "https://github.com/marshlw/vistest/issues",
   "dependencies": {},
   "scripts": {
     "test": "node --check vistest.mjs && node --check playwright-reporter.mjs && node --check cypress.mjs"
