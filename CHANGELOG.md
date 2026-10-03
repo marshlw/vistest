@@ -7,6 +7,22 @@
 
 ### Phase 2: the engine on pairs from elsewhere
 
+- **Install check on three systems, through TestPyPI.** Version `0.2.0.dev1`
+  (v2 by default is a visible change), written once in `vistest/__init__.py`
+  and read from there by `pyproject.toml` (`dynamic = ["version"]`) and by the
+  server's API description. Repository links in `pyproject.toml` and
+  `clients/` point to github.com/marshlw/vistest; the README's own links are
+  absolute, so that they work on the package index's page.
+  `scripts/audit_dist.py` lists the built sdist and wheel, checks that the
+  canary font, `bench/*.mjs`, `ai/*.json`, the review UI and the two entry
+  points are in the wheel, and searches both archives for private keys,
+  tokens, `.env` and key files, developer paths, pictures and the terms it is
+  given (`--forbid`, `--forbid-file`: kept out of the repository on purpose).
+  `scripts/check_install.py` does what a user does, in a clean virtual
+  environment: install from a wheel or an index, `playwright install
+  chromium`, `vistest --help`, `vistest bench --help`, the version, the pytest
+  plugin, and `examples/test_demo_visual.py` twice (write, then compare).
+
 - **A picture of an element no longer leaves the page scrolled elsewhere.**
   The window and every scrollable box around a Locator's element are
   scrolled back to where the test left them — after the first frames, after

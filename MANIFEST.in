@@ -8,6 +8,8 @@ include README.md README.ru.md
 include LICENSE NOTICE CONTRIBUTORS.md
 include vistest.yaml
 include run.py run.sh run.ps1
+#  What checks a build before it is uploaded; tests/test_dist_audit.py needs the first.
+include scripts/audit_dist.py scripts/check_install.py
 
 recursive-include frontend *
 recursive-include docker *

@@ -61,7 +61,8 @@ if TYPE_CHECKING:
     from .storage import SnapshotMeta as SnapshotMeta
     from .storage import SnapshotStore as SnapshotStore
 
-__version__ = "0.1.0"
+#  The one place the version is written: pyproject.toml reads it from here.
+__version__ = "0.2.0.dev1"
 
 #  attribute -> module it comes from, relative to this package. Kept as data so
 #  that the list of what is deliberately deferred can be read at a glance.
