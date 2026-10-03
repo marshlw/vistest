@@ -61,7 +61,11 @@ dependencies = [
 # (docker/Dockerfile.full, docker/Dockerfile.runner) take PLAYWRIGHT_VERSION
 # once and use it for both the base image tag and the pip package, so the two
 # cannot drift apart.
-browser = ["playwright>=1.47,<2", "pytest>=7.4"]
+# pytest-playwright is here because the README and the examples take Playwright's
+# `page` from its fixture, and the install command in the README has to give a
+# working example. Unpinned for the same reason as Playwright: other people's
+# environments.
+browser = ["playwright>=1.47,<2", "pytest>=7.4", "pytest-playwright>=0.4"]
 # The server: the review interface, the API, the database. Renamed from
 # `service` in 0.2 — one word for one thing, and the library mode made the
 # distinction worth being exact about. `pip install "vistest[service]"` no
@@ -76,7 +80,7 @@ report  = ["allure-pytest>=2.13"]
 dev     = ["pytest>=7.4", "pytest-cov", "pytest-xdist>=3.5", "ruff",
            "httpx>=0.27", "tomli>=2.0; python_version<'3.11'"]
 full    = [
-    "playwright>=1.47,<2", "pytest>=7.4",   # a range: see `browser` above
+    "playwright>=1.47,<2", "pytest>=7.4", "pytest-playwright>=0.4",   # see `browser` above
     "fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
     "requests>=2.31", "pyyaml>=6.0",
     "onnxruntime>=1.17", "allure-pytest>=2.13",

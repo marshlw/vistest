@@ -7,6 +7,18 @@
 
 ### Phase 2: the engine on pairs from elsewhere
 
+- **Install: `vistest[browser]` brings `pytest-playwright`; smooth scrolling.**
+  The README and `examples/` take `page` from pytest-playwright's fixture, so
+  the extra that the README tells to install now includes it (and `full`
+  does too); `scripts/check_install.py` no longer adds it by itself. On a page
+  with `scroll-behavior: smooth` the step that puts an element back at its
+  baseline's place scrolled smoothly, and read where the element stood
+  halfway: it scrolls instantly now, as the scrolling back already did. Left
+  as it is on purpose until phase 3: `HOMEPAGE` in `provenance.py` still names
+  the old repository, because it is part of the hash that signs reports;
+  GitHub redirects the old name, and it changes together with the signature
+  format when the repositories are split.
+
 - **Install check on three systems, through TestPyPI.** Version `0.2.0.dev1`
   (v2 by default is a visible change), written once in `vistest/__init__.py`
   and read from there by `pyproject.toml` (`dynamic = ["version"]`) and by the

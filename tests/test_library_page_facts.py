@@ -358,3 +358,95 @@ def test_a_page_is_not_scrolled_by_its_own_picture(ctx, page):
     accept(ctx, page, "page.png")
     expect_screenshot(page, "page.png")
     assert scroll_of(page) == before
+
+
+# --------------------------------------------------------------------------- #
+#  A page that scrolls smoothly: nothing waits for an animation, nothing is
+#  photographed in the middle of one
+# --------------------------------------------------------------------------- #
+SMOOTH = STILL.replace("body { margin: 0;",
+                       "html, #box { scroll-behavior: smooth; }\n  body { margin: 0;")
+#  The place of an element in the window is what a `fixed` background shows, so
+#  the picture is the witness of where the element stood.
+SMOOTH_PAGE = SCROLLED.replace("<style>", "<style>\n  html { scroll-behavior: smooth; }", 1)
+
+
+def jump(page, *, x, y, top=None):
+    """The test's own scrolling, instant: the page's CSS would animate a plain scrollTo."""
+    page.evaluate("""([x, y, top]) => {
+        window.scrollTo({left: x, top: y, behavior: 'instant'});
+        const box = document.getElementById('box');
+        if (box && top !== null) box.scrollTo({top, behavior: 'instant'}); }""",
+                  [x, y, top])
+    page.wait_for_timeout(50)
+    return page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
+
+
+def test_on_a_smooth_page_the_element_goes_back_where_its_baseline_had_it(ctx, page):
+    from vistest.library import targets
+
+    page.set_content(SMOOTH_PAGE)
+    jump(page, x=0, y=700)
+    accept(ctx, page.locator("#card"), "card.png")
+    place = json.loads(passport(ctx, "card.png").read_text())["capture"]["place"]
+
+    before = jump(page, x=0, y=650)                  # the card in view, elsewhere
+    result = expect_screenshot(page.locator("#card"), "card.png")
+    assert result.verdict.value == "pass"            # the fixed background is the witness
+    assert page.evaluate("() => ({x: scrollX, y: scrollY})") == before
+    page.wait_for_timeout(700)                       # an animation still on its way
+    assert page.evaluate("() => ({x: scrollX, y: scrollY})") == before
+
+    jump(page, x=0, y=650)
+    shot = targets.capture(page.locator("#card"), place={"x": place["x"], "y": place["y"]})
+    assert shot.placed and shot.facts["place"]["y"] == place["y"]
+    page.wait_for_timeout(700)
+    assert page.evaluate("() => scrollY") == 650
+
+
+def test_the_placing_does_not_animate(page):
+    """Read at once, not after Playwright has waited for the animation to end.
+
+    Taking the picture of an element makes Playwright wait until the element
+    stops moving, which hides a smooth scroll in the end-to-end tests here:
+    they pass either way. What the placing itself does is visible only right
+    after it, so that is where it is asked.
+    """
+    from vistest.library import page_facts
+
+    page.set_content(SMOOTH_PAGE)
+    jump(page, x=0, y=700)
+    card = page.locator("#card")
+    target = page_facts.facts(card, True, False)["place"]
+
+    jump(page, x=0, y=500)
+    got = page_facts.prepare(card, True, place={"x": target["x"], "y": target["y"]},
+                             blur=False)
+    assert got["placed"] == [target["x"], target["y"]], "the element was not there yet"
+    assert page.evaluate("() => scrollY") == 700, "the window was still on its way"
+
+
+def test_a_smooth_window_and_a_smooth_box_are_left_where_the_test_had_them(ctx, page):
+    page.set_content(SMOOTH)
+    jump(page, x=0, y=640, top=0)
+    accept(ctx, page.locator("#card"), "card.png")
+    jump(page, x=25, y=420, top=90)
+    before = scroll_of(page)
+    assert expect_screenshot(page.locator("#card"), "card.png").verdict.value == "pass"
+    assert scroll_of(page) == before
+    page.wait_for_timeout(700)
+    assert scroll_of(page) == before, "an animated scroll was still on its way"
+
+
+def test_a_failed_check_on_a_smooth_page_leaves_it_where_it_was(ctx, page):
+    page.set_content(SMOOTH.replace("if (false)", "if (true)"))   # the counter ticks
+    page.wait_for_timeout(250)
+    jump(page, x=0, y=640, top=0)
+    accept(ctx, page.locator("#card"), "ticking.png")
+    page.wait_for_timeout(450)
+    jump(page, x=20, y=120, top=60)
+    before = scroll_of(page)
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(page.locator("#card"), "ticking.png")
+    page.wait_for_timeout(600)
+    assert scroll_of(page) == before

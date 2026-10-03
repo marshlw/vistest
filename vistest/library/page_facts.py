@@ -110,7 +110,10 @@ PREPARE_JS = r"""
     //  pixels: the page is scrolled by the difference.
     const r = el.getBoundingClientRect();
     const dx = Math.round(r.left - a.place.x), dy = Math.round(r.top - a.place.y);
-    if (dx || dy) W.scrollTo(Math.round(W.scrollX + dx), Math.round(W.scrollY + dy));
+    //  Instantly, whatever the page's `scroll-behavior` says: an animated scroll
+    //  would be photographed in its middle, or waited for.
+    if (dx || dy) W.scrollTo({ left: Math.round(W.scrollX + dx),
+                               top: Math.round(W.scrollY + dy), behavior: 'instant' });
     const s = el.getBoundingClientRect();
     out.placed = [Math.round(s.left), Math.round(s.top)];
   }
