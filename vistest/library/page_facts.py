@@ -28,7 +28,8 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["LAUNCH_HEADS", "facts", "name_points", "place", "prepare", "regions_of"]
+__all__ = ["LAUNCH_HEADS", "facts", "name_points", "place", "prepare", "put_back",
+           "regions_of", "scrolled_like"]
 
 #: A short selector for an element: its id, a test id, or a short path of tags
 #: and first classes — the shortest of those that names one element.
@@ -73,9 +74,37 @@ _ORIGIN = r"""
   else o = [0, 0];
 """
 
+#: Where the window and every scrollable ancestor of the element are scrolled.
+#: Ancestors are named by their distance from the element, so that the same
+#: walk finds them again; a shadow root is stepped over to its host. The
+#: document's own scrollers are the window's: not listed twice.
+SCROLL_WALK = r"""
+  const walk = (el, each) => {
+    for (let n = el, d = 0; n && n.nodeType === 1; d++,
+         n = n.parentElement || (n.getRootNode && n.getRootNode().host) || null) {
+      if (n === document.documentElement || n === document.body) continue;
+      each(n, d);
+    }
+  };
+"""
+
+SCROLL_STATE = r"""
+  const scrollState = (el) => {
+    const list = [];
+    walk(el, (n, d) => {
+      if (n.scrollHeight > n.clientHeight || n.scrollWidth > n.clientWidth)
+        list.push([d, n.scrollLeft, n.scrollTop]);
+    });
+    return { x: W.scrollX, y: W.scrollY, inner: list };
+  };
+"""
+
 PREPARE_JS = r"""
 (el, a) => {
   const W = window, out = {};
+""" + SCROLL_WALK + SCROLL_STATE + r"""
+  //  Before anything here moves the page: where the test left it.
+  if (el) out.scroll = scrollState(el);
   if (el && a.place) {
     //  Back where it was in the window when the baseline was taken, in whole
     //  pixels: the page is scrolled by the difference.
@@ -96,8 +125,9 @@ PREPARE_JS = r"""
 
 FACTS_JS = r"""
 (el, a) => {
+  const W = window;
   const sel = """ + SELECTOR_FN.strip() + r""";
-""" + _ORIGIN + r"""
+""" + _ORIGIN.replace("  const W = window;\n", "") + SCROLL_WALK + SCROLL_STATE + r"""
   const box = (n) => { const r = n.getBoundingClientRect();
     return [Math.round(r.left - o[0]), Math.round(r.top - o[1]),
             Math.round(r.width), Math.round(r.height)]; };
@@ -127,8 +157,29 @@ FACTS_JS = r"""
     const r = el.getBoundingClientRect();
     out.place = { x: Math.round(r.left), y: Math.round(r.top),
                   scroll_x: Math.round(W.scrollX), scroll_y: Math.round(W.scrollY) };
+    //  Where the picture left the page: the place above is read from here.
+    out.scroll = scrollState(el);
   }
   return out;
+}
+"""
+
+#: The scrolling `a.state` describes, put back. Instantly, whatever the page's
+#: `scroll-behavior` says: an animated scroll would still be on its way when
+#: the next line of the test runs.
+PUT_BACK_JS = r"""
+(el, a) => {
+  const W = window, s = a.state;
+""" + SCROLL_WALK + r"""
+  const at = new Map(s.inner.map(([d, left, top]) => [d, [left, top]]));
+  walk(el, (n, d) => {
+    const v = at.get(d);
+    if (v && (n.scrollLeft !== v[0] || n.scrollTop !== v[1]))
+      n.scrollTo({ left: v[0], top: v[1], behavior: 'instant' });
+  });
+  if (W.scrollX !== s.x || W.scrollY !== s.y)
+    W.scrollTo({ left: s.x, top: s.y, behavior: 'instant' });
+  return true;
 }
 """
 
@@ -172,6 +223,22 @@ def facts(owner: Any, element: bool, full_page: bool) -> dict:
     """After the picture: what is under the pointer, in focus, the launch, the place."""
     got = _call(owner, element, FACTS_JS, {"fullPage": full_page})
     return got if isinstance(got, dict) else {}
+
+
+def put_back(owner: Any, state: dict | None) -> bool:
+    """The element's window and scrolling ancestors back as `state` has them.
+
+    `owner` is a Locator. True when the page did it; False when it could not
+    be asked — the caller says so, a page left scrolled should not be a secret.
+    """
+    if not isinstance(state, dict):
+        return False
+    return _call(owner, True, PUT_BACK_JS, {"state": state}) is True
+
+
+def scrolled_like(a: dict | None, b: dict | None) -> bool:
+    """Whether two readings of the scrolling are the same (None is no reading)."""
+    return isinstance(a, dict) and isinstance(b, dict) and a == b
 
 
 def name_points(owner: Any, element: bool, full_page: bool,
