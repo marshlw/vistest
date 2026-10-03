@@ -133,3 +133,17 @@ def test_the_version_is_written_once():
     assert re.fullmatch(r"\d+\.\d+\.\d+(\.?(dev|a|b|rc)\d+)?", vistest.__version__)
     init = (ROOT / "vistest/__init__.py").read_text("utf-8")
     assert re.search(r'^__version__ = "[^"]+"$', init, re.M)
+
+
+def test_the_browser_extra_brings_what_the_readme_example_needs():
+    """The README and `examples/` take `page` from pytest-playwright's fixture."""
+    try:
+        import tomllib
+    except ModuleNotFoundError:          # Python 3.10
+        import tomli as tomllib
+
+    extras = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8")
+                           )["project"]["optional-dependencies"]
+    for name in ("browser", "full"):
+        names = {re.split(r"[<>=!~\[ ;]", d, maxsplit=1)[0].lower() for d in extras[name]}
+        assert {"playwright", "pytest", "pytest-playwright"} <= names, name

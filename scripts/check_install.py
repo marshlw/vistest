@@ -48,9 +48,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 EXAMPLE = "test_demo_visual.py"
-#  The example's `page` fixture comes from pytest-playwright, which the
-#  `browser` extra does not install (it is a plugin of its own).
-EXTRA_PACKAGES = ["pytest-playwright"]
+#  What is installed besides the package: nothing. The example's `page` fixture
+#  comes from pytest-playwright, and the `browser` extra brings it — the check
+#  is of the install command the README gives.
+EXTRA_PACKAGES: list[str] = []
 
 
 class Failed(Exception):
