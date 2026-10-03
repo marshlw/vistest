@@ -429,6 +429,23 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         _pointer_away(page)
     prepared = _facts.prepare(owner, element, place=place if element else None,
                               blur=reset_hover_focus) if page is not None else {}
+    #  Where the test left the window and the scrollable boxes around an
+    #  element, before the placing below and Playwright's own scrolling into
+    #  view move them. The picture needs the element where the baseline had it;
+    #  the test needs the page where it was.
+    before = prepared.get("scroll") if element else None
+    at_shot: dict | None = None
+
+    def moved() -> bool:
+        return before is not None and not _facts.scrolled_like(before, at_shot)
+
+    def put_back() -> None:
+        if not moved():
+            return
+        if not _facts.put_back(owner, before):
+            notes.append("the page could not be scrolled back to where the test "
+                         "left it")
+
     if prepared.get("ignored"):
         #  `data-vistest="ignore"` — the page's own way to say «not this»,
         #  the same mark the service honours: painted, like a selector mask.
@@ -449,26 +466,50 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             "expect_screenshot: full_page has no meaning for a Locator — "
             "it already captures exactly that element. Pass the Page instead.")
 
-    readiness = None
-    if page is not None and ready_timeout_ms > 0:
-        readiness = _wait_ready(target, page, painted, boxes,
-                                bool(options.get("full_page")), ready_timeout_ms,
-                                quiet_ms, tuple(ignore_requests))
+    try:
+        readiness = None
+        if page is not None and ready_timeout_ms > 0:
+            readiness = _wait_ready(target, page, painted, boxes,
+                                    bool(options.get("full_page")), ready_timeout_ms,
+                                    quiet_ms, tuple(ignore_requests))
 
-    last_two: list[bytes] = []
+        last_two: list[bytes] = []
 
-    def shoot() -> bytes:
-        got = bytes(target.screenshot(**options))
-        last_two[:] = [*last_two[-1:], got]
-        return got
+        def shoot() -> bytes:
+            got = bytes(target.screenshot(**options))
+            last_two[:] = [*last_two[-1:], got]
+            return got
 
-    png, stability = settle_frames(shoot, timeout_ms=stable_timeout_ms)
-    pngio.dimensions(png, source=f"the screenshot of {_describe(target)}")
-    full = bool(options.get("full_page"))
-    seen = _facts.facts(owner, element, full) if page is not None else {}
+        png, stability = settle_frames(shoot, timeout_ms=stable_timeout_ms)
+        pngio.dimensions(png, source=f"the screenshot of {_describe(target)}")
+        full = bool(options.get("full_page"))
+        seen = _facts.facts(owner, element, full) if page is not None else {}
+        at_shot = seen.pop("scroll", None)
 
-    def namer(points):
-        return _facts.name_points(owner, element, full, points)
+        def namer(points):
+            #  The names are read at points of the picture, which is where the
+            #  page was scrolled when it was taken: put it there, ask, put it back.
+            if not moved() or at_shot is None:
+                return _facts.name_points(owner, element, full, points)
+            _facts.put_back(owner, at_shot)
+            try:
+                return _facts.name_points(owner, element, full, points)
+            finally:
+                put_back()
+
+        def retake() -> bytes:
+            #  One more frame of the same picture: from the place the first
+            #  ones were taken at, and the page back as the test left it after.
+            if not moved() or at_shot is None:
+                return shoot()
+            _facts.put_back(owner, at_shot)
+            try:
+                return shoot()
+            finally:
+                put_back()
+    finally:
+        #  Whatever happened to the picture: the page back as it was found.
+        put_back()
 
     moving: list = []
     if stability.stable is False and len(last_two) == 2:
@@ -491,7 +532,7 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         scale_mode=scale,
         stability=stability,
         notes=tuple(notes),
-        retake=shoot,
+        retake=retake,
         ready=readiness,
         facts=seen,
         moving=tuple(moving),

@@ -2293,6 +2293,13 @@ pixels — a `position: fixed` background or a sticky header behind the element
 then looks the same. A baseline without that record is photographed as
 before.
 
+**What a picture of an element leaves behind.** The scrolling: after the
+picture — a failed check's further frames included — the window and every
+scrollable box around the element are scrolled where the test left them.
+The one side effect that remains is `reset_hover_focus`, when it is switched
+on: the pointer is moved off the page and the focus is taken off its element,
+and neither is put back.
+
 **How the baseline was taken.** The passport records the capture's version
 (`capture.version`). A change in how pictures are taken that changes pixels
 of baselines already accepted comes with a new version, and a check against a

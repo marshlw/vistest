@@ -7,6 +7,14 @@
 
 ### Phase 2: the engine on pairs from elsewhere
 
+- **A picture of an element no longer leaves the page scrolled elsewhere.**
+  The window and every scrollable box around a Locator's element are
+  scrolled back to where the test left them — after the first frames, after
+  the second look's further frames, and after the naming of what moves. The
+  placing at the baseline's place and Playwright's own scrolling into view
+  are unchanged; only what they leave behind is. The pointer and the focus
+  under `reset_hover_focus` stay the one remaining side effect (GUIDE).
+
 - **S2b: what a failure names; the place, the launch and the way a baseline
   was taken.** A later frame of the second look turns a failure into a pass
   only when the later frames held still and nothing in them kept changing;

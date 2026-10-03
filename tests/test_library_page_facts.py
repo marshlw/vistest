@@ -146,8 +146,16 @@ def test_an_element_goes_back_where_its_baseline_had_it(ctx, page):
     page.evaluate("() => window.scrollTo(0, 650)")       # the card in view, elsewhere
     result = expect_screenshot(page.locator("#card"), "card.png")
     assert result.verdict.value == "pass"
-    rect = page.evaluate("() => document.getElementById('card').getBoundingClientRect().top")
-    assert round(rect) == place["y"]
+
+    #  Where the picture was taken is read off the capture itself: the page is
+    #  scrolled back afterwards (see the tests below), so the window no longer
+    #  shows the place.
+    from vistest.library import targets
+
+    page.evaluate("() => window.scrollTo(0, 650)")
+    shot = targets.capture(page.locator("#card"), place={"x": place["x"], "y": place["y"]})
+    assert shot.facts["place"]["y"] == place["y"] and shot.placed
+    assert page.evaluate("() => window.scrollY") == 650
 
 
 def test_without_a_recorded_place_nothing_is_moved(ctx, page):
@@ -263,3 +271,90 @@ def test_a_passport_capture_record_is_checked_and_round_trips():
                    {"place": {"y": 1.5}}, {"when": 1}, []):
         with pytest.raises(ConfigError):
             SnapshotMeta.from_dict({**base, "capture": broken})
+
+
+# --------------------------------------------------------------------------- #
+#  A picture of an element leaves the page scrolled where the test left it
+# --------------------------------------------------------------------------- #
+#  The card sits at the bottom of a scrollable box, the box in the middle of a
+#  page that scrolls both ways: to photograph the card the window has to move,
+#  and so does the box. Neither is the check's to leave moved.
+CONTAINED = """<!doctype html><html><head><style>
+  body { margin: 0; font: 16px sans-serif; }
+  .gap { height: 900px; }
+  .wide { width: 1200px; height: 1px; }
+  #box { height: 150px; width: 340px; overflow: auto; margin: 0 20px;
+         border: 1px solid #888; }
+  .pad { height: 400px; }
+  #card { height: 80px; margin: 0 8px; background: #dbeafe; }
+</style></head><body><div class="gap"></div><div class="wide"></div>
+<div id="box"><div class="pad"></div><div id="card">Plan <span id="n">0</span></div>
+<div class="pad"></div></div><div class="gap"></div>
+<script>let i = 0; if (location.hash !== '#still')
+  setInterval(() => { document.getElementById('n').textContent = ++i; }, 200);
+</script></body></html>"""
+
+STILL = CONTAINED.replace("if (location.hash !== '#still')", "if (false)")
+
+
+def scroll_of(page) -> dict:
+    return page.evaluate("""() => ({x: window.scrollX, y: window.scrollY,
+        left: document.getElementById('box').scrollLeft,
+        top: document.getElementById('box').scrollTop})""")
+
+
+def leave_scrolled(page, *, x, y, top):
+    page.evaluate("([x, y, top]) => { window.scrollTo(x, y);"
+                  " document.getElementById('box').scrollTop = top; }", [x, y, top])
+    return scroll_of(page)
+
+
+def test_a_picture_of_an_element_leaves_the_scrolling_where_it_was(ctx, page):
+    """With a recorded place, and the card put back where its baseline had it."""
+    page.set_content(STILL)
+    before = leave_scrolled(page, x=30, y=640, top=0)
+    accept(ctx, page.locator("#card"), "card.png")
+    assert scroll_of(page) == before, "taking the baseline moved the page"
+    place = json.loads(passport(ctx, "card.png").read_text())["capture"]["place"]
+    assert set(place) == {"x", "y", "scroll_x", "scroll_y"}
+
+    before = leave_scrolled(page, x=30, y=420, top=90)
+    result = expect_screenshot(page.locator("#card"), "card.png")
+    assert result.verdict.value == "pass"
+    assert scroll_of(page) == before, "the check moved the window or the box"
+
+
+def test_the_same_without_a_recorded_place(ctx, page):
+    page.set_content(STILL)
+    leave_scrolled(page, x=0, y=640, top=0)
+    accept(ctx, page.locator("#card"), "card.png")
+    path = passport(ctx, "card.png")
+    data = json.loads(path.read_text())
+    del data["capture"]["place"]
+    path.write_text(json.dumps(data))
+
+    before = leave_scrolled(page, x=45, y=100, top=0)      # the box not even in view
+    expect_screenshot(page.locator("#card"), "card.png")
+    assert scroll_of(page) == before
+
+
+def test_a_failed_check_leaves_the_scrolling_too_and_still_names_what_moves(ctx, page):
+    """The second look takes more frames, and the naming looks at the live page."""
+    page.set_content(CONTAINED)
+    page.wait_for_timeout(250)
+    leave_scrolled(page, x=0, y=640, top=0)
+    accept(ctx, page.locator("#card"), "ticking.png")
+    page.wait_for_timeout(450)
+    before = leave_scrolled(page, x=20, y=120, top=60)
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(page.locator("#card"), "ticking.png")
+    assert scroll_of(page) == before
+    assert 'mask=["#n"]' in str(e.value) and "changes by itself" in str(e.value)
+
+
+def test_a_page_is_not_scrolled_by_its_own_picture(ctx, page):
+    page.set_content(STILL)
+    before = leave_scrolled(page, x=30, y=400, top=40)
+    accept(ctx, page, "page.png")
+    expect_screenshot(page, "page.png")
+    assert scroll_of(page) == before
