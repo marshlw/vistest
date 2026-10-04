@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>chained requests</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+.spinner { width: 40px; height: 40px; margin: 36px auto 10px; border: 4px solid #dbe3ef;
+           border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading { text-align: center; }
+.stat { font-size: 28px; font-weight: 700; }
+#pic { display: block; width: 160px; height: 100px; margin: 12px 0; border-radius: 8px;
+       background: #e5e7eb; }
+</style></head>
+<body>
+<header>Orders</header>
+<main>
+  <div class="card"><h2>Last week</h2>
+    <div id="slot" class="loading"><div class="spinner"></div><p class="muted">Loading…</p></div>
+  </div>
+</main>
+<script>
+/* Request A; when it is answered, the same loading markup is drawn again and
+   request B goes out at once; when B is answered, a picture C is inserted,
+   which is answered late too. Between two requests nothing is in flight for a
+   few milliseconds, and the spinner never goes away until C is decoded. */
+const slot = document.getElementById('slot');
+const LOADING = '<div class="spinner"></div><p class="muted">Loading…</p>';
+fetchJSON('/api/data', { h: 'chain_a' }).then(() => {
+  slot.innerHTML = LOADING;
+  return fetchJSON('/api/data', { h: 'chain_b' });
+}).then((d) => {
+  slot.className = '';
+  slot.innerHTML = `<div class="stat" style="color:${d.accent}">$${d.total}</div>`
+    + `<img id="pic" width="160" height="100" alt="" src="${api('/img', { i: 1 })}">`
+    + table(d.rows);
+  const pic = document.getElementById('pic');
+  const decoded = pic.complete && pic.naturalWidth
+    ? pic.decode() : new Promise((res) => { pic.onload = () => pic.decode().then(res, res); });
+  decoded.then(done);
+});
+</script>
+</body></html>

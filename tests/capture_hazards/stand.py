@@ -47,6 +47,8 @@ READY_TIMEOUT_MS = 15000
 DELAY_MS = (50, 1500)
 #: silent_fetch's range: data with no sign that it is coming (S2 pre-registration).
 SILENT_MS = (300, 1500)
+#: modal_scroll's two blocks: the answers come within a few tens of ms of the test's click.
+MODAL_MS = (30, 130)
 #: pulse: the period of the decorative animation, milliseconds.
 PULSE_PERIOD_MS = (900, 2400)
 #: spinning_logo: the period of one turn, milliseconds.
@@ -80,6 +82,8 @@ class Hazard:
     #: Options of our `expect_screenshot` for this row (Playwright has none of
     #: them: the row is not run under it).
     call: tuple[tuple[str, object], ...] = ()
+    #: The element the step "click" presses ("" — CLICK_TARGET).
+    click: str = ""
 
 
 HAZARDS: tuple[Hazard, ...] = (
@@ -128,6 +132,14 @@ HAZARDS: tuple[Hazard, ...] = (
            "hover_focus, photographed with the option that moves the pointer away and "
            "takes the focus off", step="hover_focus",
            call=(("reset_hover_focus", True),)),
+    #  Added in dev2 (the addendum to the pre-registration, DEV2_PREREG.md).
+    Hazard("chained", "chained",
+           "request A, at its answer the same spinner and request B, at its answer a "
+           "picture C answered late; each 50–1500 ms"),
+    Hazard("modal_scroll", "modal",
+           "a long page whose blocks arrive 30–130 ms after load; the test's click on the "
+           "button at the bottom opens a modal; how far the page was scrolled depends on "
+           "which answer came first", step="click", step_in_baseline=True, click="#open"),
 )
 
 BY_KEY = {h.key: h for h in HAZARDS}
@@ -140,7 +152,8 @@ def _rng(*parts) -> random.Random:
 
 def delay_ms(what: str, seed: int) -> int:
     """How long the server holds the answer `what` for this seed."""
-    lo, hi = SILENT_MS if what == "data:silent_fetch" else DELAY_MS
+    lo, hi = (SILENT_MS if what == "data:silent_fetch"
+              else MODAL_MS if what in ("data:ms_a", "data:ms_b") else DELAY_MS)
     return int(_rng("delay", what, seed).uniform(lo, hi))
 
 

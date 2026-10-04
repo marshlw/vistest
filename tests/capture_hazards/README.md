@@ -28,7 +28,8 @@ plugin, so the library sees only the page; `ours_plugin` — the same with the
 requests of every context counted from its creation, as the plugin does it;
 `playwright` — `toHaveScreenshot()`. `--only spinner,web_font`, `--jobs N`,
 `--work DIR` (default `bench_out/capture_hazards/`, ignored by git) and
-`--smoke` (one seed, two checks, one signal check) narrow a run. Results are
+`--smoke` (one seed, two checks, one signal check) and `--seeds 100-103` (a pilot
+on seeds outside the calibration and the held-out set) narrow a run. Results are
 written line by line to `<work>/results.<tool>.*jsonl`; a run that was cut
 off goes on where it stopped when started again with the same `--work`. A
 `no-vistest.yaml` in the work directory is the config the library runs under
@@ -64,10 +65,14 @@ the page — and comes from the seed (`stand.delay_ms`, 50–1500 ms).
 | `after_click` | the test's click asks for data (50–1500 ms); `networkidle` has long passed |
 | `spinning_logo` | a static page with a decorative logo that turns for ever, named like nothing that loads: nothing to wait for |
 | `hover_focus_reset` | `hover_focus`, checked with `expect_screenshot(..., reset_hover_focus=True)` (Playwright has no such option: printed as `hover_focus`) |
+| `chained` | request A, at its answer the same spinner and request B, at its answer a picture C answered late; between two requests nothing is in flight for a few ms |
+| `modal_scroll` | a long page whose blocks arrive 30–130 ms after load; the test's click on the button at the bottom opens a modal; how far the page was scrolled depends on which answer came first; the signal variant is a change in the background under the modal |
 
 `pulse`, `silent_fetch` and `after_click` were added in S2a, `spinning_logo`
-and `hover_focus_reset` in S2b, each before any run of its stop (the S2
-addenda to the pre-registration).
+and `hover_focus_reset` in S2b, `chained` and `modal_scroll` in dev2, each
+before any run of its stop (the S2 addenda to the pre-registration;
+`PREREG_DEV2.md` for the last two, committed alone before any change to the
+library).
 
 Each page sets `window.__ready = true` when its hazard is over (the data in
 and painted, the font loaded, the banner inserted, …). That flag is the
