@@ -1,0 +1,100 @@
+# Сниппет CI — вставить самому как .github/workflows/install-check.yml.
+# (Я .github/workflows не трогаю.) Два варианта в одном файле: оба вызываются
+# вручную. Скрипт один и тот же — scripts/check_install.py из ветки.
+#
+#  - job `testpypi`  — ставит vistest==<версия> из TestPyPI (зависимости — с
+#                      настоящего PyPI) и гоняет скрипт;
+#  - job `wheel`     — собирает колесо в этой же работе и ставит его без индекса:
+#                      проверка ветки ДО загрузки.
+#
+# Матрица: ubuntu / windows / macos × Python 3.10–3.13 = 12 запусков на job.
+# Запускайте так: Actions → Install check → Run workflow (ref — нужная ветка,
+# version — для testpypi, например 0.2.0.dev1).
+
+name: Install check
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия на TestPyPI (для job testpypi), например 0.2.0.dev1"
+        required: false
+        default: "0.2.0.dev1"
+      what:
+        description: "Что гонять: wheel (сборка из ветки), testpypi или both"
+        required: true
+        default: "wheel"
+        type: choice
+        options: [wheel, testpypi, both]
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- 1. Колесо, собранное здесь же: ветка проверяется до любой загрузки ---- #
+  build:
+    if: ${{ inputs.what == 'wheel' || inputs.what == 'both' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build, twine check, audit of the archives
+        run: |
+          python -m pip install build twine "readme_renderer[md]"
+          python -m build --outdir dist
+          twine check --strict dist/*
+          python scripts/audit_dist.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  wheel:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4          # scripts/ и examples/ — колесо их не несёт
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install from the wheel and check
+        shell: bash
+        run: |
+          python scripts/check_install.py \
+            --wheel "$(ls dist/*.whl)" \
+            ${{ runner.os == 'Linux' && '--with-deps' || '' }}
+
+  # ---- 2. То, что лежит на TestPyPI ----------------------------------------- #
+  testpypi:
+    if: ${{ inputs.what == 'testpypi' || inputs.what == 'both' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4          # только ради scripts/ и examples/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install vistest==${{ inputs.version }} from TestPyPI and check
+        shell: bash
+        run: |
+          python scripts/check_install.py \
+            --version "${{ inputs.version }}" \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            ${{ runner.os == 'Linux' && '--with-deps' || '' }}
