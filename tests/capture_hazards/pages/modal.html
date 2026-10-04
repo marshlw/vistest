@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>modal over a scrolled page</title>
+<link rel="stylesheet" href="/static/base.css"><script src="/static/common.js"></script>
+<style>
+header { position: sticky; top: 0; z-index: 2; justify-content: space-between; }
+.filler { height: 700px; }
+.stat { font-size: 26px; font-weight: 700; }
+button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid #2563eb;
+         background: #2563eb; color: #fff; cursor: pointer; }
+.tail { height: 900px; }
+#modal[hidden] { display: none; }
+#modal .back { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); z-index: 5; }
+#modal .box { position: fixed; z-index: 6; top: 90px; left: 50%; width: 360px; margin-left: -180px;
+              background: #fff; border-radius: 12px; padding: 18px 20px; }
+</style></head>
+<body>
+<header><span>Orders</span><span id="bal">Balance $1,284.50</span></header>
+<main>
+  <div id="top"></div>
+  <div class="card filler"><h2>Activity</h2><p class="muted">Nothing new.</p></div>
+  <div id="mid"></div>
+  <div class="card" id="figure"><h2>Open invoices</h2><div class="stat">$312.00</div></div>
+  <button id="open">Details</button>
+  <div class="tail"></div>
+</main>
+<div id="modal" hidden><div class="back"></div>
+  <div class="box"><h2>Order details</h2><p class="muted">Placed by Blue Lantern Books.</p></div></div>
+<script>
+/* The page grows as its blocks arrive — one on top, one above the button —
+   and the test's click comes while they are on their way, so how far the
+   page was scrolled to reach the button depends on which answer came first.
+   The modal is the click's own: it opens at once. */
+if (SIGNAL) {
+  document.getElementById('bal').textContent = 'Balance $1,248.50';
+  document.querySelector('#figure .stat').textContent = '$321.00';
+}
+let blocks = 0, opened = false;
+const finish = () => { if (blocks === 2 && opened) done(); };
+fetchJSON('/api/data', { h: 'ms_a' }).then((d) => {
+  document.getElementById('top').innerHTML =
+    `<div class="card"><h2>New orders</h2>${table(d.rows)}</div>`;
+  blocks += 1; finish();
+});
+fetchJSON('/api/data', { h: 'ms_b' }).then((d) => {
+  document.getElementById('mid').innerHTML =
+    `<div class="card"><h2>Today</h2><div class="stat" style="color:${d.accent}">$${d.total}</div>`
+    + `${table(d.rows.slice(0, 3))}</div>`;
+  blocks += 1; finish();
+});
+document.getElementById('open').addEventListener('click', () => {
+  window.__events.click = performance.now();
+  document.getElementById('modal').hidden = false;
+  opened = true; finish();
+});
+</script>
+</body></html>

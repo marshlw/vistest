@@ -50,6 +50,12 @@ OVER = {
     "silent": "document.querySelectorAll('#data tbody tr').length === 6",
     "click": "document.querySelectorAll('#report tbody tr').length === 6",
     "logo": "document.readyState === 'complete' && document.fonts.status === 'loaded'",
+    "chained": "!document.querySelector('.spinner') && !!document.querySelector('#pic') "
+               "&& document.querySelector('#pic').complete "
+               "&& document.querySelector('#pic').naturalWidth > 0 "
+               "&& document.querySelectorAll('#slot tbody tr').length === 6",
+    "modal": "!!document.querySelector('#top tbody') && !!document.querySelector('#mid tbody') "
+             "&& !document.getElementById('modal').hidden",
 }
 
 #: The requests the server holds, per page: the hazard cannot be over sooner.
@@ -63,7 +69,15 @@ HELD = {
     "silent": lambda s: stand.delay_ms("data:silent_fetch", s),
     #  Held from the click, not from the start of the page.
     "click": lambda s: stand.delay_ms("data:after_click", s),
+    #  Three requests one after the other, from the start of the page.
+    "chained": lambda s: (stand.delay_ms("data:chain_a", s) + stand.delay_ms("data:chain_b", s)
+                          + stand.delay_ms("img1", s)),
+    #  Two requests at once from the start of the page; the click comes meanwhile.
+    "modal": lambda s: max(stand.delay_ms("data:ms_a", s), stand.delay_ms("data:ms_b", s)),
 }
+
+#: The held request begins at the click (not at the start of the page) here.
+HELD_FROM_CLICK = {"click"}
 
 #: `__ready` follows the end of the hazard by two frames; a few more of slack.
 WITHIN_MS = 150
@@ -119,7 +133,7 @@ def test_ready_turns_true_exactly_when_the_hazard_is_over(base, browser, page, s
         tab = context.new_page()
         tab.goto(stand.page_url(base, hazard, seed))
         if hazard.step == "click":
-            tab.click(stand.CLICK_TARGET)
+            tab.click(hazard.click or stand.CLICK_TARGET)
         tab.wait_for_function("window.__oracle && window.__oracle.ready !== null",
                               timeout=stand.READY_TIMEOUT_MS)
         o = tab.evaluate("window.__oracle")
@@ -128,7 +142,8 @@ def test_ready_turns_true_exactly_when_the_hazard_is_over(base, browser, page, s
         assert o["ready"] - o["over"] <= WITHIN_MS, o   # and says it at once
         if page in HELD:
             held = HELD[page](seed)
-            began = tab.evaluate("window.__events.click || 0")
+            began = (tab.evaluate("window.__events.click || 0")
+                     if page in HELD_FROM_CLICK else 0)
             assert o["atStart"] is False, o             # not over before it began
             assert o["over"] - began >= held, (o, held)  # the server really held it
     finally:

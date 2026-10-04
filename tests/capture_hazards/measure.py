@@ -69,7 +69,7 @@ def step_of(h: stand.Hazard, seed: int) -> dict:
     if h.step == "scroll":
         return {"kind": "scroll", "y": stand.scroll_y(seed)}
     if h.step == "click":
-        return {"kind": "click", "selector": stand.CLICK_TARGET}
+        return {"kind": "click", "selector": h.click or stand.CLICK_TARGET}
     return {"kind": ""}
 
 
@@ -430,7 +430,7 @@ def table(work: Path, seeds, *, timing: bool, facts: list[str],
     cols = columns(work, before or [])
     seeds = list(seeds)
     L = [f"=== Capture hazards: seeds {seeds[0]}–{seeds[-1]} "
-         f"({'held out' if seeds[0] >= stand.HELD_OUT[0] else 'calibration'}) ===",
+         f"({'held out' if seeds[0] in stand.HELD_OUT else 'calibration' if seeds[0] in stand.CALIBRATION else 'pilot'}) ===",
          f"{len(seeds)} seeds × {stand.SHOTS} checks of the plain page, × "
          f"{stand.SIGNAL_SHOTS} of the signal variant; {stand.VIEWPORT['width']}x"
          f"{stand.VIEWPORT['height']} at 1x; baseline after window.__ready + "
@@ -541,6 +541,9 @@ def main(argv=None) -> int:
     ap.add_argument("--held-out", action="store_true",
                     help="the held-out seeds 10–19 instead of the calibration — once, "
                          "after the numbers of S2 are chosen")
+    ap.add_argument("--seeds", default="",
+                    help="a pilot on other seeds, e.g. 100-103 — never 0–19, which are the "
+                         "calibration and the held-out")
     ap.add_argument("--jobs", type=int, default=2, help="processes / Playwright workers")
     ap.add_argument("--work", default=str(DEFAULT_WORK))
     ap.add_argument("--table", action="store_true", help="only print the table")
@@ -552,6 +555,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     seeds = stand.HELD_OUT if args.held_out else stand.CALIBRATION
+    if args.seeds:
+        lo, _, hi = args.seeds.partition("-")
+        seeds = tuple(range(int(lo), int(hi or lo) + 1))
     if args.smoke:
         seeds = seeds[:1]
         stand.SHOTS, stand.SIGNAL_SHOTS = 2, 1
@@ -573,6 +579,7 @@ def main(argv=None) -> int:
                                        "--work", str(work), *(["--held-out"] if args.held_out
                                                               else []),
                                        *(["--only", args.only] if args.only else []),
+                                       *(["--seeds", args.seeds] if args.seeds else []),
                                        *(["--smoke"] if args.smoke else [])],
                                       cwd=REPO) for k in range(args.jobs)]
             if any(p.wait() for p in procs):
