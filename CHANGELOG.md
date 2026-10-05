@@ -5,6 +5,55 @@
 
 ## [Unreleased]
 
+### 0.2.0.dev2: capture and messages, after the first trial on a real application
+
+The engine, engine v1 and `metrics.json` are not touched. Stand numbers and
+what the trial found: `tests/capture_hazards/PREREG_DEV2.md` and the stand's
+README.
+
+- **Readiness: the quiet window runs from the end of the last request.** With
+  the requests of the context counted (the pytest plugin), "network" holds
+  only once the whole quiet window has passed since the last request of the
+  page ended, and the quiet window is counted from that same moment; the rule
+  that a spinner-like animation does not hold the picture once nothing is in
+  flight applies under the same condition. Before, the window ran while a
+  request was out, so the instant its answer came the page counted as quiet and
+  the picture was taken before the app re-rendered and sent the next request.
+  The second look has the same rule: later frames count as settled only if
+  nothing of the page was in flight, or ended, all that time.
+- **The pointer is moved off the page by default; the focus is not touched.**
+  `keep_pointer=True` (`capture.keep_pointer`) keeps the pointer for a hover
+  captured on purpose; `blur_focus=True` (`capture.blur_focus`) takes the
+  focus off; `reset_hover_focus=True` is both, as before. **This changes the
+  pixels of baselines already accepted** wherever the previous step left the
+  pointer over something: capture version 3 (the passport's `version`; the
+  service's `capture_version` stays 2), and a check against an older baseline
+  says "the baseline was taken the old way" when it fails.
+- **The window's scroll, for a picture of the window.** The passport keeps
+  `window_scroll`; before the picture the window is set to it instantly and
+  put back after, one line in the message says where it was and where it was
+  set (`capture.restore_scroll: false` / `restore_scroll=False` turns it off).
+  A page too short to scroll that far keeps the difference, and the line says
+  so.
+- **The device scale factor** is in the passport (`device_scale_factor`); a
+  check at a different one says so in one line. The platform name is unchanged.
+- **Baseline folder:** `<rootdir>/tests/__vistest__`, or `<rootdir>/__vistest__`
+  when the project has no `tests/` folder. GUIDE says so.
+- **Messages.** The pointer/focus hint only when a concrete element (not
+  `html`, `body`, `#root` and its like, not a window-sized container) is
+  where the failing region is; "ΔE00 0.00 (below 2)" is said as letters moved
+  by less than a pixel, same colour; "Confirmed on a second capture" says the
+  frames of this run are identical, so the difference from the baseline is
+  real, not motion; "luck, not a pass" says the page was still changing, and a
+  failure on a page that changed after the picture names the request or the
+  picture still on its way instead of suggesting a mask; "no rule explained" and
+  "severity" are put in words with the scale. A before → after table is in the
+  dev2 report.
+- Tests: the assertions on the old sentences, and two on the old pointer
+  default, were changed with the messages and the default.
+- The stand got two hazards, `chained` and `modal_scroll`, pre-registered in
+  `tests/capture_hazards/PREREG_DEV2.md` before any code changed.
+
 ### Phase 2: the engine on pairs from elsewhere
 
 - **Install: `vistest[browser]` brings `pytest-playwright`; smooth scrolling.**
