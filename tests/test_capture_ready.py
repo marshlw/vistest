@@ -249,7 +249,7 @@ def test_a_steady_failure_is_confirmed():
                        lambda: Later([frame(data=160), frame(data=160)], settled=True),
                        lambda f, m: cmp(f, m))
     assert look.result.failed
-    assert any("nothing on this page moved" in n for n in look.result.notes)
+    assert any("the difference from the baseline is real, not motion" in n for n in look.result.notes)
 
 
 def test_live_means_changed_in_two_intervals():
@@ -288,7 +288,7 @@ def test_a_page_that_switches_between_two_states_does_not_pass_by_luck():
                        lambda f, m: cmp(f, m))
     assert look.result.failed
     assert look.live is not None and look.live[25, 40]
-    assert any("luck, not a pass" in n for n in look.result.notes)
+    assert any("not a result" in n for n in look.result.notes)
 
 
 def test_a_later_frame_that_never_settled_does_not_pass_either():
@@ -438,3 +438,98 @@ def test_the_service_says_when_a_baseline_was_taken_an_older_way(tmp_path):
     assert not any("taken the old way" in n for n in res.notes)
     assert not any("taken the old way" in n
                    for n in svc.check("old.png", base, render=False, meta=ours).notes)
+
+
+# --------------------------------------------------------------------------- #
+#  dev2: the quiet window is counted from the end of the last request
+# --------------------------------------------------------------------------- #
+class _FakeTime:
+    """A clock the test moves: the request count reads it instead of the real one."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+
+class _World:
+    """A page whose spinner is shown, answered, shown again, and answered again.
+
+    t=0     request A goes out (before the check is called)
+    t=100   A is answered; the quiet window has been running since t=0
+    t=105   the app re-renders — the same spinner markup — ...
+    t=106   ... and starts request B
+    t=250   B is answered
+    t=251   the picture replaces the spinner
+
+    The page is asked through the library's own path (`targets._wait_ready`):
+    the requests of its context are counted, `evaluate` answers the probe from
+    the world's clock, and `wait_for_timeout` moves that clock instead of
+    sleeping.
+    """
+
+    EVENTS = ((0.100, "end", "A"), (0.106, "start", "B"), (0.250, "end", "B"))
+    MUTATIONS = (0.0, 0.105, 0.251)
+
+    def __init__(self, monkeypatch):
+        self.time = _FakeTime()
+        monkeypatch.setattr(inflight, "time", self.time)
+        self.count = inflight.RequestCount()
+        self.requests = {n: _Request(n) for n in "AB"}
+        self.count.started(self.requests["A"])
+        self.done = 0
+        self.context = _Context()
+        inflight._COUNTS[self.context] = self.count
+        self.url = "http://x/page"
+        self.goto = None                      # what makes it a Page to the library
+
+    def screenshot(self, **kw):               # pragma: no cover - not taken here
+        raise AssertionError
+
+    def _apply(self):
+        while self.done < len(self.EVENTS) and self.EVENTS[self.done][0] <= self.time.now:
+            _, what, name = self.EVENTS[self.done]
+            (self.count.started if what == "start" else self.count.ended)(self.requests[name])
+            self.done += 1
+
+    def evaluate(self, script, arg=None, **kw):
+        self._apply()
+        now = self.time.now
+        last = max(t for t in self.MUTATIONS if t <= now)
+        shown = now >= 0.251
+        return _page(quiet=int(round((now - last) * 1000)),
+                     loaders=[] if shown else ["div.spinner (named)"], said=0)
+
+    def wait_for_timeout(self, ms):
+        self.time.now += ms / 1000
+
+    @property
+    def picture_is_there(self):
+        return self.time.now >= 0.251
+
+
+class _Context:
+    pass
+
+
+class _Request:
+    resource_type = "fetch"
+    method = "GET"
+    frame = None
+
+    def __init__(self, name):
+        self.url = f"http://x/api/{name}"
+
+
+def test_the_quiet_window_runs_from_the_end_of_the_last_request(monkeypatch):
+    """The race: A's answer arrives, the page is «quiet» (the window ran while A was out),
+    nothing is in flight — and the app is about to start B behind the same spinner."""
+    from vistest.library import targets
+
+    world = _World(monkeypatch)
+    got = targets._wait_ready(world, world, [], [], False, 5000, 40, ())
+    assert got.ok is True
+    assert world.picture_is_there, (
+        f"declared ready at {world.time.now * 1000:.0f} ms, with the spinner still shown "
+        "(request B was about to start)")

@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     bn.add_argument("--actual", help="... and the screenshots")
     bn.add_argument("--baselines",
                     help="a VisTest run: where its baselines are "
-                         "(tests/__vistest__ by default)")
+                         "(tests/__vistest__ by default, __vistest__ without a tests/ folder)")
     bn.add_argument("--out", default="vistest-bench-out",
                     help="where the report, labels.csv and the diff pictures go "
                          "(./vistest-bench-out by default)")

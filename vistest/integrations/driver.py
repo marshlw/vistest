@@ -375,7 +375,7 @@ class PlaywrightDriver(Driver):
         count = _inflight.for_page(self.page)
         if count is None:
             return None
-        return lambda: count.inflight(self.page, ignore)
+        return lambda: count.snapshot(self.page, ignore)
 
     def evaluate(self, expression: str, arg=None, *, timeout_ms: int | None = None):
         # Playwright не даёт таймаут на evaluate: если JS страницы ушёл в

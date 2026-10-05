@@ -48,12 +48,26 @@ from ..core import pngio
 from . import atomic
 from .base import SnapshotKey, SnapshotMeta
 
-__all__ = ["DEFAULT_BASELINE_ROOT", "FileStore"]
+__all__ = ["DEFAULT_BASELINE_ROOT", "FALLBACK_BASELINE_ROOT", "FileStore", "default_root"]
 
 #  Next to the tests, and named so that it sorts and reads as machinery rather
 #  than as a test package: `tests/__vistest__/` cannot be imported by accident
 #  and cannot be mistaken for fixtures.
 DEFAULT_BASELINE_ROOT = "tests/__vistest__"
+
+#  A project that keeps no `tests/` folder (tests next to the code, or in
+#  `test/`) must not get one made for it just to hold baselines: the folder is
+#  then `<rootdir>/__vistest__`.
+FALLBACK_BASELINE_ROOT = "__vistest__"
+
+
+def default_root(rootdir: str | Path) -> Path:
+    """Where the baselines are when nobody said: `tests/__vistest__`, or — when
+    the project has no `tests/` folder — `__vistest__` in its root."""
+    root = Path(rootdir)
+    if (root / "tests").is_dir():
+        return root / DEFAULT_BASELINE_ROOT
+    return root / FALLBACK_BASELINE_ROOT
 
 
 def _sha256(png: bytes) -> str:

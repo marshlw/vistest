@@ -36,7 +36,8 @@ from typing import Any
 
 #  CAPTURE_VERSION — the way pictures of a live page are taken, as the
 #  passport records it (`capture/ready.py` says what each number means).
-from ..capture.ready import CAPTURE_VERSION, old_way
+from ..capture.ready import LIBRARY_CAPTURE_VERSION as CAPTURE_VERSION
+from ..capture.ready import old_way
 from ..core import pngio
 from ..core.thresholds import ThresholdError, clean, patch_for
 from ..models import CompareResult, Verdict
@@ -129,6 +130,9 @@ def expect_screenshot(
     engine: str | None = None,
     ready_timeout_ms: int | None = None,
     reset_hover_focus: bool | None = None,
+    keep_pointer: bool | None = None,
+    blur_focus: bool | None = None,
+    restore_scroll: bool | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -182,12 +186,16 @@ def expect_screenshot(
     live; what changed once — data that arrived late — is not, and the verdict
     is from the last frame. On a page that was not ready nothing is masked.
 
-    `reset_hover_focus=True` (default `capture.reset_hover_focus`, off) moves
-    the pointer off the page and takes the focus off whatever has it before
-    the picture. Off, a failure whose region is the element under the pointer
-    or in focus names it and says how to turn this on. A Locator's element is
-    put back where it was in the window when its baseline was taken, when the
-    baseline's passport records that place.
+    The pointer is moved off the page before the picture, so that no element
+    is under it and a hover left by the previous step is not photographed;
+    the focus is left alone. `keep_pointer=True` (`capture.keep_pointer`) keeps
+    the pointer where the test left it — for a hover captured on purpose —,
+    `blur_focus=True` (`capture.blur_focus`) takes the focus off whatever has
+    it. `reset_hover_focus=True` (`capture.reset_hover_focus`) is both: the
+    pointer away and the focus off, as before. A Locator's element is put back
+    where it was in the window when its baseline was taken, when the
+    baseline's passport records that place; so is the window's scroll for a
+    picture of the window (`restore_scroll`, `capture.restore_scroll`).
 
     `scale` is `"css"` (the default: one picture pixel
     per CSS pixel on any screen) or `"device"` (the screen's own pixels); the
@@ -208,18 +216,22 @@ def expect_screenshot(
                   else _targets.check_timeout(ready_timeout_ms, "ready_timeout_ms"))
 
     scale = _targets.check_scale(scale)
-    reset = (ctx.config.capture.reset_hover_focus if reset_hover_focus is None
-             else bool(reset_hover_focus))
+    away, blur = _targets.pointer_plan(ctx.config.capture, reset_hover_focus,
+                                       keep_pointer, blur_focus)
     store = store or ctx.store
     #  A Locator goes back where its baseline had it: the passport is read
     #  before the picture, under the key the picture will have.
     place = _place_from_passport(ctx, store, target, name, platform, scale)
+    restore = (ctx.config.capture.restore_scroll if restore_scroll is None
+               else bool(restore_scroll))
+    window = (_window_from_passport(ctx, store, target, name, platform, scale)
+              if restore else None)
     shot = _targets.capture(target, mask=mask, full_page=full_page,
                             scale=scale,
                             stable_timeout_ms=wait, ready_timeout_ms=ready_wait,
                             quiet_ms=ctx.config.capture.quiet_ms,
                             ignore_requests=ctx.config.capture.ignore_requests,
-                            reset_hover_focus=reset, place=place)
+                            pointer_away=away, blur_focus=blur, place=place, window=window)
     platform = platform if platform is not None else ctx.platform_for(shot)
     key = ctx.key(name, platform)
     #  From here on the check has a name, and it must leave a row in the
@@ -283,6 +295,9 @@ def expect_screenshot(
         launch_line = _launch_line(passport, shot)
         if launch_line:
             said.append(launch_line)
+        dpr_line = _dpr_line(passport, shot)
+        if dpr_line:
+            said.append(dpr_line)
         cfg = ctx.config.diff.merged(
             engine=engine,
             **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
@@ -361,7 +376,7 @@ def expect_screenshot(
         #  was not ready and got no masking, a later frame that was judged,
         #  something that keeps changing: the person reading the failure needs
         #  it more than the report does. It is already among the notes.
-        hints = _failure_hints(shot, result, live, passport, reset) \
+        hints = _failure_hints(shot, result, live, passport, away, blur) \
             if result.verdict is Verdict.FAIL else []
         reason = _with([*said, *_look_notes(result), *hints], describe(result))
         limits = _limits(cfg)
@@ -471,7 +486,8 @@ def _second_look(shot, key: SnapshotKey, first, expected_rgb, actual_rgb,
 
     def recapture():
         frames, settled = _targets.frames_after(shot.retake, shot.png,
-                                                timeout_ms=max(wait, 1))
+                                                timeout_ms=max(wait, 1),
+                                                calm=shot.calm)
         return Later([pngio.decode(f, source=f"a later screenshot of {key.name}")
                       for f in frames], settled=settled)
 
@@ -535,6 +551,12 @@ def _capture_record(shot) -> dict:
     if isinstance(launch, dict):
         out["launch"] = {"headless": launch.get("headless"),
                          "scrollbar_px": int(launch.get("scrollbar_px") or 0)}
+    dpr = (shot.facts or {}).get("dpr")
+    if isinstance(dpr, (int, float)) and dpr > 0:
+        out["device_scale_factor"] = float(dpr)
+    window = (shot.facts or {}).get("window")
+    if isinstance(window, dict):
+        out["window_scroll"] = {"x": int(window.get("x") or 0), "y": int(window.get("y") or 0)}
     place = (shot.facts or {}).get("place")
     if isinstance(place, dict):
         out["place"] = {k: int(place[k]) for k in ("x", "y", "scroll_x", "scroll_y")
@@ -557,6 +579,43 @@ def _place_from_passport(ctx, store, target, name: str, platform, scale: str):
     from .page_facts import place
 
     return place(passport.capture.get("place"))
+
+
+def _window_from_passport(ctx, store, target, name: str, platform, scale: str):
+    """The window scroll of a live page's baseline: {x, y}, or None (nothing recorded)."""
+    if not _targets.is_page_like(target) or not _targets.is_live(target):
+        return None
+    try:
+        stub = _targets.describe(target, scale)
+        key = ctx.key(name, platform if platform is not None else ctx.platform_for(stub))
+        passport = store.meta(key)
+    except Exception:  # noqa: BLE001 - no scroll is the old behaviour, not an error
+        return None
+    if passport is None or not passport.capture:
+        return None
+    from .page_facts import window_scroll
+
+    return window_scroll(passport.capture.get("window_scroll"))
+
+
+def _dpr_line(passport, shot) -> str:
+    """One line when the baseline and this check had different device scale factors.
+
+    The platform name does not carry it (`chromium-1440x900` is the same for a
+    1x and a 2x screen at scale="css"), so a text that is drawn on a different
+    grid fails with no sign of why.
+    """
+    if passport is None or not passport.capture or not shot.facts:
+        return ""
+    then = passport.capture.get("device_scale_factor")
+    now = shot.facts.get("dpr")
+    if not isinstance(then, (int, float)) or not isinstance(now, (int, float)):
+        return ""
+    if abs(float(then) - float(now)) < 1e-6:
+        return ""
+    return (f"the baseline was taken at device scale factor {float(then):g}, this check at "
+            f"{float(now):g}: text and edges are drawn on a different pixel grid — take both "
+            "at the same device_scale_factor (the browser context's)")
 
 
 def _launch_line(passport, shot) -> str:
@@ -586,25 +645,69 @@ def _launch_line(passport, shot) -> str:
 NEAR_PX = 16
 
 
-def _failure_hints(shot, result, live, passport, reset: bool) -> list[str]:
+#: Elements that are the page rather than a thing on it: under the pointer is
+#: no information when it is one of these.
+_WHOLE_PAGE = {"html", "body", "#root", "#app", "#__next", "#__nuxt", "#app-root", "#main"}
+#: A box this much of the picture, in both directions, is a full-window container.
+_WHOLE_SHARE = 0.9
+
+
+def _concrete(item: dict, size: tuple[int, int] | None) -> bool:
+    """A pointer or focus element that is a thing on the page, not the page itself.
+
+    Not `html`, `body`, `#root` and its like, and not a box that covers (nearly)
+    the whole picture: `#root` under the pointer is true of every pointer position.
+    """
+    sel = str(item.get("sel") or "").strip()
+    last = sel.split(">")[-1].strip().split(":")[0]
+    if not sel or sel.lower() in _WHOLE_PAGE or last.lower() in _WHOLE_PAGE:
+        return False
+    box = item.get("box")
+    if size and box and size[0] > 0 and size[1] > 0:
+        if box[2] >= _WHOLE_SHARE * size[0] and box[3] >= _WHOLE_SHARE * size[1]:
+            return False
+    return True
+
+
+def _late_names(shot) -> list[str]:
+    """What was still arriving after the picture, by name; [] when nothing or unknown."""
+    if shot.late is None:
+        return []
+    try:
+        return [n for n in shot.late() if not n.startswith("image data:")]
+    except Exception:  # noqa: BLE001 - naming is help, not the verdict
+        return []
+
+
+def _failure_hints(shot, result, live, passport, away: bool, blur: bool) -> list[str]:
     """What the page can tell about a failure: the element to blame, what to do."""
     out: list[str] = []
     facts = shot.facts or {}
     regions = list(result.regions)
-    if not reset:
-        for what, words in (("hover", "is under the pointer — the previous step left it "
-                                      "there"),
-                            ("focus", "has the focus")):
-            item = facts.get(what)
-            if not isinstance(item, dict) or not item.get("sel"):
-                continue
-            x, y, w, h = item.get("box") or (0, 0, 0, 0)
-            near = (x - NEAR_PX, y - NEAR_PX, w + 2 * NEAR_PX, h + 2 * NEAR_PX)
-            if any(_overlaps(near, (r.x, r.y, r.w, r.h)) for r in regions):
-                out.append(f"the failing region is at {item['sel']}, which {words}: pass "
-                           "reset_hover_focus=True to expect_screenshot (or set "
-                           "capture.reset_hover_focus: true in vistest.yaml) to move the "
-                           "pointer away and take the focus off before the picture")
+    size = getattr(result, "size_actual", None)
+    for what, words, off, switch in (
+            ("hover", "is under the pointer, kept there by keep_pointer", away,
+             "leave keep_pointer off so that the pointer is moved away before the picture"),
+            ("focus", "has the focus", blur,
+             "pass blur_focus=True (or capture.blur_focus: true in vistest.yaml) to take "
+             "the focus off before the picture")):
+        if off:
+            continue
+        item = facts.get(what)
+        if not isinstance(item, dict) or not item.get("sel") or not _concrete(item, size):
+            continue
+        x, y, w, h = item.get("box") or (0, 0, 0, 0)
+        near = (x - NEAR_PX, y - NEAR_PX, w + 2 * NEAR_PX, h + 2 * NEAR_PX)
+        if any(_overlaps(near, (r.x, r.y, r.w, r.h)) for r in regions):
+            out.append(f"the failing region is at {item['sel']}, which {words}: {switch}")
+    #  Only for a page that did change after the picture (the second look says
+    #  so, or the frames never held): an unrelated beacon that ended after the
+    #  shot of a page that did not move is not the reason for anything.
+    changing = shot.stability.stable is False or any(
+        n.startswith(("A second look was taken",
+                      "Failed on the first capture and passed on a later one"))
+        for n in result.notes)
+    late = _late_names(shot) if changing else []
     named = list(shot.moving)
     if live is not None and shot.namer is not None:
         from .targets import name_parts
@@ -616,20 +719,31 @@ def _failure_hints(shot, result, live, passport, reset: bool) -> list[str]:
         if not sel or sel in seen:
             continue
         seen.add(sel)
-        if item.get("tag") == "canvas":
+        if late:
+            #  Something was still on its way after the picture: that is what
+            #  changed it, and a mask would only hide the next one.
+            shown = ", ".join(late[:2])
+            out.append(f"{sel} changed after the picture because {shown} "
+                       "was still on its way: wait for it in the test (the element it "
+                       "fills, or the response) before the check — a mask would hide it")
+        elif item.get("tag") == "canvas":
             out.append(f"{sel} is a canvas a script redraws on every frame — "
                        'animations="disabled" stops CSS animations, not this: if it is '
                        f'meant to move, mask it: expect_screenshot(..., mask=["{sel}"])')
         else:
-            out.append(f"{sel} changes by itself: if it is meant to, mask it — "
+            out.append(f"{sel} changes by itself, and no request or picture was on its "
+                       "way: if it is meant to, mask it — "
                        f'expect_screenshot(..., mask=["{sel}"]) — or mark it '
                        'data-vistest="ignore"')
         if len(seen) >= 2:
             break
+    if late and not seen:
+        out.append(f"after the picture {', '.join(late[:2])} was still on its way and the "
+                   "page changed: wait for it in the test before the check")
     if shot.retake is not None and (passport is None or not passport.capture
                                     or int(passport.capture.get("version", 1))
                                     < CAPTURE_VERSION):
-        out.append(old_way("pytest --vistest-update=changed"))
+        out.append(old_way("pytest --vistest-update=changed", CAPTURE_VERSION))
     return out
 
 

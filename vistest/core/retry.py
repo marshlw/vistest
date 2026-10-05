@@ -160,8 +160,8 @@ def second_look(
         #  statement in favour of the failure, and worth saying aloud: whoever
         #  looks at it next is not wondering whether something blinked.
         first.notes.append(
-            "Confirmed on a second capture: nothing on this page moved "
-            "between the frames.")
+            "Confirmed on a second capture: the frames of this run are identical, so "
+            "the difference from the baseline is real, not motion.")
         return SecondLook(first, np.zeros(frame.shape[:2], dtype=bool), frame)
 
     live = live_mask(seq) if len(seq) >= 3 else np.zeros(last.shape[:2], dtype=bool)
@@ -188,8 +188,9 @@ def second_look(
         #  pass whenever the last frame happened to be the right one.
         first.notes.append(
             f"A second look was taken: {what}. A later frame matched the "
-            "baseline, but the page did not hold still after it, so that is luck, "
-            "not a pass: the verdict stays the failure.")
+            "baseline, but the page was still changing after it, so that match is a "
+            "moment of a page that had not finished, not a result: the verdict "
+            "stays the failure.")
         return SecondLook(first, None, frame, live if live.any() else None)
     if again.failed:
         again.notes.append(

@@ -30,6 +30,7 @@ Playwright is not imported here: a context is recognised by having `.on`.
 
 from __future__ import annotations
 
+import collections
 import fnmatch
 import time
 import weakref
@@ -51,6 +52,12 @@ class RequestCount:
     def __init__(self) -> None:
         self._open: dict = {}
         self.last_end = time.monotonic()
+        #  The last requests that ended, newest last: (when, the request). The
+        #  readiness wait and the second look ask "how long has nothing been
+        #  in flight for this page", which needs the ends of *its* requests,
+        #  not of the context's last one.
+        self._ended: collections.deque = collections.deque(maxlen=64)
+        self.created = self.last_end
 
     def started(self, request) -> None:
         try:
@@ -63,6 +70,7 @@ class RequestCount:
     def ended(self, request) -> None:
         if self._open.pop(request, None) is not None:
             self.last_end = time.monotonic()
+            self._ended.append((self.last_end, request))
 
     def inflight(self, page=None, ignore: tuple[str, ...] = ()) -> tuple[int, list[str]]:
         """(how many, a few of them) — `page`'s requests in flight, or all of them.
@@ -73,27 +81,89 @@ class RequestCount:
         a long poll or an analytics beacon the page never waits for itself.
         """
         held = []
-        try:
-            home = urlsplit(str(page.url)).netloc if page is not None else ""
-        except Exception:  # noqa: BLE001
-            home = ""
+        home = self._home(page)
         for request in list(self._open):
-            if page is not None:
-                try:
-                    frame = request.frame
-                    if frame is not None and frame.page is not page:
-                        continue
-                except Exception:  # noqa: BLE001 - a service worker's: counted
-                    pass
-            try:
-                url = str(request.url)
-            except Exception:  # noqa: BLE001
-                url = ""
-            bare = url.split("?", 1)[0].split("#", 1)[0]
-            if ignore and any(fnmatch.fnmatchcase(bare, p) for p in ignore):
-                continue
-            held.append(label(request, url, home))
+            url = self._counted(request, page, ignore)
+            if url is not None:
+                held.append(label(request, url, home))
         return len(held), held[:3]
+
+    @staticmethod
+    def _home(page) -> str:
+        try:
+            return urlsplit(str(page.url)).netloc if page is not None else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    @staticmethod
+    def _counted(request, page, ignore: tuple[str, ...]) -> str | None:
+        """The URL of `request` when it is one of `page`'s that count, else None."""
+        if page is not None:
+            try:
+                frame = request.frame
+                if frame is not None and frame.page is not page:
+                    return None
+            except Exception:  # noqa: BLE001 - a service worker's: counted
+                pass
+        try:
+            url = str(request.url)
+        except Exception:  # noqa: BLE001
+            url = ""
+        bare = url.split("?", 1)[0].split("#", 1)[0]
+        if ignore and any(fnmatch.fnmatchcase(bare, p) for p in ignore):
+            return None
+        return url
+
+    def last_end_of(self, page=None, ignore: tuple[str, ...] = ()) -> float:
+        """When the last of `page`'s counted requests ended (the context's start if none)."""
+        for when, request in reversed(self._ended):
+            if self._counted(request, page, ignore) is not None:
+                return when
+        return self.created
+
+    def idle_ms(self, page=None, ignore: tuple[str, ...] = ()) -> int:
+        """Milliseconds since `page` last had a counted request in flight.
+
+        0 while one is in flight; otherwise the time since the last one ended.
+        The quiet window of the readiness wait is counted from this moment:
+        the page answers a response with its next render, and that render may
+        start the next request — a page that looked quiet because the window
+        had run while the request was out is not quiet yet.
+        """
+        if self.inflight(page, ignore)[0]:
+            return 0
+        return max(0, int(round((time.monotonic() - self.last_end_of(page, ignore)) * 1000)))
+
+    def snapshot(self, page=None, ignore: tuple[str, ...] = ()) -> tuple[int, list[str], int]:
+        """`inflight()` and `idle_ms()` read together: (count, a few of them, idle ms)."""
+        count, held = self.inflight(page, ignore)
+        return count, held, 0 if count else self.idle_ms(page, ignore)
+
+    def touched_since(self, since: float, page=None, ignore: tuple[str, ...] = ()) -> list[str]:
+        """Which of `page`'s requests were in flight, or ended, after `since` (monotonic).
+
+        Named like `inflight()` names them — `GET /api/orders`, no query — the
+        ones still out first, then the ones that ended, each once.
+        """
+        home = self._home(page)
+        out: list[str] = []
+        for request in list(self._open):
+            url = self._counted(request, page, ignore)
+            if url is not None:
+                out.append(label(request, url, home))
+        for when, request in reversed(self._ended):
+            if when <= since:
+                break
+            url = self._counted(request, page, ignore)
+            if url is not None:
+                out.append(label(request, url, home))
+        return list(dict.fromkeys(out))
+
+    def calm_since(self, since: float, page=None, ignore: tuple[str, ...] = ()) -> bool:
+        """True when nothing of `page` was in flight, or ended, after `since` (monotonic)."""
+        if self.inflight(page, ignore)[0]:
+            return False
+        return self.last_end_of(page, ignore) <= since
 
 
 def label(request, url: str, home: str = "") -> str:

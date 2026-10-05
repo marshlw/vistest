@@ -23,6 +23,7 @@ resolves it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 __all__ = ["BaselineMissing", "ScreenshotMismatch", "VisTestWarning",
@@ -49,12 +50,36 @@ def description(r) -> str:
     return ""
 
 
+_REDRAWN = re.compile(r"strokes redrawn within (\d+) px; ink (#\w+) → (#\w+), "
+                      r"ΔE00 ([\d.]+) \(below ([\d.]+)\)")
+
+
+def plain(text: str) -> str:
+    """The engine's sentence, with the one that read as a contradiction in words.
+
+    «strokes redrawn within 1 px; ink #889ab3 → #889ab3, ΔE00 0.00 (below 2)»
+    sat in the list of reasons a check failed, and nothing in it said why: the
+    numbers are all «below» something. What it means: the letters moved by
+    less than a pixel and the colour is the same — which on the renderer that
+    took the baseline nobody explains as noise, so it fails.
+    """
+    def words(m):
+        px, a, b, de, limit = m.groups()
+        same = float(de) < 0.5 or a == b
+        colour = (f"the colour is the same ({a})" if same
+                  else f"the colour is within {limit} ΔE00 of the old one ({a} → {b})")
+        return (f"letters moved by less than {px} px, {colour}; on the same renderer "
+                "this is not explained as noise, so it counts")
+
+    return _REDRAWN.sub(words, text)
+
+
 def changed_line(r) -> str:
     """'97x12 at (219, 522): ink colour: #343649 → #586074, ΔE00 14.2'."""
     def get(key):
         return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
 
-    return f"{get('w')}x{get('h')} at ({get('x')}, {get('y')}): {description(r)}"
+    return f"{get('w')}x{get('h')} at ({get('x')}, {get('y')}): {plain(description(r))}"
 
 
 def suppressed_line(r) -> str:
@@ -93,7 +118,7 @@ def _limits_line(result, limits: dict) -> str:
         threshold = (f"threshold {limits.get('fail_severity', 0):g} ({source}), "
                      f"area limit {limits.get('max_changed_area_pct', 0):.2f}% "
                      f"({area_source})"
-                     if source else "no threshold: what no rule explains fails")
+                     if source else "no threshold is set, so any such region fails")
         said = getattr(result, "threshold", None) or {}
         if "area_pct" in said:
             #  Every region was below the threshold, and together they cover
@@ -102,9 +127,11 @@ def _limits_line(result, limits: dict) -> str:
             threshold += (f" — all below it, together {said['area_pct']:.2f}% of "
                           f"the frame, at or over the area limit: "
                           f"{_engines.AREA_HINT}")
-        return (f"  engine v2: {regions} no rule explained, severity up to "
-                f"{result.max_severity:.1f}; {threshold}; changed area "
-                f"{result.changed_area_pct:.2f}%")
+        return (f"  engine v2: {regions} that no rule of the engine explains away "
+                "(not antialiasing, not a different renderer, not a block that only "
+                f"moved), severity up to {result.max_severity:.1f} on a 0–100 scale "
+                f"(0 — nothing, higher — a bigger change, 100 — the top); {threshold}; "
+                f"changed area {result.changed_area_pct:.2f}% of the frame")
     return (f"  severity {result.max_severity:.1f}"
             f" (limit {limits.get('fail_severity', 0):.1f}),"
             f" changed area {result.changed_area_pct:.2f}%"

@@ -33,7 +33,7 @@ from .base import (
     SnapshotStore,
     platforms_with,
 )
-from .file import DEFAULT_BASELINE_ROOT, FileStore
+from .file import DEFAULT_BASELINE_ROOT, FALLBACK_BASELINE_ROOT, FileStore, default_root
 from .paths import safe_name, split_project
 
 if TYPE_CHECKING:
@@ -74,6 +74,8 @@ __all__ = [
     "platforms_with",
     "FileStore",
     "DEFAULT_BASELINE_ROOT",
+    "FALLBACK_BASELINE_ROOT",
+    "default_root",
     "safe_name",
     "split_project",
     # deferred, see _LAZY
