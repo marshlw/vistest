@@ -1895,8 +1895,11 @@ Under engine v2, the default, the policy line reads «Reason for the failure:
 N region(s) no rule explained», each region says in words what changed, and
 a threshold a person set is named with its source; the regions it let
 through follow on a line of their own, «below the threshold 25 (call): …».
-The library's `ScreenshotMismatch` opens with `engine v2: 2 regions no rule
-explained, severity up to 71.4; no threshold: what no rule explains fails`.
+The library's `ScreenshotMismatch` opens with `engine v2: 2 regions that no
+rule of the engine explains away (not antialiasing, not a different renderer,
+not a block that only moved), severity up to 71.4 on a 0–100 scale (0 —
+nothing, higher — a bigger change, 100 — the top); no threshold is set, so
+any such region fails; changed area 0.11% of the frame`.
 
 ### Смотрим артефакты
 
@@ -2254,7 +2257,7 @@ are identical (and at least 300 ms have passed). Then:
 - something keeps changing — a counter, an animation that does not stop: it
   is named, **not masked**, and the check fails until it is masked on purpose
   (`mask=["#counter"]`). Masking it quietly made checks pass by luck;
-- nothing changed: `Confirmed on a second capture: nothing on this page moved`.
+- nothing changed: `Confirmed on a second capture: the frames of this run are identical, so the difference from the baseline is real, not motion`.
 
 Nothing the second look sees is masked, and nothing is remembered as a mask:
 a change in data that arrived after `load` cannot be hidden this way. On a
@@ -2268,23 +2271,33 @@ The cost is one or a few extra frames, and only for what has already failed.
 **What a failure names.** The picture's pixels say what differs; the live
 page can say what it is. When a check fails:
 
-- *the element under the pointer or in focus* — a hover or a focus ring left
-  by the previous step — is named when the failed region is that element,
-  with the option that fixes it: `expect_screenshot(...,
-  reset_hover_focus=True)`, or `capture.reset_hover_focus: true` in
-  `vistest.yaml`, moves the pointer off the page and takes the focus off
-  before the picture. It is off by default: a check that photographs a hover
-  on purpose must keep working;
+- *the element under the pointer or in focus* — only when you asked to keep
+  it there. By default the pointer is moved off the page before the picture,
+  so that no element is under it and a hover left by the previous step is not
+  photographed; the focus is left alone. `keep_pointer=True`
+  (`capture.keep_pointer: true`) keeps the pointer where the test put it — for
+  a hover captured on purpose —, `blur_focus=True` (`capture.blur_focus:
+  true`) takes the focus off whatever has it, and `reset_hover_focus=True`
+  (`capture.reset_hover_focus: true`) is both. With the pointer or the focus
+  kept, a failure whose region is that element names it — a concrete element
+  only: never `html`, `body`, `#root` or a container as large as the window,
+  which is under every pointer;
 - *an element that changes by itself* — a counter, a clock, a canvas a
   script redraws — is named by a selector of the place that moves (its id,
   its `data-testid`, otherwise a short path) with one action:
   `mask=["#counter"]`, or `data-vistest="ignore"` on the element (the library
-  paints it out like a mask, as the service does). For a `<canvas>` the
+  paints it out like a mask, as the service does). When the request or the
+  picture that changed it was still on its way after the picture, the message
+  names that instead (`GET /api/orders`, `image /img/1.png`) and says to wait
+  for it in the test: a mask would hide it. For a `<canvas>` the
   message adds that `animations="disabled"` does not stop it: that freezes CSS
   animations, and a script draws on a canvas;
 - *the launch* — the passport keeps whether the baseline was taken headless
   or in a browser with a window, and the width of the scroll bars; when the
-  check runs in a different one, the reason says so in one line.
+  check runs in a different one, the reason says so in one line;
+- *the device scale factor* — the passport keeps it too
+  (`device_scale_factor`); a check at a different one says so in one line.
+  The platform name (`chromium-1440x900`) is unchanged and does not carry it.
 
 **Where an element was.** For a Locator, the passport keeps where its element
 was in the window and how far the page was scrolled. Before the picture the
@@ -2293,24 +2306,39 @@ pixels — a `position: fixed` background or a sticky header behind the element
 then looks the same. A baseline without that record is photographed as
 before.
 
+**Where the window was.** For a picture of the window (a Page, not
+`full_page`) the passport keeps how far the window was scrolled. Before the
+picture it is set to that scroll instantly, and after the picture put back
+where the test left it; one line in the message says where it was and where it
+was set. `restore_scroll=False` (`capture.restore_scroll: false`) switches it
+off. A page too short to scroll that far stays where it can, the difference
+remains, and the line says so.
+
 **What a picture of an element leaves behind.** The scrolling: after the
 picture — a failed check's further frames included — the window and every
 scrollable box around the element are scrolled where the test left them.
-The one side effect that remains is `reset_hover_focus`, when it is switched
-on: the pointer is moved off the page and the focus is taken off its element,
-and neither is put back.
+The side effects that remain: the pointer is moved off the page (unless
+`keep_pointer` is on), and, with `blur_focus` or `reset_hover_focus`, the focus
+is taken off its element; neither is put back.
 
 **How the baseline was taken.** The passport records the capture's version
 (`capture.version`). A change in how pictures are taken that changes pixels
 of baselines already accepted comes with a new version, and a check against a
 baseline of an older one (or of none: a passport written before the record
 existed) says, when it fails: `the baseline was taken the old way (before the
-readiness wait and the other changes of capture version 2); if that is the
+pointer moved off the page before the picture, the window scroll put back, and
+the other changes of capture version 3); if that is the
 difference, accept it again: pytest --vistest-update=changed`. The service
 keeps the same number as `capture_version` in a baseline's meta when its own
 capture (the runner, the adapter) took the picture, and says the same on a
 failure against an older one; a picture uploaded from elsewhere is not judged
 by it.
+
+**Where the baselines go.** `<rootdir>/tests/__vistest__/<platform>/<name>.png`
+— or, when the project has no `tests/` folder, `<rootdir>/__vistest__/`: a
+folder is not made for it just to hold baselines. `--vistest-baselines` (or
+`vistest_baselines` in the pytest ini) says another place, and the line after
+an update run, `baselines written to …`, names the one that was used.
 
 ## 8. Борьба с нестабильностью
 
