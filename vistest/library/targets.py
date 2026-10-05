@@ -456,18 +456,13 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
                    and not (full_page if full_page is not None else False))
     set_window = window if window_shot else None
     prepared = _facts.prepare(owner, element, place=place if element else None,
-                              blur=blur_focus,
-                              window=set_window) if page is not None else {}
+                              blur=blur_focus) if page is not None else {}
     #  Where the test left the window and the scrollable boxes around an
     #  element, before the placing below and Playwright's own scrolling into
     #  view move them. The picture needs the element where the baseline had it;
     #  the test needs the page where it was.
     before = prepared.get("scroll") if (element or window_shot) else None
     at_shot: dict | None = None
-    if set_window is not None and before is not None:
-        note = _window_note(before, set_window, prepared.get("window"))
-        if note:
-            notes.append(note)
 
     def moved() -> bool:
         return before is not None and not _facts.scrolled_like(before, at_shot)
@@ -505,6 +500,21 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             readiness = _wait_ready(target, page, painted, boxes,
                                     bool(options.get("full_page")), ready_timeout_ms,
                                     quiet_ms, tuple(ignore_requests))
+        if set_window is not None:
+            #  Once the page has arrived: set the window to where the baseline's
+            #  was, and look again — what is in the new view may still be on its way.
+            got = _facts.set_window(owner, set_window)
+            if got is not None and before is not None:
+                note = _window_note(before, set_window, got)
+                if note:
+                    notes.append(note)
+            if readiness is not None and got is not None and (
+                    tuple(got.get("at") or ()) != (int(before.get("x") or 0),
+                                                   int(before.get("y") or 0))
+                    if before is not None else True):
+                readiness = _wait_ready(target, page, painted, boxes,
+                                        bool(options.get("full_page")), ready_timeout_ms,
+                                        quiet_ms, tuple(ignore_requests))
 
         last_two: list[bytes] = []
         taken_at = time.monotonic()
