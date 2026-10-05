@@ -159,7 +159,7 @@ def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
     #  in the call is — and is named with where it came from.
     with pytest.raises(ScreenshotMismatch) as default:
         expect_screenshot(changed, "page.png")
-    assert "no threshold: what no rule explains fails" in str(default.value)
+    assert "no threshold is set, so any such region fails" in str(default.value)
 
     with pytest.raises(ScreenshotMismatch) as raised:
         expect_screenshot(changed, "page.png", threshold=60)
@@ -202,7 +202,7 @@ def test_the_passport_thresholds_reach_the_comparison(ctx):
     changed = frame(box=(10, 10, 60, 30))
     with pytest.raises(ScreenshotMismatch) as before:
         expect_screenshot(changed, "page.png")
-    assert "no threshold: what no rule explains fails" in str(before.value)
+    assert "no threshold is set, so any such region fails" in str(before.value)
 
     store = FileStore(ctx.baselines)
     key = SnapshotKey("page.png")

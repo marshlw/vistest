@@ -86,7 +86,7 @@ def test_a_real_change_survives_the_second_capture(svc):
     moved = _page(spinner=10, header_shift=True)
     res = _check(svc, moved, recapture=lambda: moved)
     assert res.failed
-    assert any("nothing on this page moved" in n for n in res.notes)
+    assert any("the difference from the baseline is real, not motion" in n for n in res.notes)
 
 
 def test_a_real_change_survives_even_when_the_page_is_alive(svc):

@@ -404,7 +404,7 @@ def _regions_table(entry: dict) -> str:
     table of coordinates adds nothing. With one, the score and the remarks are
     the point, and they need a place.
     """
-    from ..library.errors import description
+    from ..library.errors import description, plain
 
     regions = [r for r in entry.get("regions") or [] if isinstance(r, dict)]
     scored = any(r.get("score") is not None for r in regions)
@@ -423,7 +423,7 @@ def _regions_table(entry: dict) -> str:
                  f"<td>{float(r.get('severity') or 0):.1f}</td>"
                  f"<td>{_e(_where(r))}</td>")
         if said:
-            cells += f"<td>{_e(description(r))}</td>"
+            cells += f"<td>{_e(plain(description(r)))}</td>"
         if scored:
             score = r.get("score")
             cells += f"<td>{'' if score is None else f'{float(score):.2f}'}</td>"

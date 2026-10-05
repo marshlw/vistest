@@ -336,13 +336,21 @@ class CaptureConfig:
     # beacon, a stream the page never waits for itself. Example:
     # ["*/api/poll*", "https://www.google-analytics.com/*"].
     ignore_requests: tuple[str, ...] = ()
-    # Before the picture: move the pointer off the page and take the focus off
-    # whatever has it, so that a hover or a focus ring left by the previous
-    # step is not photographed. Off by default — a check that photographs a
-    # hover on purpose must keep working. `expect_screenshot(...,
-    # reset_hover_focus=True)` for one check. Without it, a failure whose
-    # region is the element under the pointer or in focus says so.
+    # Both halves at once: the pointer off the page and the focus off whatever
+    # has it, before the picture (the service's `reset_hover_focus`, and the
+    # library's when set: the same as `blur_focus` with the pointer away).
+    # `expect_screenshot(..., reset_hover_focus=True)` for one check.
     reset_hover_focus: bool = False
+    # The pointer is moved off the page before the picture of the library
+    # (`expect_screenshot`) so that no element is under it; `keep_pointer`
+    # leaves it where the test put it — for a hover captured on purpose.
+    # `blur_focus` takes the focus off whatever has it; off by default.
+    keep_pointer: bool = False
+    blur_focus: bool = False
+    # Window shots (not full_page): the baseline's passport keeps where the
+    # window was scrolled; the picture is taken from there and the window is
+    # put back after. Off: the window is photographed where the test left it.
+    restore_scroll: bool = True
 
     freeze_css: bool = True
     hide_scrollbars: bool = True

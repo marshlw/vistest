@@ -77,7 +77,7 @@ def last_row(ctx) -> dict:
 
 
 def passport(ctx, name: str) -> Path:
-    return next(Path(ctx.root, "tests", "__vistest__").rglob(name.replace(".png", ".json")))
+    return next(Path(ctx.baselines).rglob(name.replace(".png", ".json")))
 
 
 BUTTONS = """<!doctype html><html><head><style>
@@ -89,15 +89,23 @@ BUTTONS = """<!doctype html><html><head><style>
 </style></head><body><button id="save">Save</button><br><input id="q"></body></html>"""
 
 
-def test_a_hover_left_by_the_previous_step_is_named(ctx, page):
+def test_a_hover_left_by_the_previous_step_is_not_photographed_by_default(ctx, page):
+    """The pointer is moved off the page before the picture: no element is under it."""
+    page.set_content(BUTTONS)
+    accept(ctx, page, "buttons.png")
+    page.hover("#save")
+    assert expect_screenshot(page, "buttons.png").verdict.value == "pass"
+
+
+def test_a_hover_kept_on_purpose_is_named_when_it_is_what_failed(ctx, page):
     page.set_content(BUTTONS)
     accept(ctx, page, "buttons.png")
     page.hover("#save")
     with pytest.raises(ScreenshotMismatch) as e:
-        expect_screenshot(page, "buttons.png")
+        expect_screenshot(page, "buttons.png", keep_pointer=True)
     text = str(e.value)
     assert "#save" in text and "under the pointer" in text
-    assert "reset_hover_focus=True" in text
+    assert "keep_pointer" in text
 
 
 def test_a_focus_left_by_the_previous_step_is_named(ctx, page):
@@ -107,6 +115,7 @@ def test_a_focus_left_by_the_previous_step_is_named(ctx, page):
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(page, "buttons.png")
     assert "#q" in str(e.value) and "has the focus" in str(e.value)
+    assert "blur_focus=True" in str(e.value)
 
 
 def test_the_option_moves_the_pointer_away_and_takes_the_focus_off(ctx, page):
@@ -121,11 +130,13 @@ def test_the_option_moves_the_pointer_away_and_takes_the_focus_off(ctx, page):
 
 
 def test_a_hover_photographed_on_purpose_still_works(ctx, page):
-    """The option is off by default: a check of a hover state keeps passing."""
+    """`keep_pointer=True`: a check of a hover state keeps passing; without it, it fails."""
     page.set_content(BUTTONS)
     page.hover("#save")
-    accept(ctx, page, "hovered.png")
-    assert expect_screenshot(page, "hovered.png").verdict.value == "pass"
+    accept(ctx, page, "hovered.png", keep_pointer=True)
+    assert expect_screenshot(page, "hovered.png", keep_pointer=True).verdict.value == "pass"
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(page, "hovered.png")           # the pointer is moved away
 
 
 SCROLLED = """<!doctype html><html><head><style>
@@ -225,7 +236,7 @@ def test_the_passport_keeps_how_the_baseline_was_taken(ctx, page):
     page.set_content(BUTTONS)
     accept(ctx, page, "buttons.png")
     taken = json.loads(passport(ctx, "buttons.png").read_text())["capture"]
-    assert taken["version"] == 2
+    assert taken["version"] == 3
     assert taken["launch"] == {"headless": True, "scrollbar_px": 0}
 
 
@@ -261,14 +272,17 @@ def test_a_passport_capture_record_is_checked_and_round_trips():
     from vistest.storage.base import SnapshotMeta
 
     base = {"version": 1, "width": 4, "height": 4, "sha256": "0" * 64}
-    record = {"version": 2, "launch": {"headless": False, "scrollbar_px": 15},
-              "place": {"x": 20, "y": 120, "scroll_x": 0, "scroll_y": 600}}
+    record = {"version": 3, "launch": {"headless": False, "scrollbar_px": 15},
+              "place": {"x": 20, "y": 120, "scroll_x": 0, "scroll_y": 600},
+              "window_scroll": {"x": 0, "y": 650}, "device_scale_factor": 2.0}
     meta = SnapshotMeta.from_dict({**base, "capture": record})
     assert meta.capture == record
     assert SnapshotMeta.from_dict(meta.to_dict()).capture == record
     assert "capture" not in SnapshotMeta.from_dict(base).to_dict()
     for broken in ({"version": "2"}, {"launch": {"scrollbar_px": True}},
-                   {"place": {"y": 1.5}}, {"when": 1}, []):
+                   {"place": {"y": 1.5}}, {"when": 1}, [],
+                   {"window_scroll": {"y": 1.5}}, {"device_scale_factor": 0},
+                   {"device_scale_factor": "2"}):
         with pytest.raises(ConfigError):
             SnapshotMeta.from_dict({**base, "capture": broken})
 
@@ -450,3 +464,58 @@ def test_a_failed_check_on_a_smooth_page_leaves_it_where_it_was(ctx, page):
         expect_screenshot(page.locator("#card"), "ticking.png")
     page.wait_for_timeout(600)
     assert scroll_of(page) == before
+
+
+# --------------------------------------------------------------------------- #
+#  dev2: the window's scroll
+# --------------------------------------------------------------------------- #
+def test_a_picture_of_the_window_is_taken_where_its_baseline_was(ctx, page):
+    page.set_content(SCROLLED)
+    page.evaluate("() => window.scrollTo(0, 650)")
+    accept(ctx, page, "window.png")
+    record = json.loads(passport(ctx, "window.png").read_text())["capture"]
+    assert record["window_scroll"] == {"x": 0, "y": 650}
+    assert record["version"] == 3
+
+    page.evaluate("() => window.scrollTo(0, 100)")        # the test left it elsewhere
+    result = expect_screenshot(page, "window.png")
+    assert result.verdict.value == "pass"
+    assert page.evaluate("() => window.scrollY") == 100    # and it is put back
+    assert any("(0, 100)" in n and "set to (0, 650)" in n for n in result.notes)
+
+
+def test_the_window_scroll_can_be_switched_off(ctx, page):
+    page.set_content(SCROLLED)
+    page.evaluate("() => window.scrollTo(0, 650)")
+    accept(ctx, page, "window.png")
+    page.evaluate("() => window.scrollTo(0, 100)")
+    with pytest.raises(ScreenshotMismatch):
+        expect_screenshot(page, "window.png", restore_scroll=False)
+    assert page.evaluate("() => window.scrollY") == 100
+
+
+def test_a_page_too_short_to_scroll_that_far_keeps_the_difference_and_says_so(ctx, page):
+    page.set_content(SCROLLED)
+    page.evaluate("() => window.scrollTo(0, 650)")
+    accept(ctx, page, "window.png")
+    path = passport(ctx, "window.png")
+    data = json.loads(path.read_text())
+    data["capture"]["window_scroll"] = {"x": 0, "y": 99999}
+    path.write_text(json.dumps(data))
+    with pytest.raises(ScreenshotMismatch) as e:
+        expect_screenshot(page, "window.png")
+    assert "could not be set to (0, 99999)" in str(e.value)
+    assert "the difference stays" in str(e.value)
+
+
+def test_a_full_page_picture_is_not_scrolled(ctx, page):
+    page.set_content(SCROLLED)
+    accept(ctx, page, "full.png", full_page=True)
+    assert "window_scroll" not in json.loads(passport(ctx, "full.png").read_text())["capture"]
+
+
+def test_the_device_scale_factor_is_in_the_passport(ctx, page):
+    page.set_content(SCROLLED)
+    accept(ctx, page, "dpr.png")
+    assert json.loads(passport(ctx, "dpr.png").read_text())["capture"][
+        "device_scale_factor"] == 1.0

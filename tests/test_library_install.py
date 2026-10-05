@@ -169,4 +169,5 @@ def test_a_whole_check_runs_without_importing_the_server(tmp_path: Path):
         "and vistest/storage/__init__.py — so a new plain import at the top of "
         "a module on this path is what usually breaks it.")
 
-    assert (tmp_path / "tests" / "__vistest__" / "probe.png").exists()
+    #  No tests/ folder in this project: the baselines are in __vistest__.
+    assert (tmp_path / "__vistest__" / "probe.png").exists()

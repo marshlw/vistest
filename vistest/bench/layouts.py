@@ -196,10 +196,21 @@ def _canary_of_baseline(baseline: Path, stop: Path) -> tuple[Path | None, str]:
     return None, f"the baseline's canary .renderers/{sha[:12]}….png is not there"
 
 
+def _default_baselines(root: Path) -> Path:
+    """`tests/__vistest__`; `__vistest__` for a project with no `tests/` folder that has one."""
+    from ..storage.file import FALLBACK_BASELINE_ROOT
+
+    usual = root / DEFAULT_BASELINES
+    other = root / FALLBACK_BASELINE_ROOT
+    if not (root / "tests").is_dir() and other.is_dir():
+        return other
+    return usual
+
+
 def _vistest(root: Path, vistest_dir: Path, baselines: Path | None) -> Found:
     found = Found(VISTEST, root)
     actual_dir = vistest_dir / "actual"
-    base_root = baselines or root / DEFAULT_BASELINES
+    base_root = baselines or _default_baselines(root)
     rows = _rows(vistest_dir)
     others: list[Path] = []
     for path in _files(actual_dir):

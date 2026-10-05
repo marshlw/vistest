@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..storage.base import SnapshotKey
-from ..storage.file import DEFAULT_BASELINE_ROOT, FileStore
+from ..storage.file import FileStore, default_root
 from .errors import VisTestWarning
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -99,7 +99,7 @@ class LibraryContext:
     def __post_init__(self) -> None:
         self.root = Path(self.root)
         self.baselines = Path(self.baselines) if self.baselines is not None \
-            else self.root / DEFAULT_BASELINE_ROOT
+            else default_root(self.root)
         if self.artifacts_root is None:
             self.artifacts_root = self.root / self.config.paths.root
         self.artifacts_root = Path(self.artifacts_root)

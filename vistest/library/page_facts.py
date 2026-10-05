@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = ["LAUNCH_HEADS", "facts", "name_points", "place", "prepare", "put_back",
-           "regions_of", "scrolled_like"]
+           "regions_of", "scrolled_like", "window_scroll"]
 
 #: A short selector for an element: its id, a test id, or a short path of tags
 #: and first classes — the shortest of those that names one element.
@@ -104,7 +104,17 @@ PREPARE_JS = r"""
   const W = window, out = {};
 """ + SCROLL_WALK + SCROLL_STATE + r"""
   //  Before anything here moves the page: where the test left it.
-  if (el) out.scroll = scrollState(el);
+  out.scroll = scrollState(el);
+  if (!el && a.window) {
+    //  A picture of the window: set to where its baseline's window was, in
+    //  whole pixels, instantly. A page too short scrolls less: `at` says where
+    //  it stopped, `max` how far it goes.
+    W.scrollTo({ left: a.window.x, top: a.window.y, behavior: 'instant' });
+    const d = document.documentElement;
+    out.window = { at: [Math.round(W.scrollX), Math.round(W.scrollY)],
+                   max: [Math.max(0, d.scrollWidth - innerWidth),
+                         Math.max(0, d.scrollHeight - innerHeight)] };
+  }
   if (el && a.place) {
     //  Back where it was in the window when the baseline was taken, in whole
     //  pixels: the page is scrolled by the difference.
@@ -155,14 +165,15 @@ FACTS_JS = r"""
     focus: focus ? { sel: sel(focus), box: box(focus) } : null,
     launch: { headless: /HeadlessChrome/.test(ua) ? true : (/Chrome\//.test(ua) ? false : null),
               scrollbar_px: bar },
+    dpr: Number(W.devicePixelRatio) || 1,
   };
   if (el) {
     const r = el.getBoundingClientRect();
     out.place = { x: Math.round(r.left), y: Math.round(r.top),
                   scroll_x: Math.round(W.scrollX), scroll_y: Math.round(W.scrollY) };
-    //  Where the picture left the page: the place above is read from here.
-    out.scroll = scrollState(el);
   }
+  //  Where the picture left the page: the place above is read from here.
+  out.scroll = scrollState(el);
   return out;
 }
 """
@@ -216,9 +227,14 @@ def _call(owner: Any, element: bool, script: str, arg: dict):
         return None
 
 
-def prepare(owner: Any, element: bool, *, place: dict | None, blur: bool) -> dict:
-    """Before the picture: put the element back, take the focus off; count `ignore` marks."""
-    got = _call(owner, element, PREPARE_JS, {"place": place, "blur": blur})
+def prepare(owner: Any, element: bool, *, place: dict | None, blur: bool,
+            window: dict | None = None) -> dict:
+    """Before the picture: put the element back, take the focus off; count `ignore` marks.
+
+    `window` — for a picture of the window: the scroll its baseline had.
+    """
+    got = _call(owner, element, PREPARE_JS,
+                {"place": place, "blur": blur, "window": window})
     return got if isinstance(got, dict) else {}
 
 
@@ -228,7 +244,17 @@ def facts(owner: Any, element: bool, full_page: bool) -> dict:
     return got if isinstance(got, dict) else {}
 
 
-def put_back(owner: Any, state: dict | None) -> bool:
+def window_scroll(record: dict | None) -> dict | None:
+    """The passport's window scroll, checked: {x, y} in whole pixels, or None."""
+    if not isinstance(record, dict):
+        return None
+    try:
+        return {"x": int(record["x"]), "y": int(record["y"])}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def put_back(owner: Any, state: dict | None, element: bool = True) -> bool:
     """The element's window and scrolling ancestors back as `state` has them.
 
     `owner` is a Locator. True when the page did it; False when it could not
@@ -236,7 +262,7 @@ def put_back(owner: Any, state: dict | None) -> bool:
     """
     if not isinstance(state, dict):
         return False
-    return _call(owner, True, PUT_BACK_JS, {"state": state}) is True
+    return _call(owner, element, PUT_BACK_JS, {"state": state}) is True
 
 
 def scrolled_like(a: dict | None, b: dict | None) -> bool:

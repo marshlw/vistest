@@ -85,12 +85,23 @@ VERSION = 2
 #: no fault of the page, and a failure against it says so (`old_way`).
 CAPTURE_VERSION = 2
 
+#: The library's own number (`expect_screenshot`), which has moved on from the
+#: service's: 3 — the pointer is moved off the page before the picture unless
+#: the check keeps it (a hover left by the previous step used to be photographed
+#: when nobody asked for the reset), the window's scroll is put back where the
+#: baseline had it for a picture of the window, and the baseline folder default.
+#: A baseline of version 2 may differ from a picture taken now by exactly those.
+LIBRARY_CAPTURE_VERSION = 3
 
-def old_way(how: str) -> str:
-    """The line for a failure against a baseline taken before CAPTURE_VERSION."""
-    return ("the baseline was taken the old way (before the readiness wait and the other "
-            f"changes of capture version {CAPTURE_VERSION}); if that is the difference, "
-            f"accept it again: {how}")
+
+def old_way(how: str, version: int = CAPTURE_VERSION) -> str:
+    """The line for a failure against a baseline taken before `version`."""
+    what = ("the readiness wait and the other changes of capture version 2"
+            if version == 2 else
+            "the pointer moved off the page before the picture, the window scroll put "
+            f"back, and the other changes of capture version {version}")
+    return (f"the baseline was taken the old way (before {what}); "
+            f"if that is the difference, accept it again: {how}")
 
 #: Which endless animations are loaders. Written here in words, used in the JS.
 LOADER_RULE = """\
@@ -387,7 +398,7 @@ _WORDS: dict[str, Callable[[Step], str]] = {
 
 
 def wait(probe: Callable[[], object], *,
-         inflight: Callable[[], tuple[int, list[str]]] | None = None,
+         inflight: Callable[[], tuple] | None = None,
          quiet_ms: int = DEFAULT_QUIET_MS,
          limit_ms: int = DEFAULT_LIMIT_MS,
          sleep: Callable[[float], None] = time.sleep,
@@ -397,9 +408,13 @@ def wait(probe: Callable[[], object], *,
     probe    — evaluates `PROBE_JS` on the page and returns its dict; anything
                else (a driver that runs no script, an error) ends the wait
                with `ok=None`.
-    inflight — (count, a few URLs) of this page's requests in flight, when
-               they are counted (`RequestCount`); None when they are not —
-               the network step is then not asked.
+    inflight — (count, a few URLs[, ms since the last request ended]) of this
+               page's requests in flight, when they are counted
+               (`RequestCount`); None when they are not — the network step
+               is then not asked. With the third number the network step
+               holds only once the whole quiet window has passed since the
+               last request ended, and the quiet step is counted from that
+               same moment.
     sleep    — seconds; a Playwright page's `wait_for_timeout` keeps its
                events flowing while it waits.
     `limit_ms=0` asks nothing: `ok=None`.
@@ -438,8 +453,18 @@ def wait(probe: Callable[[], object], *,
                       f"last: {got.get('what') or 'a change'}"),
         }
         if inflight is not None:
-            count, urls = inflight()
-            holds["network"] = (count == 0, _requests(count, urls))
+            seen = inflight()
+            count, urls = seen[0], seen[1]
+            idle = seen[2] if len(seen) > 2 else None
+            holds["network"] = (count == 0 and (idle is None or idle >= quiet_ms),
+                                _requests(count, urls) if count
+                                else "the last request ended just now")
+            if idle is not None:
+                #  One moment for both: the quiet window starts when the last
+                #  request ended, not earlier.
+                held = int(got.get("quiet") or 0)
+                got = {**got, "quiet": min(held, idle)}
+                holds["quiet"] = (min(held, idle) >= quiet_ms, holds["quiet"][1])
             #  With requests counted, the exact signal beats the guess: an
             #  endless animation that only looks like a loader (named like one,
             #  turning, sweeping) does not hold the picture when nothing is in

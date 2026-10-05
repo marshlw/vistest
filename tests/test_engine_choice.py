@@ -392,8 +392,8 @@ def test_the_library_takes_engine_in_the_call(ctx):
     _accept(ctx, _png(a))
     with pytest.raises(ScreenshotMismatch) as v2:
         expect_screenshot(_png(b), "page.png")
-    assert "engine v2: 2 regions no rule explained" in str(v2.value)
-    assert "no threshold: what no rule explains fails" in str(v2.value)
+    assert "engine v2: 2 regions that no rule of the engine explains away" in str(v2.value)
+    assert "no threshold is set, so any such region fails" in str(v2.value)
     with pytest.raises(ScreenshotMismatch) as v1:
         expect_screenshot(_png(b), "page.png", engine="v1")
     assert "(limit 25.0)" in str(v1.value)

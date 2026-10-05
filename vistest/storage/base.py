@@ -162,7 +162,8 @@ _META_KEYS = (
 )
 
 #: What `capture` in a passport may say, and of what type each part is.
-_CAPTURE_KEYS = {"version": int, "launch": dict, "place": dict}
+_CAPTURE_KEYS = {"version": int, "launch": dict, "place": dict, "window_scroll": dict,
+                 "device_scale_factor": (int, float)}
 _LAUNCH_KEYS = {"headless": (bool, type(None)), "scrollbar_px": int}
 _PLACE_KEYS = ("x", "y", "scroll_x", "scroll_y")
 
@@ -406,7 +407,8 @@ def _check_capture(raw, where: str) -> dict:
             continue
         value = raw[key]
         if isinstance(value, bool) or not isinstance(value, kind):
-            noun = "a whole number" if kind is int else "an object"
+            noun = ("a whole number" if kind is int else
+                    "a number" if isinstance(kind, tuple) else "an object")
             raise bad(f".{key}: {value!r} is not {noun}")
         out[key] = value
     if "version" in out and out["version"] < 1:
@@ -419,6 +421,16 @@ def _check_capture(raw, where: str) -> dict:
                                   or (kind is int and isinstance(value, bool))):
                 raise bad(f".launch.{key}: {value!r} is not of the right kind")
         out["launch"] = {k: launch[k] for k in _LAUNCH_KEYS if k in launch}
+    dpr = out.get("device_scale_factor")
+    if dpr is not None and dpr <= 0:
+        raise bad(f".device_scale_factor: {dpr!r} is not above 0")
+    window = out.get("window_scroll")
+    if window is not None:
+        for key in ("x", "y"):
+            value = window.get(key)
+            if key in window and (isinstance(value, bool) or not isinstance(value, int)):
+                raise bad(f".window_scroll.{key}: {value!r} is not a whole number")
+        out["window_scroll"] = {k: window[k] for k in ("x", "y") if k in window}
     place = out.get("place")
     if place is not None:
         for key in _PLACE_KEYS:

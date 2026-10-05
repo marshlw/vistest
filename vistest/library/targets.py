@@ -66,7 +66,7 @@ from typing import Any
 
 from ..core import pngio
 
-__all__ = ["Capture", "Stability", "capture", "frames_after", "settle_frames",
+__all__ = ["Capture", "Stability", "capture", "frames_after", "pointer_plan", "settle_frames",
            "split_masks"]
 
 #: `scale=` values, as Playwright spells them. "css" is the default: one
@@ -145,6 +145,14 @@ class Capture:
     moving: tuple = ()
     #  Names the elements at points of the picture, on the live page.
     namer: Callable[[list], list] | None = field(default=None, compare=False, repr=False)
+    #  calm(since): nothing of the page was in flight, or ended, after `since`
+    #  (time.monotonic); None when requests are not counted.
+    calm: Callable[[float], bool] | None = field(default=None, compare=False, repr=False)
+    #  late(): what was still on its way after the picture was taken — the
+    #  page's requests that were in flight or ended since, and pictures that
+    #  finished loading since — by name, for the message of a failure on a page
+    #  that kept changing. Empty when nothing was; None when it cannot be asked.
+    late: Callable[[], list[str]] | None = field(default=None, compare=False, repr=False)
     #  The element was put back where its baseline had it.
     placed: bool = False
 
@@ -282,8 +290,15 @@ def frames_after(shoot: Callable[[], bytes], previous: bytes, *, timeout_ms: int
                  pauses: tuple[int, ...] = LOOK_PAUSES_MS, min_ms: int = LOOK_MIN_MS,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep,
+                 calm: Callable[[float], bool] | None = None,
                  ) -> tuple[list[bytes], bool]:
     """More frames after `previous`, until two in a row are identical or time is up.
+
+    `calm(since)` — when requests are counted — says whether nothing of the
+    page was in flight, or ended, after `since` (a `clock()` reading). Two
+    identical frames count as settled only if it holds for all the time since
+    these frames began: a page waiting for its next answer is two identical
+    frames too.
 
     Returns the frames taken (at least one) and whether the last two —
     `previous` included — were identical with at least `min_ms` behind them:
@@ -302,7 +317,8 @@ def frames_after(shoot: Callable[[], bytes], previous: bytes, *, timeout_ms: int
             sleep(pause / 1000)
         current = shoot()
         frames.append(current)
-        if current == previous and (clock() - started) * 1000 >= min_ms:
+        if current == previous and (clock() - started) * 1000 >= min_ms \
+                and (calm is None or calm(started)):
             return frames, True
         previous = current
 
@@ -360,17 +376,23 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             ready_timeout_ms: int = 0,
             quiet_ms: int | None = None,
             ignore_requests: Sequence[str] = (),
-            reset_hover_focus: bool = False,
-            place: dict | None = None) -> Capture:
+            pointer_away: bool = True,
+            blur_focus: bool = False,
+            place: dict | None = None,
+            window: dict | None = None) -> Capture:
     """Take the picture. Everything that can be wrong here is said out loud.
 
     `ready_timeout_ms` — each step of the wait for readiness at most this
     long (capture/ready.py); 0, the default here, does not wait: the caller
     that wants it — `expect_screenshot` — passes the config's value.
-    `reset_hover_focus` — the pointer off the page and the focus off whatever
-    has it, before anything else. `place` — where a Locator's element was in
+    `pointer_away` — the pointer off the page, so that no element is under it
+    (the default); `blur_focus` — the focus off whatever has it. Both before
+    anything else. `place` — where a Locator's element was in
     the window when its baseline was taken (`{"x", "y"}`, the passport's): the
-    page is scrolled to put it there again.
+    page is scrolled to put it there again. `window` — the same for a picture
+    of the window (not full_page): the scroll its baseline had, `{"x", "y"}`;
+    the window is set to it instantly before the picture and put back after,
+    and one note says where it was and where it was set.
     """
     painted, boxes = split_masks(mask)
     check_scale(scale)
@@ -425,16 +447,27 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
     notes: list[str] = []
     if page is not None:
         _wait_for_fonts(page, notes)
-    if reset_hover_focus and page is not None:
+    if pointer_away and page is not None:
         _pointer_away(page)
+    _count = _inflight_for(page)
+    calm = ((lambda since: _count.calm_since(since, page, tuple(ignore_requests)))
+            if _count is not None else None)
+    window_shot = (not element and page is not None
+                   and not (full_page if full_page is not None else False))
+    set_window = window if window_shot else None
     prepared = _facts.prepare(owner, element, place=place if element else None,
-                              blur=reset_hover_focus) if page is not None else {}
+                              blur=blur_focus,
+                              window=set_window) if page is not None else {}
     #  Where the test left the window and the scrollable boxes around an
     #  element, before the placing below and Playwright's own scrolling into
     #  view move them. The picture needs the element where the baseline had it;
     #  the test needs the page where it was.
-    before = prepared.get("scroll") if element else None
+    before = prepared.get("scroll") if (element or window_shot) else None
     at_shot: dict | None = None
+    if set_window is not None and before is not None:
+        note = _window_note(before, set_window, prepared.get("window"))
+        if note:
+            notes.append(note)
 
     def moved() -> bool:
         return before is not None and not _facts.scrolled_like(before, at_shot)
@@ -442,7 +475,7 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
     def put_back() -> None:
         if not moved():
             return
-        if not _facts.put_back(owner, before):
+        if not _facts.put_back(owner, before, element):
             notes.append("the page could not be scrolled back to where the test "
                          "left it")
 
@@ -474,6 +507,8 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
                                     quiet_ms, tuple(ignore_requests))
 
         last_two: list[bytes] = []
+        taken_at = time.monotonic()
+        mark = _page_clock(page) if page is not None else None
 
         def shoot() -> bytes:
             got = bytes(target.screenshot(**options))
@@ -485,13 +520,15 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         full = bool(options.get("full_page"))
         seen = _facts.facts(owner, element, full) if page is not None else {}
         at_shot = seen.pop("scroll", None)
+        if window_shot and isinstance(at_shot, dict):
+            seen["window"] = {"x": int(at_shot.get("x") or 0), "y": int(at_shot.get("y") or 0)}
 
         def namer(points):
             #  The names are read at points of the picture, which is where the
             #  page was scrolled when it was taken: put it there, ask, put it back.
             if not moved() or at_shot is None:
                 return _facts.name_points(owner, element, full, points)
-            _facts.put_back(owner, at_shot)
+            _facts.put_back(owner, at_shot, element)
             try:
                 return _facts.name_points(owner, element, full, points)
             finally:
@@ -502,7 +539,7 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             #  ones were taken at, and the page back as the test left it after.
             if not moved() or at_shot is None:
                 return shoot()
-            _facts.put_back(owner, at_shot)
+            _facts.put_back(owner, at_shot, element)
             try:
                 return shoot()
             finally:
@@ -510,6 +547,13 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
     finally:
         #  Whatever happened to the picture: the page back as it was found.
         put_back()
+
+    def late() -> list[str]:
+        names: list[str] = []
+        if _count is not None:
+            names += _count.touched_since(taken_at, page, tuple(ignore_requests))
+        names += _pictures_since(page, mark)
+        return list(dict.fromkeys(names))
 
     moving: list = []
     if stability.stable is False and len(last_two) == 2:
@@ -537,6 +581,8 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         facts=seen,
         moving=tuple(moving),
         namer=namer if page is not None else None,
+        calm=calm,
+        late=late,
         placed=bool(prepared.get("placed")),
     )
 
@@ -566,6 +612,96 @@ def describe(target: Any, scale: str = DEFAULT_SCALE) -> Capture:
 def name_parts(namer, mask) -> list[dict]:
     """The elements under the largest parts of a mask, named on the live page."""
     return _named(namer, mask)
+
+
+def _window_note(before: dict, wanted: dict, got: dict | None) -> str:
+    """One line when the window was set to its baseline's scroll: where it was, where it went."""
+    was = (int(before.get("x") or 0), int(before.get("y") or 0))
+    want = (wanted["x"], wanted["y"])
+    at = tuple(got["at"]) if isinstance(got, dict) and got.get("at") else want
+    if was == want == at:
+        return ""
+    if at != want:
+        top = tuple(got.get("max") or ())
+        return (f"the window was at scroll {was} and could not be set to {want} where "
+                f"the baseline was taken: the page scrolls to {top} at most, so it was "
+                f"photographed at {at} — the difference stays")
+    return (f"the window was at scroll {was}; set to {want}, where the baseline was "
+            "taken, for the picture and put back after "
+            "(capture.restore_scroll: false turns this off)")
+
+
+_PAGE_CLOCK_JS = "() => performance.now()"
+_PICTURES_JS = r"""
+(a) => {
+  const out = [];
+  for (const e of performance.getEntriesByType('resource')) {
+    if (e.initiatorType === 'img' && e.responseEnd > a.t) out.push(e.name);
+  }
+  for (const i of document.images) {
+    if (!i.complete && i.loading !== 'lazy') out.push(i.currentSrc || i.src);
+  }
+  return out;
+}
+"""
+
+
+def _page_clock(page) -> float | None:
+    """The page's own clock now (performance.now), to ask later what finished after it."""
+    try:
+        got = page.evaluate(_PAGE_CLOCK_JS)
+        return float(got)
+    except Exception:  # noqa: BLE001 - naming is help, not the verdict
+        return None
+
+
+def _pictures_since(page, mark: float | None) -> list[str]:
+    """Pictures that finished loading after `mark`, or are still loading: `GET /img/a.png`."""
+    if page is None or mark is None:
+        return []
+    try:
+        got = page.evaluate(_PICTURES_JS, {"t": mark})
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for url in got or ():
+        bare = str(url).split("?", 1)[0].split("#", 1)[0]
+        out.append(f"image {bare}")
+    return out
+
+
+def _inflight_for(page):
+    if page is None:
+        return None
+    from ..capture import inflight as _inflight
+
+    return _inflight.for_page(page)
+
+
+def pointer_plan(cfg, reset_hover_focus: bool | None, keep_pointer: bool | None,
+                 blur_focus: bool | None) -> tuple[bool, bool]:
+    """(pointer away, focus off) for one check.
+
+    By default: the pointer away, the focus left. `reset_hover_focus=True` (or
+    `capture.reset_hover_focus`) is both. `keep_pointer` and `blur_focus` —
+    the call's, else the config's — each decide their own half, and win.
+    `reset_hover_focus=False` is what it always was: the pointer and the focus
+    left exactly where the test put them.
+    """
+    reset = getattr(cfg, "reset_hover_focus", False) if reset_hover_focus is None \
+        else bool(reset_hover_focus)
+    if reset_hover_focus is False:
+        away, blur = False, False
+    elif reset:
+        away, blur = True, True
+    else:
+        away = not getattr(cfg, "keep_pointer", False)
+        blur = bool(getattr(cfg, "blur_focus", False))
+    if keep_pointer is not None:
+        away = not keep_pointer
+    if blur_focus is not None:
+        blur = bool(blur_focus)
+    return away, blur
 
 
 def _pointer_away(page: Any) -> None:
@@ -625,7 +761,7 @@ def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: b
     pause = getattr(page, "wait_for_timeout", None)
     sleep = (lambda s: pause(s * 1000)) if callable(pause) else time.sleep
     count = _inflight.for_page(page)
-    held = (lambda: count.inflight(page, ignore)) if count else None
+    held = (lambda: count.snapshot(page, ignore)) if count else None
     return _ready.wait(probe, inflight=held,
                        quiet_ms=_ready.DEFAULT_QUIET_MS if quiet_ms is None else quiet_ms,
                        limit_ms=limit_ms, sleep=sleep)
