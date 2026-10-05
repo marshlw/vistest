@@ -30,8 +30,9 @@ README.
   service's `capture_version` stays 2), and a check against an older baseline
   says "the baseline was taken the old way" when it fails.
 - **The window's scroll, for a picture of the window.** The passport keeps
-  `window_scroll`; before the picture the window is set to it instantly and
-  put back after, one line in the message says where it was and where it was
+  `window_scroll`; once the page is ready (not before: a page still arriving is
+  too short, and growing content moves the scroll again) the window is set to
+  it instantly, the readiness is looked at once more, and it is put back after, one line in the message says where it was and where it was
   set (`capture.restore_scroll: false` / `restore_scroll=False` turns it off).
   A page too short to scroll that far keeps the difference, and the line says
   so.

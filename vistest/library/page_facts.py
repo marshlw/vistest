@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = ["LAUNCH_HEADS", "facts", "name_points", "place", "prepare", "put_back",
-           "regions_of", "scrolled_like", "window_scroll"]
+           "regions_of", "scrolled_like", "set_window", "window_scroll"]
 
 #: A short selector for an element: its id, a test id, or a short path of tags
 #: and first classes — the shortest of those that names one element.
@@ -181,6 +181,17 @@ FACTS_JS = r"""
 #: The scrolling `a.state` describes, put back. Instantly, whatever the page's
 #: `scroll-behavior` says: an animated scroll would still be on its way when
 #: the next line of the test runs.
+SET_WINDOW_JS = r"""
+(el, a) => {
+  const W = window;
+  W.scrollTo({ left: a.x, top: a.y, behavior: 'instant' });
+  const d = document.documentElement;
+  return { at: [Math.round(W.scrollX), Math.round(W.scrollY)],
+           max: [Math.max(0, d.scrollWidth - innerWidth),
+                 Math.max(0, d.scrollHeight - innerHeight)] };
+}
+"""
+
 PUT_BACK_JS = r"""
 (el, a) => {
   const W = window, s = a.state;
@@ -242,6 +253,17 @@ def facts(owner: Any, element: bool, full_page: bool) -> dict:
     """After the picture: what is under the pointer, in focus, the launch, the place."""
     got = _call(owner, element, FACTS_JS, {"fullPage": full_page})
     return got if isinstance(got, dict) else {}
+
+
+def set_window(owner: Any, target: dict) -> dict | None:
+    """The window set to `target` ({x, y}), instantly: {at, max}, or None when the page would not say.
+
+    After the page is ready, not before: a page that is still arriving is too
+    short to scroll that far, and content growing above the viewport moves the
+    scroll again (scroll anchoring).
+    """
+    got = _call(owner, False, SET_WINDOW_JS, target)
+    return got if isinstance(got, dict) else None
 
 
 def window_scroll(record: dict | None) -> dict | None:

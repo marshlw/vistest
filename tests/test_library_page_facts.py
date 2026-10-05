@@ -519,3 +519,29 @@ def test_the_device_scale_factor_is_in_the_passport(ctx, page):
     accept(ctx, page, "dpr.png")
     assert json.loads(passport(ctx, "dpr.png").read_text())["capture"][
         "device_scale_factor"] == 1.0
+
+
+GROWING = """<!doctype html><html><head><style>
+  body { margin: 0; font: 16px sans-serif; }
+  #big { height: 2400px; background: linear-gradient(#fee2e2, #1d4ed8); }
+</style></head><body><div style="height: 100px">top</div><div id="wait" aria-busy="true">loading</div>
+<script>setTimeout(() => {
+  const d = document.createElement('div'); d.id = 'big'; document.body.appendChild(d);
+  document.getElementById('wait').remove();
+}, 300);</script></body></html>"""
+
+
+def test_the_window_is_set_after_the_page_has_arrived_not_before(ctx, page):
+    """A page that is still growing is too short to scroll to its baseline's place:
+    setting the window first leaves it at the top, and the picture differs."""
+    page.set_content(GROWING)
+    page.wait_for_timeout(500)
+    page.evaluate("() => window.scrollTo(0, 1000)")
+    accept(ctx, page, "growing.png")
+    assert json.loads(passport(ctx, "growing.png").read_text())["capture"][
+        "window_scroll"] == {"x": 0, "y": 1000}
+
+    page.set_content(GROWING)                     # the page arrives again, scrolled to 0
+    result = expect_screenshot(page, "growing.png")
+    assert result.verdict.value == "pass"
+    assert any("set to (0, 1000)" in n for n in result.notes)
