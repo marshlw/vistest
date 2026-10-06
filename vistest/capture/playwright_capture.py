@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import numpy as np
@@ -20,12 +19,6 @@ from ..core import noise as _noise
 from ..core import pngio as _pngio
 from ..models import Shot
 from . import dom as _dom
-
-
-def _png_bytes_to_rgb(data: bytes) -> np.ndarray:
-    from PIL import Image
-
-    return np.array(Image.open(io.BytesIO(data)).convert("RGB"))
 
 
 def capture(
