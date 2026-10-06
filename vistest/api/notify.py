@@ -350,6 +350,11 @@ def ensure_ticker(db, *, base_url: str = "") -> threading.Thread | None:
                     # Часы не могут стоить сервиса: они всего лишь напоминалка.
                     pass
 
+        #  A stop asked for earlier — the service's lifespan ending, an
+        #  in-process server of a test shutting down — must not outlive it:
+        #  with the signal still set, the new thread would see it at once and
+        #  leave, and the clock would be stopped for good without a word.
+        _stop.clear()
         _ticker = threading.Thread(target=loop, name="vistest-notify", daemon=True)
         _ticker.start()
         return _ticker

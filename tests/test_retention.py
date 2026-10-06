@@ -199,9 +199,23 @@ def test_a_scheduled_sweep_records_what_it_did(db, dropped):
     assert "2 runs" in conf["last_result"]
 
 
-def test_the_ticker_is_one_thread_per_process(db, dropped):
+def test_the_ticker_is_one_thread_per_process(db, dropped, monkeypatch):
+    monkeypatch.setattr(retention, "TICK_S", 86400.0)
     first = retention.ensure_ticker(db, dropped, lambda: 0)
+    assert first is not None and first.is_alive()
     assert retention.ensure_ticker(db, dropped, lambda: 0) is first
+
+
+def test_the_ticker_starts_again_after_a_stop(db, dropped, monkeypatch):
+    """A stop asked for earlier must not outlive it (review v1, 7.5): see
+    test_notify.py for how an e2e test's in-process server leaves one behind."""
+    monkeypatch.setattr(retention, "TICK_S", 86400.0)
+    retention.stop_ticker()
+    if retention._ticker is not None:
+        retention._ticker.join(timeout=5)
+    started = retention.ensure_ticker(db, dropped, lambda: 0)
+    assert started is not None and started.is_alive()
+    assert retention.ensure_ticker(db, dropped, lambda: 0) is started
 
 
 # --------------------------------------------------------------------------- #

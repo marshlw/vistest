@@ -444,6 +444,11 @@ def ensure_ticker(db, drop_files, used_kb,
                     # Уборка не может стоить сервиса.
                     pass
 
+        #  A stop asked for earlier — the service's lifespan ending, an
+        #  in-process server of a test shutting down — must not outlive it:
+        #  with the signal still set, the new thread would see it at once and
+        #  leave, and the clock would be stopped for good without a word.
+        _stop.clear()
         _ticker = threading.Thread(target=loop, name="vistest-retention",
                                    daemon=True)
         _ticker.start()

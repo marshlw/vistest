@@ -375,11 +375,30 @@ def test_a_corrupt_threshold_falls_back_to_the_default(db):
 # --------------------------------------------------------------------------- #
 #  Часы
 # --------------------------------------------------------------------------- #
-def test_the_ticker_is_one_thread_per_process(db):
-    """Перезагрузка модуля сервиса не должна оставлять за собой по потоку."""
+def test_the_ticker_is_one_thread_per_process(db, monkeypatch):
+    """Reloading the service module must not leave a thread behind each time."""
+    monkeypatch.setattr(notify, "TICK_S", 300.0)
     first = notify.ensure_ticker(db)
     second = notify.ensure_ticker(db)
-    assert first is second
+    assert first is not None and first.is_alive()
+    assert second is first
+
+
+def test_the_ticker_starts_again_after_a_stop(db, monkeypatch):
+    """A stop asked for earlier must not outlive it (review v1, 7.5).
+
+    An in-process server of an e2e test runs the service's lifespan to its end,
+    which stops the clock. A ticker started after that in the same worker used
+    to see the old signal and leave at once — and the test above failed or
+    passed depending on which tests xdist had run before it.
+    """
+    monkeypatch.setattr(notify, "TICK_S", 300.0)
+    notify.stop_ticker()
+    if notify._ticker is not None:
+        notify._ticker.join(timeout=5)
+    started = notify.ensure_ticker(db)
+    assert started is not None and started.is_alive()
+    assert notify.ensure_ticker(db) is started
 
 
 def test_the_ticker_follows_the_current_database(db, tmp_path):
