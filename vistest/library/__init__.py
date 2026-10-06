@@ -50,9 +50,11 @@ from ..storage.base import (
 )
 from . import context as _context
 from . import fingerprint as _fingerprint
+from . import js as _js
 from . import targets as _targets
 from .errors import (
     BaselineMissing,
+    CaptureError,
     ScreenshotMismatch,
     VisTestWarning,
     VisualCheckError,
@@ -60,6 +62,7 @@ from .errors import (
 
 __all__ = [
     "BaselineMissing",
+    "CaptureError",
     "LibraryContext",
     "ScreenshotMismatch",
     "SnapshotKey",
@@ -205,7 +208,11 @@ def expect_screenshot(
     Returns the `CompareResult` so that a caller can read the metrics. Raises
     `BaselineMissing` when there is nothing to compare against yet, and
     `ScreenshotMismatch` when the difference is beyond the thresholds — both
-    are `AssertionError`s, and both name every file involved.
+    are `AssertionError`s, and both name every file involved. Raises
+    `CaptureError` when the page is closed, crashed or stopped answering:
+    everything asked of a live page shares one deadline (library/js.py), so a
+    page whose main thread is stuck fails the check in seconds instead of
+    hanging the run.
     """
     started = time.perf_counter()
     ctx = _context.current()
@@ -214,7 +221,24 @@ def expect_screenshot(
             else _targets.check_timeout(stable_timeout_ms))
     ready_wait = (ctx.config.capture.ready_timeout_ms if ready_timeout_ms is None
                   else _targets.check_timeout(ready_timeout_ms, "ready_timeout_ms"))
+    try:
+        with _js.budget(_js.budget_ms(ready_wait, wait),
+                        cap_ms=max(_js.CALL_CAP_MS, ready_wait)):
+            return _check(ctx, target, name, started=started, call_patch=call_patch,
+                          wait=wait, ready_wait=ready_wait, platform=platform,
+                          mask=mask, full_page=full_page, store=store, scale=scale,
+                          engine=engine, reset_hover_focus=reset_hover_focus,
+                          keep_pointer=keep_pointer, blur_focus=blur_focus,
+                          restore_scroll=restore_scroll)
+    except CaptureError as e:
+        raise CaptureError(f"vistest: could not check {name!r}: {e}") from None
 
+
+def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
+           wait: int, ready_wait: int, platform: str | None, mask, full_page,
+           store, scale: str, engine: str | None, reset_hover_focus, keep_pointer,
+           blur_focus, restore_scroll) -> CompareResult:
+    """`expect_screenshot` once its arguments are read: inside the check's deadline."""
     scale = _targets.check_scale(scale)
     away, blur = _targets.pointer_plan(ctx.config.capture, reset_hover_focus,
                                        keep_pointer, blur_focus)
@@ -786,7 +810,7 @@ def _warn_unsettled_accept(shot, key: SnapshotKey) -> None:
     warnings.warn(f"vistest: {key.as_str()}: {text}. It was accepted as the "
                   "baseline anyway; the next run will likely disagree with it. "
                   "Stop what moves on the page (or mask it) and accept again.",
-                  VisTestWarning, stacklevel=3)
+                  VisTestWarning, stacklevel=4)
 
 
 def _scale_hint(shot, result) -> str:
@@ -836,7 +860,7 @@ def _ai_hooks(ctx):
         import warnings
 
         warnings.warn(f"vistest: the AI layer is not available ({e}); "
-                      "comparing without it", VisTestWarning, stacklevel=3)
+                      "comparing without it", VisTestWarning, stacklevel=4)
         return None
 
 
@@ -862,7 +886,7 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
         warnings.warn(f"vistest: could not draw the diff picture for "
                       f"{key.name} ({type(e).__name__}: {e}); the verdict and "
                       "the actual screenshot are unaffected",
-                      VisTestWarning, stacklevel=3)
+                      VisTestWarning, stacklevel=4)
         return None
 
 
@@ -932,7 +956,7 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         import warnings
 
         warnings.warn(f"vistest: could not write the report entry for "
-                      f"{key.name} ({e})", VisTestWarning, stacklevel=3)
+                      f"{key.name} ({e})", VisTestWarning, stacklevel=4)
 
 
 def _record_error(ctx, key: SnapshotKey, exc: BaseException, *, started: float,
@@ -954,7 +978,7 @@ def _record_error(ctx, key: SnapshotKey, exc: BaseException, *, started: float,
 
         warnings.warn(f"vistest: could not write the report entry for "
                       f"{key.name} ({type(e).__name__}: {e})",
-                      VisTestWarning, stacklevel=3)
+                      VisTestWarning, stacklevel=4)
 
 
 #  Suppressed regions listed per check in the report. The count is never cut.
