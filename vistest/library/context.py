@@ -146,12 +146,6 @@ class LibraryContext:
     def parts_dir(self) -> Path:
         return self.artifacts_root / "report" / "parts"
 
-    @property
-    def project(self) -> str:
-        """The name prefix for a repository that holds more than one app."""
-        name = str(self.config.service.project or "").strip("/")
-        return "" if name in ("", "default") else name
-
     # ------------------------------------------------------------------ #
     def platform_for(self, shot: Capture) -> str:
         """Which directory this snapshot's baseline belongs in.
@@ -192,7 +186,12 @@ class LibraryContext:
                             viewport=shot.viewport or None)
 
     def key(self, name: str, platform: str) -> SnapshotKey:
-        return SnapshotKey(name=name, platform=platform, project=self.project)
+        #  No project prefix. `service.project` (and VISTEST_PROJECT, which a CI
+        #  talking to a server sets) used to move every baseline into a folder
+        #  of that name — so a CI variable meant for the server made the whole
+        #  committed set «missing» (review v1, 2.4). The library reads nothing
+        #  from the `service:` section.
+        return SnapshotKey(name=name, platform=platform)
 
     def artifact_path(self, kind: str, key: SnapshotKey) -> Path:
         """`.vistest/actual/<platform>/<name>.png` and its siblings."""

@@ -180,23 +180,42 @@ class VisTestConfig:
                 "with `pip install pyyaml`, or remove the file to run on the "
                 "defaults.") from e
 
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        cfg = cls.preset_of(raw.get("preset", "balanced"))
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as e:
+            raise ConfigError(f"{path}: not valid YAML — {' '.join(str(e).split())}") \
+                from None
+        if not isinstance(raw, dict):
+            raise ConfigError(f"{path}: expected a mapping of sections at the top, "
+                              f"got {type(raw).__name__}")
 
         sections = {
             "diff": DiffConfig, "capture": CaptureConfig, "matrix": MatrixConfig,
             "ai": AIConfig, "render": RenderConfig, "paths": PathsConfig,
             "service": ServiceConfig, "auth": AuthConfig,
         }
+        #  A misspelt section used to be ignored in silence — `captur:` and
+        #  every setting under it did nothing — while a misspelt key inside
+        #  one was refused. Both are refused now, with the nearest known name.
+        top = {*sections, *TOP_LEVEL_KEYS}
+        for key in raw:
+            if key not in top:
+                raise ConfigError(f"{path}: unknown key {key!r}{_did_you_mean(key, top)}")
+        cfg = cls.preset_of(raw.get("preset", "balanced"))
+
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
                 continue
+            if not isinstance(raw[key], dict):
+                raise ConfigError(f"{path}: {key}: expected a mapping, got "
+                                  f"{type(raw[key]).__name__}")
             current = getattr(cfg, key)
             known = {f.name for f in fields(klass)} - _DERIVED.get(key, set())
             patch = {}
             for k, v in raw[key].items():
                 if k not in known:
-                    raise ValueError(f"vistest.yaml: unknown key {key}.{k}")
+                    raise ConfigError(f"{path}: unknown key {key}.{k}"
+                                      + _did_you_mean(str(k), known, prefix=f"{key}."))
                 # tuple fields come from YAML as lists
                 patch[k] = tuple(v) if isinstance(getattr(current, k), tuple) else v
             try:
@@ -392,6 +411,18 @@ def _plugins_section(raw, path) -> PluginsConfig:
                 "%s: plugins.%s is not a setting VisTest knows and no installed "
                 "plugin is called %r; it is kept and ignored", path, key, key)
     return PluginsConfig(**patch, options=options).validated(f"{path}: plugins")
+
+
+#: Top-level keys of vistest.yaml that are not a section of settings.
+TOP_LEVEL_KEYS = ("preset", "engine", "plugins", "flows", "update_baselines")
+
+
+def _did_you_mean(key: str, known, prefix: str = "") -> str:
+    """` — did you mean 'capture.keep_pointer'?`, or '' when nothing is close."""
+    import difflib
+
+    close = difflib.get_close_matches(str(key), sorted(known), n=1, cutoff=0.6)
+    return f" — did you mean {prefix + close[0]!r}?" if close else ""
 
 
 #: Fields of a section that are derived, never written in vistest.yaml:
