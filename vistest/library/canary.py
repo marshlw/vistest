@@ -37,6 +37,7 @@ import hashlib
 from functools import lru_cache
 from pathlib import Path
 
+from . import js as _js
 from .targets import capture
 
 __all__ = ["CANARY_VERSION", "MIN_TAB", "CanaryError", "TabRefused", "draw", "html",
@@ -141,7 +142,7 @@ def draw(context, *, stable_timeout_ms: int = 5000) -> bytes:
         page.set_content(html(), wait_until="load")
         cap = capture(page.locator(f"#{ELEMENT_ID}"),
                       stable_timeout_ms=stable_timeout_ms)
-        if not page.evaluate(_FONT_LOADED):
+        if not _js.call(page, _FONT_LOADED, what="checking the canary's font"):
             raise CanaryError(f"the font {FONT_FAMILY!r} did not load")
     finally:
         page.close()

@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-__all__ = ["BaselineMissing", "ScreenshotMismatch", "VisTestWarning",
+__all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "VisTestWarning",
            "VisualCheckError"]
 
 
@@ -156,6 +156,17 @@ class VisualCheckError(AssertionError):
         super().__init__(message)
         self.result = result
         self.artifacts = dict(artifacts or {})
+
+
+class CaptureError(RuntimeError):
+    """The picture could not be taken: the page is closed, crashed, or stopped answering.
+
+    Not an `AssertionError`, on purpose. Nothing was compared, so nothing
+    failed: the check could not be made, and pytest reports it as such. The
+    message names the snapshot, what was being asked of the page when it
+    stopped, and how long that was waited for — the alternative used to be a
+    run that never returned.
+    """
 
 
 class BaselineMissing(VisualCheckError):

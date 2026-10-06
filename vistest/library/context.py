@@ -240,7 +240,7 @@ def _warn_no_platform() -> None:
     warnings.warn(
         "byte targets have no platform; baselines go to the root — set "
         "vistest_platform if these images depend on the environment",
-        VisTestWarning, stacklevel=4)
+        VisTestWarning, stacklevel=5)
 
 
 def install(context: LibraryContext) -> LibraryContext:

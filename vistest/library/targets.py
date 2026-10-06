@@ -65,6 +65,8 @@ from pathlib import Path
 from typing import Any
 
 from ..core import pngio
+from . import js as _js
+from .errors import CaptureError
 
 __all__ = ["Capture", "Stability", "capture", "frames_after", "pointer_plan", "settle_frames",
            "split_masks"]
@@ -244,7 +246,11 @@ def _wait_for_fonts(page, notes: list) -> None:
     from ..capture.stabilize import WAIT_FONTS_JS
 
     try:
-        evaluate(WAIT_FONTS_JS)
+        _js.call(page, WAIT_FONTS_JS, what="waiting for web fonts")
+    except CaptureError:
+        raise
+    except _js.SlowAnswer as e:
+        notes.append(f"{e}; the screenshot was taken without waiting longer")
     except Exception as e:
         notes.append(f"waiting for web fonts failed ({type(e).__name__}: {e}); "
                      "the screenshot was taken without it")
@@ -255,7 +261,10 @@ def _device_ratio(page) -> float | None:
     if not callable(evaluate):
         return None
     try:
-        ratio = float(evaluate("() => window.devicePixelRatio"))
+        ratio = float(_js.call(page, "() => window.devicePixelRatio",
+                               what="reading the device pixel ratio"))
+    except CaptureError:
+        raise
     except Exception:
         return None
     return ratio if ratio > 0 else None
@@ -442,11 +451,13 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
     page = _page_of(target)
     from . import page_facts as _facts
 
+    _refuse_closed(page)
     element = not _is_page(target)
     owner = target if element else page
     notes: list[str] = []
     if page is not None:
         _wait_for_fonts(page, notes)
+        _js.check()
     if pointer_away and page is not None:
         _pointer_away(page)
     _count = _inflight_for(page)
@@ -483,6 +494,10 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
                      "scale": scale}
     if painted:
         options["mask"] = _resolve_painted(painted, page, target)
+    if timeout_ms is None and _js.current() is not None and _js._playwright(target):
+        #  Within the check's deadline (library/js.py): Playwright's own default
+        #  is thirty seconds per frame, whatever the check was given.
+        timeout_ms = _js.screenshot_timeout()
     if timeout_ms is not None:
         options["timeout"] = timeout_ms
 
@@ -516,12 +531,21 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
                                         bool(options.get("full_page")), ready_timeout_ms,
                                         quiet_ms, tuple(ignore_requests))
 
+        _js.check()
         last_two: list[bytes] = []
         taken_at = time.monotonic()
         mark = _page_clock(page) if page is not None else None
 
         def shoot() -> bytes:
-            got = bytes(target.screenshot(**options))
+            _js.check()
+            if "timeout" in options and _js.current() is not None:
+                options["timeout"] = _js.screenshot_timeout()
+            try:
+                got = bytes(target.screenshot(**options))
+            except Exception as error:  # noqa: BLE001 - a dead page is said, not hung on
+                _js.diagnose(owner if page is not None else target, error,
+                             "taking the screenshot", options.get("timeout"))
+                raise
             last_two[:] = [*last_two[-1:], got]
             return got
 
@@ -659,8 +683,10 @@ _PICTURES_JS = r"""
 def _page_clock(page) -> float | None:
     """The page's own clock now (performance.now), to ask later what finished after it."""
     try:
-        got = page.evaluate(_PAGE_CLOCK_JS)
+        got = _js.call(page, _PAGE_CLOCK_JS, what="reading the page's clock")
         return float(got)
+    except CaptureError:
+        raise
     except Exception:  # noqa: BLE001 - naming is help, not the verdict
         return None
 
@@ -670,8 +696,9 @@ def _pictures_since(page, mark: float | None) -> list[str]:
     if page is None or mark is None:
         return []
     try:
-        got = page.evaluate(_PICTURES_JS, {"t": mark})
-    except Exception:  # noqa: BLE001
+        got = _js.call(page, _PICTURES_JS, {"t": mark},
+                       what="asking which pictures were still loading")
+    except Exception:  # noqa: BLE001 - naming is help, not the verdict
         return []
     out = []
     for url in got or ():
@@ -712,6 +739,20 @@ def pointer_plan(cfg, reset_hover_focus: bool | None, keep_pointer: bool | None,
     if blur_focus is not None:
         blur = bool(blur_focus)
     return away, blur
+
+
+def _refuse_closed(page: Any) -> None:
+    """A closed page is said at once, by name: there is nothing to photograph."""
+    closed = getattr(page, "is_closed", None) if page is not None else None
+    if not callable(closed):
+        return
+    try:
+        is_closed = bool(closed())
+    except Exception:  # noqa: BLE001 - a wrapper that cannot say is not closed
+        return
+    if is_closed:
+        raise CaptureError("the page is closed: it was closed before the check "
+                           "(by the test, or by a fixture's teardown)")
 
 
 def _pointer_away(page: Any) -> None:
@@ -763,7 +804,11 @@ def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: b
     def probe():
         try:
             if owner is page:
-                return evaluate(_ready.PAGE_PROBE_JS, arg)
+                return _js.call(owner, _ready.PAGE_PROBE_JS, arg,
+                                what="asking whether the page is ready")
+            if _js._is_locator(owner):
+                return _js.call(owner, _ready.PROBE_JS, arg,
+                                what="asking whether the element is ready")
             return evaluate(_ready.PROBE_JS, arg, timeout=limit_ms)
         finally:
             arg["reset"] = False

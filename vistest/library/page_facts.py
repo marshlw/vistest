@@ -230,11 +230,16 @@ def _call(owner: Any, element: bool, script: str, arg: dict):
     evaluate = getattr(owner, "evaluate", None)
     if not callable(evaluate):
         return None
+    from . import js as _js
+
     try:
         if element:
-            return evaluate(script, arg)
-        return evaluate(f"(a) => ({script.strip()})(null, a)", arg)
+            return _js.call(owner, script, arg, what="asking the page about the element")
+        return _js.call(owner, f"(a) => ({script.strip()})(null, a)", arg,
+                        what="asking the page about the window")
     except Exception:  # noqa: BLE001 - facts are help; a page that will not say is skipped
+        #  A dead page (library/js.py) is remembered by the check's budget, and
+        #  the capture stops at its next step with the reason.
         return None
 
 
