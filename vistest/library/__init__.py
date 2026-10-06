@@ -59,6 +59,7 @@ from .errors import (
     ScreenshotMismatch,
     VisTestWarning,
     VisualCheckError,
+    hide_for_verdicts,
 )
 
 __all__ = [
@@ -306,6 +307,7 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                     baseline=baseline_path, actual=actual_path,
                     elsewhere=platforms_with(store, key))
 
+            _refuse_too_large(ctx, shot.png, key)
             _warn_unsettled_accept(shot, key)
             run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
             _canary_row(captured, run_canary)
@@ -428,6 +430,7 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         #  behaviour: anything that differs by a byte is written.
         failed = result.verdict is Verdict.FAIL
         if mode == "all" or (mode == "changed" and failed):
+            _refuse_too_large(ctx, final_png, key)
             if _sha_of(final_png) != _sha_of(baseline):
                 _warn_unsettled_accept(shot, key)
             if run_canary is _fingerprint.NOT_DRAWN:
@@ -840,22 +843,57 @@ def _capture_row(shot) -> dict:
 
 
 def _warn_unsettled_accept(shot, key: SnapshotKey) -> None:
-    """Accepting a frame of a page that would not hold still is allowed — and said.
+    """Accepting a frame of a page that would not hold still, or was not ready, is
+    allowed — and said.
 
     The next run takes its own frames of the same moving page, and the
     baseline written now is one arbitrary moment of it. That is a red run
     waiting to happen, and the person pressing «accept» is the one who can
-    still do something about it.
+    still do something about it. The same goes for a page a readiness step
+    gave up on: a baseline of «Loading…» passes against every later
+    «Loading…» and says nothing about the page.
     """
-    text = shot.stability.unsettled_text()
-    if not text:
-        return
     import warnings
 
-    warnings.warn(f"vistest: {key.as_str()}: {text}. It was accepted as the "
-                  "baseline anyway; the next run will likely disagree with it. "
-                  "Stop what moves on the page (or mask it) and accept again.",
-                  VisTestWarning, stacklevel=4)
+    text = shot.stability.unsettled_text()
+    if text:
+        warnings.warn(f"vistest: {key.as_str()}: {text}. It was accepted as the "
+                      "baseline anyway; the next run will likely disagree with it. "
+                      "Stop what moves on the page (or mask it) and accept again.",
+                      VisTestWarning, stacklevel=4)
+    ready = getattr(shot, "ready", None)
+    if ready is not None and ready.ok is False:
+        warnings.warn(f"vistest: {key.as_str()}: {ready.text()}. It was accepted as "
+                      "the baseline anyway, and a picture of a page that had not "
+                      "finished is what every later check will be held to. Wait for "
+                      "the page in the test (or raise capture.ready_timeout_ms) and "
+                      "accept again.", VisTestWarning, stacklevel=4)
+
+
+def _refuse_too_large(ctx, png: bytes, key: SnapshotKey) -> None:
+    """A baseline the engine could never compare against is not written.
+
+    `--vistest-update` used to accept a 90-megapixel picture, and every later
+    check of it failed with `ImageTooLarge`: the limit is said at the accept,
+    where the decision is still open, with nothing written.
+    """
+    from ..core.comparator import ImageTooLarge
+
+    limit = int(getattr(ctx.config.diff, "max_pixels", 0) or 0)
+    if limit <= 0:
+        return
+    width, height = pngio.dimensions(png, source=f"the screenshot of {key.name}")
+    if width * height <= limit:
+        return
+    def amount(pixels: int) -> str:
+        return f"{pixels / 1_000_000:.1f} Mpx" if pixels >= 100_000 else f"{pixels} px"
+
+    raise ImageTooLarge(
+        f"{key.as_str()}: the picture is {width}×{height} = {amount(width * height)}, "
+        f"over the engine's limit of {amount(limit)}: as a baseline it could never "
+        "be compared, so it "
+        "was not written. Capture a smaller area (an element instead of the whole "
+        "page), or raise VISTEST_ENGINE_MAX_PIXELS deliberately.")
 
 
 def _scale_hint(shot, result) -> str:
@@ -1045,3 +1083,8 @@ def ctx_nodeid() -> str:
     import os
 
     return os.environ.get("PYTEST_CURRENT_TEST", "").split(" (")[0]
+
+
+#  pytest: the library's own verdicts and refusals are shown without its
+#  frames (library/errors.py, hide_for_verdicts).
+__tracebackhide__ = hide_for_verdicts

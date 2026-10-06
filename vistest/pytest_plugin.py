@@ -485,7 +485,8 @@ def _describe_visual_failure(report, call) -> None:
     from .library.errors import VisualCheckError
 
     if isinstance(error, VisualCheckError):
-        report.sections.append(("Visual diff", str(error)))
+        #  The message is already the failure's own text: a "Visual diff"
+        #  section with the same lines printed it twice (review v1, 4.2).
         _attach_allure_files(error.artifacts)
         if error.result is not None:
             _attach_allure_result(error.result)

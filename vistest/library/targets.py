@@ -68,7 +68,7 @@ from typing import Any
 
 from ..core import pngio
 from . import js as _js
-from .errors import CaptureError
+from .errors import CaptureError, hide_for_verdicts
 
 __all__ = ["Capture", "Stability", "capture", "frames_after", "pointer_plan", "settle_frames",
            "split_masks"]
@@ -937,3 +937,8 @@ def _resolve_painted(painted: list, page, target) -> list:
                 "Page or Locator, or use a box.")
         out.append(locator(item))
     return out
+
+
+#  pytest: the library's own verdicts and refusals are shown without its
+#  frames (library/errors.py, hide_for_verdicts).
+__tracebackhide__ = hide_for_verdicts

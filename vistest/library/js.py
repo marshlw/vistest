@@ -41,7 +41,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from .errors import CaptureError
+from .errors import CaptureError, hide_for_verdicts
 
 __all__ = ["Budget", "SlowAnswer", "budget", "budget_ms", "call", "check", "current",
            "diagnose", "screenshot_timeout"]
@@ -252,3 +252,8 @@ def _crashed(page: Any) -> bool:
     except Exception as e:  # noqa: BLE001
         return "crash" in str(e).lower()
     return False
+
+
+#  pytest: the library's own verdicts and refusals are shown without its
+#  frames (library/errors.py, hide_for_verdicts).
+__tracebackhide__ = hide_for_verdicts
