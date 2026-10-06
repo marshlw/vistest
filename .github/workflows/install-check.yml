@@ -1,15 +1,14 @@
-# Сниппет CI — вставить самому как .github/workflows/install-check.yml.
-# (Я .github/workflows не трогаю.) Два варианта в одном файле: оба вызываются
-# вручную. Скрипт один и тот же — scripts/check_install.py из ветки.
+# Install check: does the package install and work on a clean machine?
 #
-#  - job `testpypi`  — ставит vistest==<версия> из TestPyPI (зависимости — с
-#                      настоящего PyPI) и гоняет скрипт;
-#  - job `wheel`     — собирает колесо в этой же работе и ставит его без индекса:
-#                      проверка ветки ДО загрузки.
+# Run by hand only: Actions → Install check → Run workflow. Both jobs run the
+# same script, scripts/check_install.py, from the checked-out branch.
 #
-# Матрица: ubuntu / windows / macos × Python 3.10–3.13 = 12 запусков на job.
-# Запускайте так: Actions → Install check → Run workflow (ref — нужная ветка,
-# version — для testpypi, например 0.2.0.dev1).
+#  - job `wheel`    — builds the wheel in this run and installs it without an
+#                     index: checks a branch BEFORE anything is uploaded;
+#  - job `testpypi` — installs vistest==<version> from TestPyPI (dependencies
+#                     from the real PyPI) and runs the script.
+#
+# Matrix: ubuntu / windows / macos × Python 3.10–3.13 = 12 runs per job.
 
 name: Install check
 
@@ -17,11 +16,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Версия на TestPyPI (для job testpypi), например 0.2.0.dev1"
+        description: "Version on TestPyPI (for the testpypi job), e.g. 0.2.0.dev2"
         required: false
-        default: "0.2.0.dev1"
+        default: "0.2.0.dev2"
       what:
-        description: "Что гонять: wheel (сборка из ветки), testpypi или both"
+        description: "What to run: wheel (built from the branch), testpypi or both"
         required: true
         default: "wheel"
         type: choice
@@ -31,7 +30,7 @@ permissions:
   contents: read
 
 jobs:
-  # ---- 1. Колесо, собранное здесь же: ветка проверяется до любой загрузки ---- #
+  # ---- 1. A wheel built right here: the branch is checked before any upload -- #
   build:
     if: ${{ inputs.what == 'wheel' || inputs.what == 'both' }}
     runs-on: ubuntu-latest
@@ -61,7 +60,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4          # scripts/ и examples/ — колесо их не несёт
+      - uses: actions/checkout@v4          # scripts/ and examples/: the wheel does not carry them
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -76,7 +75,7 @@ jobs:
             --wheel "$(ls dist/*.whl)" \
             ${{ runner.os == 'Linux' && '--with-deps' || '' }}
 
-  # ---- 2. То, что лежит на TestPyPI ----------------------------------------- #
+  # ---- 2. What is on TestPyPI ------------------------------------------------ #
   testpypi:
     if: ${{ inputs.what == 'testpypi' || inputs.what == 'both' }}
     runs-on: ${{ matrix.os }}
@@ -86,7 +85,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4          # только ради scripts/ и examples/
+      - uses: actions/checkout@v4          # only for scripts/ and examples/
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
