@@ -184,17 +184,30 @@ def pytest_configure(config):
     baselines = _setting(config, "vistest_baselines", "vistest_baselines")
     report = _setting(config, "vistest_report", "vistest_report")
 
-    ctx = _context.LibraryContext(
-        root=root,
-        baselines=(root / baselines) if baselines else None,
-        report=(root / report) if report else None,
-        platform_override=_setting(config, "vistest_platform",
-                                   "vistest_platform"),
-        update=config.getoption("--vistest-update"),
-        config_path=config.getoption("--vistest-config"),
-        preset=config.getoption("--vistest-preset"),
-        fail_on=config.getoption("--vistest-fail-on"),
-    )
+    from .core.settings import ConfigError
+
+    named = config.getoption("--vistest-config")
+    if named and not Path(named).is_file():
+        #  Named on purpose and not there: a typo in the path used to run the
+        #  suite on the defaults, in silence.
+        raise pytest.UsageError(f"vistest: --vistest-config {named}: no such file")
+    try:
+        ctx = _context.LibraryContext(
+            root=root,
+            baselines=(root / baselines) if baselines else None,
+            report=(root / report) if report else None,
+            platform_override=_setting(config, "vistest_platform",
+                                       "vistest_platform"),
+            update=config.getoption("--vistest-update"),
+            config_path=config.getoption("--vistest-config"),
+            preset=config.getoption("--vistest-preset"),
+            fail_on=config.getoption("--vistest-fail-on"),
+        )
+    except ConfigError as e:
+        #  A broken vistest.yaml stops the run before any test, on purpose —
+        #  but as one line naming the file and the key, the way pytest says a
+        #  bad option, not as thirty lines of INTERNALERROR (review v1, 2.6).
+        raise pytest.UsageError(f"vistest: {' '.join(str(e).split())}") from None
     _context.install(ctx)
     config._vistest_context = ctx
 
