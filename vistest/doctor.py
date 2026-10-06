@@ -44,14 +44,12 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from ._term import C  # colour only on a terminal, and never with NO_COLOR
 from .ai import attribution as _attr
 from .config import VisTestConfig
 from .core import noise as _noise
 from .core.comparator import compare
 from .models import ChangeKind, DiffRegion
-
-C = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m", "b": "\033[34m",
-     "d": "\033[90m", "0": "\033[0m"}
 
 
 class Frame(Protocol):

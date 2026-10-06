@@ -16,11 +16,16 @@ import os
 import sys
 from pathlib import Path
 
+from . import __version__
 from .config import VisTestConfig, platform_key
+
+#: The window `vistest snap` takes a page at when no --viewport is given.
+SNAP_VIEWPORT = "1440x900"
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="vistest")
+    p.add_argument("--version", action="version", version=f"vistest {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("compare", help="compare two PNGs")
@@ -55,8 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     sn.add_argument("url", nargs="?", help="page address")
     sn.add_argument("--name", help="snapshot name; taken from the URL by default")
     sn.add_argument("--suite", help="YAML with a list of pages instead of a single URL")
-    sn.add_argument("--viewport", default="1440x900", action="append",
-                    help="may be given more than once: --viewport 390x844")
+    sn.add_argument("--viewport", default=None, action="append",
+                    help=f"window size, may be given more than once: --viewport 390x844 "
+                         f"(default {SNAP_VIEWPORT})")
     sn.add_argument("--selector", help="capture only this element")
     sn.add_argument("--wait", type=int, default=0, help="extra pause, ms")
     sn.add_argument("--browser", default="chromium",
@@ -390,7 +396,56 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--yes", "-y", action="store_true")
 
     args = p.parse_args(argv)
+    _safe_streams()
+    try:
+        return _run(args)
+    except _expected_errors() as e:
+        #  A wrong path, an unreadable PNG, a broken vistest.yaml: one line that
+        #  says which, and exit 2 — not a traceback that reads like a bug in
+        #  the package. A bug still gets its traceback: only these are caught.
+        print(f"vistest {args.cmd}: {_one_line(e)}", file=sys.stderr)
+        return 2
 
+
+def _expected_errors() -> tuple[type[BaseException], ...]:
+    """What a command fails with when the input, not the code, is wrong."""
+    from .core.comparator import ImageTooLarge
+    from .core.pngio import PngError
+    from .core.settings import ConfigError
+    from .core.thresholds import ThresholdError
+
+    return (OSError, PngError, ImageTooLarge, ConfigError, ThresholdError)
+
+
+def _one_line(error: BaseException) -> str:
+    text = " ".join(str(error).split())
+    return text or type(error).__name__
+
+
+def _safe_streams() -> None:
+    """Never die printing «ΔE00» where the console or the pipe cannot hold it.
+
+    On Windows a redirected stdout is in the ANSI code page (cp1252 and the
+    like) unless PYTHONUTF8 is set, and `vistest compare` crashed on its first
+    «Δ» with UnicodeEncodeError. A character the stream cannot encode becomes
+    «?» instead; a stream that can is left alone.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not encoding or not callable(reconfigure):
+            continue
+        try:
+            "ΔE00 → — × «»".encode(encoding)
+        except (UnicodeEncodeError, LookupError):
+            try:
+                reconfigure(errors="replace")
+            except (ValueError, OSError):  # pragma: no cover - a closed stream
+                pass
+
+
+def _run(args) -> int:
+    """The command, once the arguments are read."""
     if args.cmd == "compare":
         return _compare(args)
     if args.cmd == "check":
@@ -698,7 +753,7 @@ def _snap(args) -> int:
         return 2
 
     variants = _variants_from_args(args)
-    if variants and len(variants) > 1 and len(args.viewport) > 1:
+    if variants and len(variants) > 1 and args.viewport:
         # Оба механизма сразу — это почти наверняка недоразумение, и молча
         # выбрать один значило бы снять половину набора не в тех размерах.
         print("--viewport и матрица заданы одновременно: размеры берутся из "
@@ -788,8 +843,10 @@ def _snap_targets(args) -> list[dict]:
     if not args.url:
         return []
 
-    # --viewport с action="append" оставляет дефолт первым элементом
-    viewports = args.viewport[1:] if len(args.viewport) > 1 else [args.viewport[0]]
+    #  The sizes given, or the one default. The default used to be a string
+    #  under action="append": without the flag it was read letter by letter
+    #  ("4", "4", "0", "x", …), with it argparse could not append to it.
+    viewports = list(args.viewport or [SNAP_VIEWPORT])
     base = args.name or _name_from_url(args.url)
     out = []
     for vp in viewports:

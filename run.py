@@ -44,7 +44,19 @@ VENV = ROOT / ".venv"
 IS_WIN = platform.system() == "Windows"
 HOST, PORT = "127.0.0.1", 8420
 
-C = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m", "b": "\033[34m", "0": "\033[0m"}
+_CODES = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m", "b": "\033[34m", "0": "\033[0m"}
+
+
+def _colour_on() -> bool:
+    """Colour only on a terminal; never with NO_COLOR, always with FORCE_COLOR."""
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    return sys.stdout.isatty()
+
+
+C = dict(_CODES) if _colour_on() else dict.fromkeys(_CODES, "")
 if IS_WIN and not os.getenv("WT_SESSION"):
     os.system("")  # включить ANSI в старом cmd.exe
 

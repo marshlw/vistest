@@ -24,12 +24,10 @@ pages.yaml:
 
 from __future__ import annotations
 
+from .._term import C  # colour only on a terminal, and never with NO_COLOR
 from ..config import VisTestConfig
 from ..integrations.driver import PlaywrightDriver
 from ..service import CheckService
-
-C = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m",
-     "b": "\033[34m", "0": "\033[0m"}
 
 
 def snap_urls(targets: list[dict], *, browser: str = "chromium",

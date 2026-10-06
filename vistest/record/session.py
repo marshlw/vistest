@@ -45,12 +45,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from .. import scenario
+from .._term import C  # colour only on a terminal, and never with NO_COLOR
 from ..config import VisTestConfig, platform_key
 from ..integrations.driver import PlaywrightDriver
 from ..service import CheckService
 from .overlay import OVERLAY_JS
-
-C = {"g": "\033[32m", "y": "\033[33m", "r": "\033[31m", "b": "\033[34m", "0": "\033[0m"}
 
 
 def say(msg: str, color: str = "0") -> None:
