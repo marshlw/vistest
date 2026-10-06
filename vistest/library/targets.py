@@ -56,8 +56,10 @@ the flakiness of screenshot tests is born at capture, not at comparison:
 
 from __future__ import annotations
 
+import inspect
 import io
 import os
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -415,6 +417,11 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         _refuse_painted(painted, "bytes")
         return Capture(png=png, source="bytes", boxes=tuple(boxes))
 
+    if isinstance(target, str) and _URL.match(target):
+        raise TypeError(
+            f"expect_screenshot: {target!r} is an address, and the check takes a page: "
+            "open it first (page.goto(url)) and pass the page")
+
     if isinstance(target, (str, os.PathLike)):
         path = Path(target)
         try:
@@ -429,7 +436,7 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
     #  numpy array — what somebody calling the engine directly already has.
     if hasattr(target, "shape") and hasattr(target, "dtype"):
         _refuse_painted(painted, "an array")
-        return Capture(png=pngio.encode(target), source="array",
+        return Capture(png=pngio.encode(_rgb_array(target)), source="array",
                        boxes=tuple(boxes))
 
     #  PIL image: has a save() that takes a format, a mode and a size.
@@ -446,7 +453,8 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         raise TypeError(
             f"expect_screenshot: cannot take a screenshot of {_describe(target)}. "
             "Pass a Playwright Page or Locator, PNG bytes, a PIL image, "
-            "a numpy array or a path to a PNG.")
+            "a numpy array or a path to a PNG." + _selenium_hint(target))
+    _refuse_async(target)
 
     page = _page_of(target)
     from . import page_facts as _facts
@@ -541,11 +549,19 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
             if "timeout" in options and _js.current() is not None:
                 options["timeout"] = _js.screenshot_timeout()
             try:
-                got = bytes(target.screenshot(**options))
+                taken = target.screenshot(**options)
+            except TypeError as error:
+                if _js._playwright(target):
+                    raise
+                raise _not_playwright(target, error) from None
             except Exception as error:  # noqa: BLE001 - a dead page is said, not hung on
                 _js.diagnose(owner if page is not None else target, error,
                              "taking the screenshot", options.get("timeout"))
                 raise
+            if inspect.isawaitable(taken):
+                getattr(taken, "close", lambda: None)()
+                raise TypeError(_ASYNC)
+            got = bytes(taken)
             last_two[:] = [*last_two[-1:], got]
             return got
 
@@ -739,6 +755,75 @@ def pointer_plan(cfg, reset_hover_focus: bool | None, keep_pointer: bool | None,
     if blur_focus is not None:
         blur = bool(blur_focus)
     return away, blur
+
+
+_URL = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+
+_ASYNC = ("expect_screenshot: this is Playwright's async API, and the check drives "
+          "the sync one (playwright.sync_api — pytest-playwright's `page` is one). "
+          "With an async page, take the picture yourself and pass the bytes: "
+          "expect_screenshot(await page.screenshot(), name) — without the waiting "
+          "and the frames a page gets")
+
+
+def _refuse_async(target: Any) -> None:
+    """An async Page or Locator, refused by name before anything is asked of it.
+
+    Its methods return coroutines: the check used to fail on the first of them
+    with «cannot convert 'coroutine' object to bytes» and a RuntimeWarning.
+    """
+    if (type(target).__module__.startswith("playwright.async_api")
+            or inspect.iscoroutinefunction(getattr(target, "screenshot", None))):
+        raise TypeError(_ASYNC)
+
+
+def _selenium_hint(target: Any) -> str:
+    if not type(target).__module__.startswith("selenium"):
+        return ""
+    return (" For Selenium, pass the PNG it takes: driver.get_screenshot_as_png(), "
+            "or element.screenshot_as_png for one element.")
+
+
+def _not_playwright(target: Any, error: TypeError) -> TypeError:
+    """`target.screenshot` refused Playwright's options: say what to pass instead."""
+    hint = _selenium_hint(target) or (
+        " Pass the PNG bytes it takes instead: expect_screenshot(<its PNG bytes>, name).")
+    return TypeError(
+        f"expect_screenshot: {_describe(target)}.screenshot() does not take Playwright's "
+        f"options (type, animations, caret, scale, …): {error}.{hint}")
+
+
+def _rgb_array(array: Any):
+    """A numpy array as the H×W×3 uint8 RGB picture it has to be, or a refusal that
+    says how to make it one. A float array used to be rounded to 0 and 1 in
+    silence — a black baseline."""
+    import numpy as np
+
+    a = np.asarray(array)
+    if a.ndim == 2:
+        raise TypeError(f"expect_screenshot: a grey array {a.shape}; the picture is "
+                        "H×W×3 RGB — np.stack([a] * 3, axis=-1)")
+    if a.ndim != 3 or a.shape[2] not in (3, 4):
+        raise TypeError(f"expect_screenshot: an array of shape {a.shape}; the picture "
+                        "is H×W×3 RGB")
+    if a.shape[2] == 4:
+        raise TypeError(f"expect_screenshot: an RGBA array {a.shape}; the picture is "
+                        "RGB — drop the alpha: a[..., :3]")
+    if a.dtype == np.uint8:
+        return a
+    if a.dtype == np.bool_ or a.dtype.kind not in "iuf":
+        raise TypeError(f"expect_screenshot: an array of {a.dtype}; the picture is "
+                        "uint8, 0–255")
+    lo, hi = (float(a.min()), float(a.max())) if a.size else (0.0, 0.0)
+    if a.dtype.kind == "f":
+        scale = ("(a * 255).round().astype(np.uint8)" if hi <= 1.0
+                 else "a.round().astype(np.uint8)")
+        raise TypeError(f"expect_screenshot: a float array, values {lo:g}…{hi:g}; the "
+                        f"picture is uint8, 0–255 — {scale}")
+    if lo < 0 or hi > 255:
+        raise TypeError(f"expect_screenshot: an integer array with values {lo:g}…{hi:g}; "
+                        "the picture is 0–255")
+    return a.astype(np.uint8)
 
 
 def _refuse_closed(page: Any) -> None:

@@ -2213,15 +2213,26 @@ capture:
 
 Glob patterns, matched against the URL without its query string.
 
-**Without the plugin** — `expect_screenshot` called from a plain script, from
-`unittest`, or with Playwright's async API (the plugin's hooks wrap the sync
-API only) — the network step is not asked. Misses stay at zero on this path
+**Without the plugin** — `expect_screenshot` called from a plain script or
+from `unittest` — the network step is not asked. Misses stay at zero on this path
 too: the second look masks nothing, so late data is never hidden. But a page
 that loads data with no sign of it (no spinner, no skeleton, no `aria-busy`)
 can be photographed early, and that is a **false failure**. Mark such loading
 with `aria-busy="true"` and the wait sees it. The stand measures this path
 separately and prints its false failures and time; they are not held to the
 plugin path's numbers.
+
+**Playwright's async API** is not supported: `expect_screenshot` drives the
+sync API, and an async page is refused with a sentence that says so. With an
+async page, take the picture yourself and pass the bytes —
+`expect_screenshot(await page.screenshot(), "home.png")` — knowing that a
+picture handed in gets none of the waiting and frames a page gets.
+
+**A page that stops answering** — a script stuck in a loop, a crashed tab, a
+page closed before the check — fails the check with `CaptureError` and the
+reason, in seconds: every question to the page has a deadline, at most
+`max(5 s, capture.ready_timeout_ms)` each and never past
+`2 × ready_timeout_ms + 3 × stable_timeout_ms + 15 s` for the whole check.
 
 **Loader or decoration.** An endless animation in the area counts as a
 loader when its element (or one of two ancestors) is named like one — class,
