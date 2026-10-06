@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 
 __all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "VisTestWarning",
-           "VisualCheckError"]
+           "VisualCheckError", "hide_for_verdicts"]
 
 
 
@@ -158,6 +158,27 @@ class VisualCheckError(AssertionError):
         self.artifacts = dict(artifacts or {})
 
 
+def hide_for_verdicts(excinfo) -> bool:
+    """For pytest's `__tracebackhide__`: hide the library's frames for its own words.
+
+    A failed check, a page that could not be photographed, an argument refused
+    with what to do instead — the message is the whole story, and pytest used
+    to print two hundred lines of `expect_screenshot`'s source above it. For
+    anything else — a bug here, an error from Playwright — the frames stay.
+    Set at module level in the library's modules: pytest reads it from a
+    frame's globals as well as from its locals.
+    """
+    error = getattr(excinfo, "value", None)
+    if isinstance(error, (VisualCheckError, CaptureError)):
+        return True
+    from ..core.comparator import ImageTooLarge
+
+    if isinstance(error, ImageTooLarge):
+        return True
+    return isinstance(error, (TypeError, ValueError)) and \
+        str(error).startswith("expect_screenshot")
+
+
 def _where(platform: str, asked: str) -> str:
     """` (linux-chromium-1x-1280x720; the name given was 'a?.png')`, or less."""
     parts = [platform] if platform else []
@@ -271,3 +292,6 @@ class ScreenshotMismatch(VisualCheckError):
                    artifacts={"baseline": str(baseline), "actual": str(actual),
                               "diff": str(diff) if diff else "",
                               "report": str(report) if report else ""})
+
+
+__tracebackhide__ = hide_for_verdicts
