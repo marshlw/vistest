@@ -429,8 +429,10 @@ def table(work: Path, seeds, *, timing: bool, facts: list[str],
           before: list[Path] | None = None) -> str:
     cols = columns(work, before or [])
     seeds = list(seeds)
+    kind = ("held out" if seeds[0] in stand.HELD_OUT
+            else "calibration" if seeds[0] in stand.CALIBRATION else "pilot")
     L = [f"=== Capture hazards: seeds {seeds[0]}–{seeds[-1]} "
-         f"({'held out' if seeds[0] in stand.HELD_OUT else 'calibration' if seeds[0] in stand.CALIBRATION else 'pilot'}) ===",
+         f"({kind}) ===",
          f"{len(seeds)} seeds × {stand.SHOTS} checks of the plain page, × "
          f"{stand.SIGNAL_SHOTS} of the signal variant; {stand.VIEWPORT['width']}x"
          f"{stand.VIEWPORT['height']} at 1x; baseline after window.__ready + "

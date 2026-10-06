@@ -20,9 +20,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import vistest.library as lib
 from vistest.capture import inflight
 from vistest.capture.ready import LIBRARY_CAPTURE_VERSION, old_way
-import vistest.library as lib
 from vistest.library import targets
 from vistest.library.errors import plain
 from vistest.storage.file import default_root
@@ -155,7 +155,8 @@ def test_only_a_concrete_element_is_blamed(item, size, concrete):
 
 # --- the window scroll's line ----------------------------------------------- #
 def test_the_window_note_says_where_it_was_and_where_it_was_set():
-    note = targets._window_note({"x": 0, "y": 646}, {"x": 0, "y": 0}, {"at": [0, 0], "max": [0, 900]})
+    note = targets._window_note(
+        {"x": 0, "y": 646}, {"x": 0, "y": 0}, {"at": [0, 0], "max": [0, 900]})
     assert "(0, 646)" in note and "(0, 0)" in note and "restore_scroll" in note
     assert targets._window_note({"x": 0, "y": 0}, {"x": 0, "y": 0}, {"at": [0, 0]}) == ""
 

@@ -524,7 +524,8 @@ def test_the_device_scale_factor_is_in_the_passport(ctx, page):
 GROWING = """<!doctype html><html><head><style>
   body { margin: 0; font: 16px sans-serif; }
   #big { height: 2400px; background: linear-gradient(#fee2e2, #1d4ed8); }
-</style></head><body><div style="height: 100px">top</div><div id="wait" aria-busy="true">loading</div>
+</style></head><body><div style="height: 100px">top</div>
+<div id="wait" aria-busy="true">loading</div>
 <script>setTimeout(() => {
   const d = document.createElement('div'); d.id = 'big'; document.body.appendChild(d);
   document.getElementById('wait').remove();

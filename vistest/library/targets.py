@@ -625,7 +625,7 @@ def name_parts(namer, mask) -> list[dict]:
 
 
 def _window_note(before: dict, wanted: dict, got: dict | None) -> str:
-    """One line when the window was set to its baseline's scroll: where it was, where it went."""
+    """One line when the window was set to its baseline's scroll: where it was, where to."""
     was = (int(before.get("x") or 0), int(before.get("y") or 0))
     want = (wanted["x"], wanted["y"])
     at = tuple(got["at"]) if isinstance(got, dict) and got.get("at") else want
