@@ -5,6 +5,47 @@
 
 ## [Unreleased]
 
+### Review A: reliability and edge cases (after 0.2.0.dev2)
+
+From the review of the library before it is shown to anyone (review v1); the
+public API, the words of the messages and the documentation are the next
+steps. The engine, the corpora and `metrics.json` are not touched.
+
+- **A page that stops answering fails the check in seconds.** Every question
+  `expect_screenshot` asks a live page has a deadline (`library/js.py`): at
+  most `max(5 s, ready_timeout_ms)` each, never past
+  `2 × ready + 3 × stable + 15 s` for the check. A page whose main thread is
+  stuck, a crashed tab or a closed page raises `CaptureError` with the reason;
+  it used to hang the run.
+- **`examples/test_library.py`**, the library's own example, and the install
+  check runs it: red without baselines, `--vistest-update` writes them to
+  `tests/__vistest__/`, green, red after the page changes. The install check
+  used to run the service fixture's example.
+- **A failure is the test's line and the message, printed once** — the
+  library's frames are hidden for its own verdicts and refusals
+  (`__tracebackhide__`), and the "Visual diff" section that repeated the
+  message is gone.
+- **Refused by name, with what to do:** Playwright's async API; float,
+  out-of-range, RGBA and grey arrays (a float 0..1 array used to become a black
+  baseline); an address instead of a page; a Selenium element or driver; a
+  snapshot name that is empty, absolute or leads out with `..`. The message
+  heads with the name the file really has.
+- **An accept warns** for a page a readiness step gave up on, and **refuses**
+  a picture over `VISTEST_ENGINE_MAX_PIXELS`, writing nothing.
+- **vistest.yaml:** a misspelt section or key is one line — the file, the key,
+  «did you mean» — and pytest stops before the first test (it used to be
+  ignored, or thirty lines of INTERNALERROR). The library no longer reads
+  `service.project` or `VISTEST_PROJECT`.
+- **CLI:** `vistest --version`; `snap` without `--viewport` takes one picture
+  at 1440x900 (it took one per letter of the default); an error in the input is
+  one line and exit 2; a stdout that cannot hold «Δ» no longer crashes
+  `compare`; colour only on a terminal, and `NO_COLOR` is honoured.
+- The notification and retention clocks start again after a stop: the ticker
+  tests failed whenever an e2e test had shut its in-process server down
+  earlier in the same worker.
+- Four functions nobody called are gone; the dev2 branches only the hazard
+  stand reached have unit tests.
+
 ### 0.2.0.dev2: capture and messages, after the first trial on a real application
 
 The engine, engine v1 and `metrics.json` are not touched. Stand numbers and
