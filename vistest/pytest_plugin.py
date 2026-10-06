@@ -45,7 +45,8 @@ import pytest
 #  the run and belongs on the command line.
 _INI = {
     "vistest_baselines": "Directory holding the committed baselines "
-                         "(default: tests/__vistest__, or __vistest__ when there is no tests/ folder)",
+                         "(default: tests/__vistest__, or __vistest__ when there is "
+                         "no tests/ folder)",
     "vistest_platform": "Platform directory for baselines: browser and window "
                         "size, e.g. chromium-1440x900. Empty — taken from the "
                         "page under test.",
@@ -90,7 +91,8 @@ def pytest_addoption(parser):
                          "that differs by a byte")
     group.addoption("--vistest-baselines", default=None, metavar="PATH",
                     help="Directory with the committed baselines "
-                         "(default: tests/__vistest__, or __vistest__ when there is no tests/ folder)")
+                         "(default: tests/__vistest__, or __vistest__ when there is "
+                         "no tests/ folder)")
     #  `--vistest-platform`, and no `--vistest-profile` alias. A profile in
     #  this package is the rules for reading somebody else's snapshot file
     #  names (`NamingProfile`, `SuiteProfile`); a third meaning for the word,

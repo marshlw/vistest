@@ -256,7 +256,7 @@ def facts(owner: Any, element: bool, full_page: bool) -> dict:
 
 
 def set_window(owner: Any, target: dict) -> dict | None:
-    """The window set to `target` ({x, y}), instantly: {at, max}, or None when the page would not say.
+    """The window set to `target` ({x, y}), instantly: {at, max}; None when the page won't say.
 
     After the page is ready, not before: a page that is still arriving is too
     short to scroll that far, and content growing above the viewport moves the

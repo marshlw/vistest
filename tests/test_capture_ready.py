@@ -249,7 +249,8 @@ def test_a_steady_failure_is_confirmed():
                        lambda: Later([frame(data=160), frame(data=160)], settled=True),
                        lambda f, m: cmp(f, m))
     assert look.result.failed
-    assert any("the difference from the baseline is real, not motion" in n for n in look.result.notes)
+    assert any("the difference from the baseline is real, not motion" in n
+               for n in look.result.notes)
 
 
 def test_live_means_changed_in_two_intervals():
