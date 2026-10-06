@@ -158,6 +158,14 @@ class VisualCheckError(AssertionError):
         self.artifacts = dict(artifacts or {})
 
 
+def _where(platform: str, asked: str) -> str:
+    """` (linux-chromium-1x-1280x720; the name given was 'a?.png')`, or less."""
+    parts = [platform] if platform else []
+    if asked:
+        parts.append(f"the name given was {asked!r}")
+    return f" ({'; '.join(parts)})" if parts else ""
+
+
 class CaptureError(RuntimeError):
     """The picture could not be taken: the page is closed, crashed, or stopped answering.
 
@@ -175,10 +183,9 @@ class BaselineMissing(VisualCheckError):
     @classmethod
     def build(cls, *, name: str, platform: str, baseline: Path,
               actual: Path | None, elsewhere: list[str] | None = None,
-              update_flag: str = "--vistest-update"):
+              update_flag: str = "--vistest-update", asked: str = ""):
         lines = [
-            f"vistest: no baseline for {name!r}"
-            + (f" ({platform})" if platform else ""),
+            f"vistest: no baseline for {name!r}" + _where(platform, asked),
             f"  expected: {baseline}",
         ]
         if actual is not None:
@@ -212,10 +219,9 @@ class ScreenshotMismatch(VisualCheckError):
     def build(cls, *, name: str, platform: str, result, reason: str,
               baseline: Path, actual: Path, diff: Path | None,
               report: Path | None, limits: dict,
-              update_flag: str = "--vistest-update", renderer: str = ""):
-        head = f"vistest: {name!r} differs from the baseline"
-        if platform:
-            head += f" ({platform})"
+              update_flag: str = "--vistest-update", renderer: str = "",
+              asked: str = ""):
+        head = f"vistest: {name!r} differs from the baseline" + _where(platform, asked)
         from ..core.engines import V1_DEPRECATED
 
         lines = [

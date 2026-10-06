@@ -29,6 +29,7 @@ what happened in a form the report and the CI log can both use.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -143,7 +144,10 @@ def expect_screenshot(
     numpy array or a path to a PNG. Playwright is never imported to find out
     which — a page is recognised by having a `screenshot` method, so the
     package installs without a browser and works with a project's own page
-    wrapper.
+    wrapper. An array is H×W×3, RGB, uint8 (an integer array within 0–255 is
+    taken as it is; a float one is refused, with the conversion to write —
+    and OpenCV's `imread` gives BGR: `a[..., ::-1]`). Playwright's async API
+    is refused by name: the check drives the sync one.
 
     `platform` names the directory the baseline lives in — browser and window
     size, `chromium-1440x900`. Left out, it is taken from the page itself, and
@@ -185,9 +189,11 @@ def expect_screenshot(
     gives up is said in the reason.
 
     A check that fails gets a second look (core/retry.py): more frames, until
-    two in a row are identical. What keeps changing between them is masked as
-    live; what changed once — data that arrived late — is not, and the verdict
-    is from the last frame. On a page that was not ready nothing is masked.
+    two in a row are identical. Nothing it sees is masked. When the page
+    changed once and then held still — data that arrived late — the verdict is
+    from the later frame; what keeps changing is named in the message, with
+    the `mask=` that would hide it, and the check fails until that mask is
+    written on purpose. On a page that was not ready there is no second look.
 
     The pointer is moved off the page before the picture, so that no element
     is under it and a hover left by the previous step is not photographed;
@@ -215,6 +221,7 @@ def expect_screenshot(
     hanging the run.
     """
     started = time.perf_counter()
+    _check_name(name)
     ctx = _context.current()
     call_patch = _call_thresholds(threshold)
     wait = (ctx.config.capture.stable_timeout_ms if stable_timeout_ms is None
@@ -295,7 +302,7 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                        images={"actual": str(actual_path)},
                        duration_ms=_ms(started), capture=captured)
                 raise BaselineMissing.build(
-                    name=key.name, platform=platform,
+                    name=_shown(key), asked=_asked(key), platform=platform,
                     baseline=baseline_path, actual=actual_path,
                     elsewhere=platforms_with(store, key))
 
@@ -360,11 +367,11 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         _canary_row(captured, run_canary)
         run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
 
-        #  Failed: more frames, until two in a row are identical. What keeps
-        #  changing is masked as live; what changed once (late data) is not,
-        #  and the verdict is from the last frame. Nothing is masked on a page
-        #  that was not ready. The same function the server uses — see
-        #  core/retry.py for why late data cannot be hidden this way.
+        #  Failed: more frames, until two in a row are identical. Nothing is
+        #  masked: what changed once and held still (late data) is judged on
+        #  the later frame, what keeps changing is named and still fails. No
+        #  second look on a page that was not ready. The same function the
+        #  server uses — see core/retry.py for why nothing may be hidden here.
         final_png = shot.png
         live = None
         if result.failed and shot.retake is not None \
@@ -447,7 +454,8 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
 
         if result.verdict is Verdict.FAIL:
             raise ScreenshotMismatch.build(
-                name=key.name, platform=platform, result=result, reason=reason,
+                name=_shown(key), asked=_asked(key), platform=platform, result=result,
+                reason=reason,
                 baseline=baseline_path, actual=actual_path, diff=diff_path,
                 report=ctx.report, limits=limits, renderer=rend.line())
         return result
@@ -463,6 +471,43 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
 # --------------------------------------------------------------------------- #
 #  Bits the function above would only make longer
 # --------------------------------------------------------------------------- #
+def _check_name(name: Any) -> None:
+    """The snapshot's name: a relative path inside the baseline directory.
+
+    The store makes any name safe (storage/paths.py) — but quietly: `'..'` was
+    cut out, an absolute path lost its root, an empty name became `snapshot`,
+    and the message still showed the name as it was given, so the file it named
+    was not where it said. These are refused here, by name.
+    """
+    if not isinstance(name, str):
+        raise TypeError(f"expect_screenshot: the name is a string, like 'home.png', "
+                        f"not {type(name).__name__}")
+    bare = name.strip().removesuffix(".png")
+    if not bare.strip(" ./\\"):
+        raise ValueError("expect_screenshot: the snapshot's name is empty — give it "
+                         "one, like 'home.png'")
+    if name.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", name):
+        raise ValueError(f"expect_screenshot: {name!r} is an absolute path; the name is "
+                         "a path inside the baseline directory, like 'shop/checkout.png'")
+    if ".." in re.split(r"[\\/]", name):
+        raise ValueError(f"expect_screenshot: {name!r} leads out of the baseline "
+                         "directory with '..'; the name is a path inside it, like "
+                         "'shop/checkout.png'")
+
+
+def _shown(key: SnapshotKey) -> str:
+    """The name the baseline's file really has: `checkout_step_2.png`."""
+    return f"{key.folder}.png"
+
+
+def _asked(key: SnapshotKey) -> str:
+    """The name as it was given, when the file's name differs from it; else ''."""
+    given = key.name.replace("\\", "/")
+    if not given.endswith(".png"):
+        given += ".png"
+    return "" if given == _shown(key) else key.name
+
+
 def _limits(cfg) -> dict:
     """The thresholds this check ran under, as the report and the message say them.
 
