@@ -113,13 +113,6 @@ def _ignore_mask(shape, boxes):
     return noise.mask_from_boxes(shape, boxes)
 
 
-def _relative(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
-
-
 # --------------------------------------------------------------------------- #
 def expect_screenshot(
     target: Any,

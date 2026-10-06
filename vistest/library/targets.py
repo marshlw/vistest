@@ -168,11 +168,6 @@ class Capture:
             return None if self.stability.stable is None else True
         return bool(self.ready.ok)
 
-    def not_ready_text(self) -> str:
-        parts = [self.ready.text() if self.ready is not None else "",
-                 self.stability.unsettled_text()]
-        return "; ".join(p for p in parts if p)
-
 
 def split_masks(mask: Sequence[Any] | None) -> tuple[list, list]:
     """`mask=[...]` -> (things Playwright paints, boxes we ignore at compare time)."""

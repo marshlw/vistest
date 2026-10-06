@@ -292,26 +292,3 @@ def settle(page, cfg) -> list[str]:
 
     page.wait_for_timeout(min(cfg.settle_timeout_ms, 400))
     return notes
-
-
-def collect_auto_mask_boxes(page, cfg) -> list[dict]:
-    """bbox'ы, которые надо замаскировать автоматически (в CSS-пикселях)."""
-    boxes: list[dict] = []
-    selectors = list(cfg.mask_selectors)
-    if cfg.auto_mask_media:
-        selectors += list(DEFAULT_MEDIA_SELECTORS)
-
-    if selectors:
-        try:
-            boxes.extend(page.evaluate(FIND_BOXES_JS, selectors))
-        except Exception:
-            pass
-
-    if cfg.auto_mask_animated:
-        try:
-            for b in page.evaluate(FIND_ANIMATED_JS):
-                b["source"] = "animated"
-                boxes.append(b)
-        except Exception:
-            pass
-    return boxes
