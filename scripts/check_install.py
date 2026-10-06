@@ -17,8 +17,12 @@ virtual environment, with nothing from this checkout on the path:
     4. `import vistest` — from the environment, not from a source tree — and
        `vistest.__version__` is the version that was installed;
     5. the pytest plugin is registered (`--vistest-update` is a pytest option);
-    6. an example from `examples/`, twice: the first run writes the baselines,
-       the second compares against them and must pass without touching them.
+    6. `examples/test_library.py` — `expect_screenshot`, the library — laid out
+       the way a project has it (`pyproject.toml`, `tests/`), four times:
+       without baselines it is red with `BaselineMissing`; `--vistest-update`
+       writes them to `tests/__vistest__/`; then it is green and leaves them
+       as they were; after a change on the demo page it is red with
+       `ScreenshotMismatch`, and still leaves them as they were.
 
 From a wheel (a branch, before anything is uploaded):
 
@@ -47,7 +51,12 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
-EXAMPLE = "test_demo_visual.py"
+EXAMPLE = "test_library.py"
+#  The page the example photographs, and the one change to it that the fourth
+#  run must see: the prices' size, in the page's own style sheet — every one of
+#  the example's pictures has the prices in it.
+DEMO_PAGE = "demo_page.html"
+DEMO_CHANGE = (".price{font-size:34px;", ".price{font-size:30px;")
 #  What is installed besides the package: nothing. The example's `page` fixture
 #  comes from pytest-playwright, and the `browser` extra brings it — the check
 #  is of the install command the README gives.
@@ -77,15 +86,20 @@ def must(done: subprocess.CompletedProcess, what: str) -> str:
 
 
 def tree_hash(root: Path) -> dict[str, str]:
-    """Every baseline under `root`, by relative path: its hash.
+    """Every baseline picture and passport under `root`, by relative path: its hash.
 
-    `baseline.png` only: next to it every run rewrites `stability.png`, the map
-    of what moved between the frames of that run — which depends on the load of
-    the machine and is not what the second run compares with.
+    The library's layout: `<platform>/<name>.png` next to `<name>.json`, and
+    the renderers' canaries under `.renderers/`.
     """
     return {str(p.relative_to(root)).replace("\\", "/"):
             hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(root.rglob("baseline.png"))}
+            for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def pytest_tail(out: str) -> str:
+    """The last line of a pytest run — `3 passed in 4.1s` — for the log."""
+    lines = [ln for ln in out.strip().splitlines() if ln.strip()]
+    return lines[-1] if lines else "(no output)"
 
 
 def wheel_version(path: Path) -> str | None:
@@ -185,32 +199,77 @@ def main(argv=None) -> int:
             raise Failed("pytest does not know --vistest-update: the plugin is not registered")
         print("  --vistest-update is a pytest option: the pytest11 entry point works")
 
-        step(f"6. examples/{EXAMPLE}, twice")
+        step(f"6. examples/{EXAMPLE}: red, --vistest-update, green, changed page red")
         project = work / "project"
         if project.exists():
             shutil.rmtree(project)
-        shutil.copytree(args.examples, project / "examples",
-                        ignore=shutil.ignore_patterns("__pycache__", ".vistest"))
-        pytest = [py, "-m", "pytest", f"examples/{EXAMPLE}", "-q", "-p", "no:cacheprovider"]
-        first = must(run([*pytest, "--vistest-update"], cwd=project, env=env, timeout=900),
-                     "the first run (writes the baselines)")
-        base = project / ".vistest" / "baselines"
-        shots = list(base.rglob("baseline.png")) if base.is_dir() else []
-        if not shots:
-            raise Failed("the first run wrote no baselines under .vistest/baselines")
+        tests = project / "tests"
+        tests.mkdir(parents=True)
+        for name in (EXAMPLE, DEMO_PAGE):
+            shutil.copy2(args.examples / name, tests / name)
+        #  A project has a configuration file, and that makes its root pytest's
+        #  rootdir: the baselines then go where the README says they go.
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "check-install"\nversion = "0"\n\n'
+            "[tool.pytest.ini_options]\n", encoding="utf-8")
+        pytest = [py, "-m", "pytest", f"tests/{EXAMPLE}", "-q", "-p", "no:cacheprovider"]
+        base = tests / "__vistest__"
+
+        def pictures() -> list[Path]:
+            return sorted(base.rglob("*.png")) if base.is_dir() else []
+
+        def ran(extra: list[str]) -> tuple[int, str]:
+            done = run([*pytest, *extra], cwd=project, env=env, timeout=900)
+            return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+        code, out = ran([])
+        missing = out.count("BaselineMissing: vistest: no baseline for")
+        if code == 0 or not missing:
+            raise Failed("the first run, with no baselines, was not red with "
+                         "BaselineMissing:\n" + out[-800:])
+        if pictures():
+            raise Failed("the first run wrote baselines without --vistest-update: "
+                         + ", ".join(str(p) for p in pictures()[:5]))
+        print(f"  1. no baselines   : {pytest_tail(out)} — BaselineMissing ×{missing}")
+
+        code, out = ran(["--vistest-update"])
+        if code != 0:
+            raise Failed(f"--vistest-update did not end green:\n{out[-800:]}")
+        written = [p for p in pictures() if ".renderers" not in p.parts]
+        if len(written) < missing:
+            raise Failed(f"--vistest-update wrote {len(written)} baselines under {base}, "
+                         f"expected {missing}:\n{out[-800:]}")
+        said = re.search(r"baselines written to (.+?) — commit them", out)
+        if not said or Path(said.group(1)).resolve() != base.resolve():
+            raise Failed(f"the run did not say it wrote the baselines to {base}:\n"
+                         + out[-800:])
         before = tree_hash(base)
-        print("  first run :", first.strip().splitlines()[-1],
-              f"- {len(shots)} baselines written")
-        second = must(run(pytest, cwd=project, env=env, timeout=900),
-                      "the second run (compares)")
-        print("  second run:", second.strip().splitlines()[-1])
-        after = tree_hash(base)
-        if after != before:
-            names = sorted(n for n in {*before, *after} if before.get(n) != after.get(n))
-            raise Failed("the second run changed the baselines it was meant to compare "
-                         "with: " + ", ".join(names[:10]))
-        if " passed" not in second or " failed" in second:
-            raise Failed("the second run did not end green:\n" + second[-600:])
+        shown = ", ".join(str(p.relative_to(project)).replace("\\", "/")
+                          for p in written)
+        print(f"  2. --vistest-update: {pytest_tail(out)} — {shown}")
+
+        code, out = ran([])
+        if code != 0 or " failed" in out:
+            raise Failed(f"the run after --vistest-update did not end green:\n{out[-800:]}")
+        if tree_hash(base) != before:
+            raise Failed("the green run changed the baselines it compared with")
+        print(f"  3. compared       : {pytest_tail(out)} — baselines untouched")
+
+        page = tests / DEMO_PAGE
+        html = page.read_text(encoding="utf-8")
+        old, new = DEMO_CHANGE
+        if old not in html:
+            raise Failed(f"{DEMO_PAGE} no longer has {old!r} to change")
+        page.write_text(html.replace(old, new), encoding="utf-8")
+        code, out = ran([])
+        differs = out.count("ScreenshotMismatch: vistest:")
+        if code == 0 or not differs:
+            raise Failed("a changed page did not turn the run red with "
+                         "ScreenshotMismatch:\n" + out[-800:])
+        if tree_hash(base) != before:
+            raise Failed("the red run changed the baselines it compared with")
+        print(f"  4. page changed   : {pytest_tail(out)} — ScreenshotMismatch ×{differs}, "
+              "baselines untouched")
     except Failed as e:
         print(f"\nFAILED  {e}", file=sys.stderr)
         return 1
