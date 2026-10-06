@@ -104,6 +104,9 @@ def test_a_config_named_on_purpose_must_exist(tmp_path):
 @pytest.mark.parametrize("text, words", [
     ("capture:\n  keep_pointr: true\n", "did you mean 'capture.keep_pointer'?"),
     ("captur:\n  keep_pointer: true\n", "did you mean 'capture'?"),
+    ("matrix:\n  viewports: ['1440*900']\n", "vistest.yaml: matrix:"),
+    ("preset: strictest\n", "vistest.yaml: preset:"),
+    ("flows:\n  login: 5\n", "vistest.yaml: flows.login:"),
 ])
 def test_pytest_says_it_in_one_line_before_any_test(tmp_path, text, words):
     (tmp_path / "vistest.yaml").write_text(text, "utf-8")

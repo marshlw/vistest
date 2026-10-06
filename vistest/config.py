@@ -201,7 +201,10 @@ class VisTestConfig:
         for key in raw:
             if key not in top:
                 raise ConfigError(f"{path}: unknown key {key!r}{_did_you_mean(key, top)}")
-        cfg = cls.preset_of(raw.get("preset", "balanced"))
+        try:
+            cfg = cls.preset_of(raw.get("preset", "balanced"))
+        except ValueError as e:
+            raise ConfigError(f"{path}: preset: {e}") from None
 
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
@@ -257,7 +260,7 @@ class VisTestConfig:
             try:
                 from_config(cfg)
             except Exception as e:
-                raise ValueError(f"vistest.yaml: matrix: {e}") from None
+                raise ConfigError(f"{path}: matrix: {e}") from None
 
         if raw.get("flows"):
             from .scenario import normalize
@@ -266,7 +269,7 @@ class VisTestConfig:
                 try:
                     cfg.flows[name] = normalize(steps)
                 except Exception as e:
-                    raise ValueError(f"vistest.yaml: flows.{name}: {e}") from e
+                    raise ConfigError(f"{path}: flows.{name}: {e}") from e
 
         return cls._apply_env(cfg)
 
