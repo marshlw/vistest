@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -60,8 +61,8 @@ def failed_run(tmp_path_factory) -> str:
     done = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:xdist",
          "-o", "vistest_platform=flat", "test_checks.py"],
-        cwd=root, capture_output=True, text=True, timeout=300,
-        env={**__import__("os").environ, "COLUMNS": "200"})
+        cwd=root, capture_output=True, encoding="utf-8", timeout=300,
+        env={**os.environ, "COLUMNS": "200", "PYTHONIOENCODING": "utf-8"})
     return done.stdout + done.stderr
 
 
@@ -73,16 +74,25 @@ def _section(out: str, test: str) -> str:
     return rest[:min(ends)] if ends else rest
 
 
+def _posix(text: str) -> str:
+    """pytest prints the frames' paths with the OS's separator: `library\\targets.py`
+    on Windows, where a check for `library/targets.py` would fail and a check
+    for its absence would pass whatever was printed."""
+    return text.replace("\\", "/")
+
+
 def test_a_missing_baseline_shows_the_test_line_and_the_message_only(failed_run):
     part = _section(failed_run, "test_missing")
-    assert "def expect_screenshot" not in part and "library/__init__.py" not in part, part
+    assert "def expect_screenshot" not in part, part
+    assert "library/__init__.py" not in _posix(part), part
     assert 'expect_screenshot(picture(200), "missing.png")' in part
     assert len(part.strip().splitlines()) < 20, part
 
 
 def test_a_difference_shows_the_test_line_and_the_message_only(failed_run):
     part = _section(failed_run, "test_differs")
-    assert "def expect_screenshot" not in part and "library/__init__.py" not in part, part
+    assert "def expect_screenshot" not in part, part
+    assert "library/__init__.py" not in _posix(part), part
     assert "differs from the baseline" in part
 
 
@@ -96,7 +106,7 @@ def test_the_message_is_printed_once(failed_run, test, line):
 
 def test_a_bug_still_shows_where_it_happened(failed_run):
     part = _section(failed_run, "test_a_bug_keeps_its_frames")
-    assert "library/targets.py" in part, part
+    assert "library/targets.py" in _posix(part), part
     assert "a bug in somebody's page wrapper" in part
 
 

@@ -96,7 +96,8 @@ def test_a_config_named_on_purpose_must_exist(tmp_path):
     (tmp_path / "test_x.py").write_text("def test_x():\n    pass\n", "utf-8")
     done = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                            "-p", "no:xdist", "--vistest-config", "vistes.yaml", "test_x.py"],
-                          cwd=tmp_path, capture_output=True, text=True, timeout=120)
+                          cwd=tmp_path, capture_output=True, encoding="utf-8", timeout=120,
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert done.returncode == 4, done.stdout + done.stderr
     assert "ERROR: vistest: --vistest-config vistes.yaml: no such file" in done.stderr
 
@@ -111,10 +112,11 @@ def test_a_config_named_on_purpose_must_exist(tmp_path):
 def test_pytest_says_it_in_one_line_before_any_test(tmp_path, text, words):
     (tmp_path / "vistest.yaml").write_text(text, "utf-8")
     (tmp_path / "test_x.py").write_text("def test_x():\n    pass\n", "utf-8")
+    env = {k: v for k, v in os.environ.items() if k != "VISTEST_PROJECT"}
     done = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                            "-p", "no:xdist", "test_x.py"], cwd=tmp_path,
-                          capture_output=True, text=True, timeout=120,
-                          env={k: v for k, v in os.environ.items() if k != "VISTEST_PROJECT"})
+                          capture_output=True, encoding="utf-8", timeout=120,
+                          env={**env, "PYTHONIOENCODING": "utf-8"})
     out = done.stdout + done.stderr
     assert done.returncode == 4, out
     assert "INTERNALERROR" not in out
