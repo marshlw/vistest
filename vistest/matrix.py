@@ -75,13 +75,12 @@ def parse_viewport(text: str) -> tuple[int, int]:
     m = _VIEWPORT_RE.match(str(text or "").strip().lower().replace(" ", ""))
     if not m:
         raise MatrixError(
-            f"Размер окна {text!r} не разобран: ожидается «ШИРИНАxВЫСОТА», "
-            "например 1440x900.")
+            f"window size {text!r} is not WIDTHxHEIGHT, for example 1440x900")
     w, h = int(m.group(1)), int(m.group(2))
     if not (1 <= w <= MAX_SIDE and 1 <= h <= MAX_SIDE):
         raise MatrixError(
-            f"Размер окна {text!r} вне пределов: сторона до {MAX_SIDE} px "
-            "(выше Chromium не снимает полотно вовсе).")
+            f"window size {text!r} is out of range: a side is at most {MAX_SIDE} px "
+            "(Chromium takes no picture taller than that)")
     return w, h
 
 
@@ -100,7 +99,7 @@ def normalize_browser(text: str) -> str:
     name = str(text or "").strip().lower()
     if name not in BROWSERS:
         raise MatrixError(
-            f"Браузер {text!r} неизвестен: {', '.join(BROWSERS)}.")
+            f"browser {text!r} is not one of {', '.join(BROWSERS)}")
     return name
 
 
@@ -189,9 +188,9 @@ def expand(browsers, viewports, *, base_viewport: str | None = None,
     base = normalize_viewport(base_viewport) if base_viewport else sizes[0]
     if base not in sizes:
         raise MatrixError(
-            f"Базовый размер {base} не входит в матрицу ({', '.join(sizes)}). "
-            "Базовый — это тот, чьи эталоны уже сняты и остаются на месте; "
-            "размер, которого в матрице нет, таким быть не может.")
+            f"base_viewport {base} is not in the matrix ({', '.join(sizes)}): the "
+            "base is the size whose baselines are already taken and stay where "
+            "they are, and a size the matrix does not have cannot be it")
 
     return [Variant(browser=b, viewport=v, scale=scale, base=(v == base))
             for b in names for v in sizes]

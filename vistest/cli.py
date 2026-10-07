@@ -111,22 +111,23 @@ def main(argv: list[str] | None = None) -> int:
     sn.add_argument("--browser", default="chromium",
                     choices=["chromium", "firefox", "webkit"])
     sn.add_argument("--update", action="store_true", help="overwrite existing ones")
-    # Матрица. `--viewport` остаётся тем, чем был — размером ЭТОГО кадра, — а
-    # матрица описывает набор целиком. Смешивать их в одном флаге нельзя:
-    # повторный `--viewport` годами приклеивал размер к ИМЕНИ снимка, и люди на
-    # это опираются. Здесь другой механизм и другое хранение, поэтому и флаг
-    # другой; что важнее — старые эталоны остаются на месте.
+    # The matrix. `--viewport` stays what it was — the size of THIS frame —
+    # and the matrix describes the whole set. One flag cannot be both: a
+    # repeated `--viewport` has glued the size to the snapshot's NAME for
+    # years, and people rely on it. This is another mechanism with another
+    # storage, so another flag; above all, the old baselines stay where they are.
     sn.add_argument("--matrix", action="store_true",
-                    help="снять во всех вариантах матрицы из vistest.yaml")
+                    help="capture every variant of the matrix in vistest.yaml")
     sn.add_argument("--browsers",
-                    help="матрица браузеров через запятую: chromium,firefox")
+                    help="the browsers of the matrix, comma-separated: chromium,firefox")
     sn.add_argument("--viewports",
-                    help="матрица размеров через запятую: 1440x900,390x844")
+                    help="the window sizes of the matrix, comma-separated: "
+                         "1440x900,390x844")
 
     mx = sub.add_parser(
-        "matrix", help="во что раскрывается матрица браузеров и разрешений")
-    mx.add_argument("--browsers", help="переопределить список браузеров")
-    mx.add_argument("--viewports", help="переопределить список размеров")
+        "matrix", help="what the matrix of browsers and window sizes expands to")
+    mx.add_argument("--browsers", help="instead of the browsers in vistest.yaml")
+    mx.add_argument("--viewports", help="instead of the window sizes in vistest.yaml")
 
     rec = sub.add_parser(
         "record", help="open a browser with a panel and capture baselines by hand")
@@ -858,7 +859,7 @@ def _check_via_api(args, overrides: dict) -> int:
 
 
 def _snap(args) -> int:
-    """Снять эталоны по URL — без написания тестов вообще."""
+    """Capture baselines by URL — without writing a test at all."""
     from .record.snap import snap_urls
 
     targets = _snap_targets(args)
@@ -868,10 +869,10 @@ def _snap(args) -> int:
 
     variants = _variants_from_args(args)
     if variants and len(variants) > 1 and args.viewport:
-        # Оба механизма сразу — это почти наверняка недоразумение, и молча
-        # выбрать один значило бы снять половину набора не в тех размерах.
-        print("--viewport и матрица заданы одновременно: размеры берутся из "
-              "матрицы, повторный --viewport игнорируется.", file=sys.stderr)
+        # Both at once is almost certainly a misunderstanding, and picking one
+        # in silence would take half the set at the wrong sizes.
+        print("--viewport and the matrix are both given: the sizes come from the "
+              "matrix, and the repeated --viewport is ignored.", file=sys.stderr)
     return snap_urls(targets, browser=args.browser, update=args.update,
                      variants=variants)
 
@@ -883,11 +884,11 @@ def _split_list(text: str | None) -> list[str] | None:
 
 
 def _variants_from_args(args):
-    """Матрица для этого запуска, или `None`, если её не просили.
+    """The matrix of this run, or `None` when nobody asked for one.
 
-    `None`, а не «один вариант по умолчанию»: `snap_urls` умеет обходиться без
-    матрицы и делает это ровно как раньше. Возвращать сюда всегда список
-    значило бы прогонять старый путь через новый код без всякой на то причины.
+    `None` and not «one default variant»: `snap_urls` does without a matrix,
+    exactly as it always did. Always returning a list would run the old path
+    through the new code for no reason at all.
     """
     from .matrix import MatrixError, from_config
 
@@ -897,9 +898,9 @@ def _variants_from_args(args):
         return None
     cfg = VisTestConfig.load()
     if browsers is None and getattr(args, "browser", None):
-        # `--browser` без списка означает «этот браузер», и при матрице
-        # размеров он остаётся единственным. Иначе включение `--viewports`
-        # молча приводило бы ещё и firefox с webkit из конфига.
+        # `--browser` without a list means «this browser», and with a matrix
+        # of sizes it stays the only one. Otherwise `--viewports` would bring
+        # firefox and webkit from the config along in silence.
         browsers = list(cfg.matrix.browsers or ()) or [args.browser]
     try:
         return from_config(cfg, browsers=browsers, viewports=viewports)
@@ -908,12 +909,11 @@ def _variants_from_args(args):
 
 
 def _matrix(args) -> int:
-    """Показать, во что раскрывается матрица, — до того, как её запустят.
+    """What the matrix expands to — before anyone runs it.
 
-    Шесть строк в конфиге превращаются в восемнадцать прогонов и восемнадцать
-    наборов эталонов. Узнать это заранее дешевле, чем из времени ожидания;
-    заодно видно, где именно лежит эталон каждого варианта — вопрос, который
-    задают первым.
+    Six lines of config become eighteen runs and eighteen sets of baselines.
+    Finding that out beforehand is cheaper than from the wait; and it shows
+    where the baseline of each variant lives — the question asked first.
     """
     from .matrix import MatrixError, from_config
 
@@ -929,21 +929,21 @@ def _matrix(args) -> int:
     declared = bool(cfg.matrix.browsers or cfg.matrix.viewports
                     or args.browsers or args.viewports)
     if not declared:
-        print("Матрица не объявлена — один вариант, как и было.\n"
-              "Опишите её в vistest.yaml:\n\n"
+        print("No matrix is declared — one variant, as before.\n"
+              "Describe it in vistest.yaml:\n\n"
               "  matrix:\n"
               "    browsers: [chromium, firefox]\n"
               "    viewports: [\"1440x900\", \"390x844\"]\n"
-              "    base_viewport: \"1440x900\"   # его эталоны остаются на месте\n")
+              "    base_viewport: \"1440x900\"   # its baselines stay where they are\n")
 
     width = max((len(v.label) for v in variants), default=0)
-    print(f"{len(variants)} "
-          f"{'вариант' if len(variants) == 1 else 'варианта(ов)'}:\n")
+    print(f"{len(variants)} {'variant' if len(variants) == 1 else 'variants'}:\n")
     for v in variants:
-        mark = "  ← базовый, эталоны остаются на месте" if v.base and v.viewport else ""
+        mark = "  <- the base: its baselines stay where they are" \
+            if v.base and v.viewport else ""
         print(f"  {v.label:<{width}}   {v.platform}{mark}")
     root = cfg.baselines_path()
-    print(f"\nЭталоны: {root}{os.sep}<ключ варианта>{os.sep}<снимок>{os.sep}baseline.png")
+    print(f"\nBaselines: {root}{os.sep}<variant key>{os.sep}<snapshot>{os.sep}baseline.png")
     return 0
 
 

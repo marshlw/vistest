@@ -156,9 +156,9 @@ def test_a_whole_check_runs_without_importing_the_server(tmp_path: Path):
     """
     completed = subprocess.run(
         [sys.executable, "-c", PROBE % {"root": str(ROOT)}],
-        cwd=tmp_path, capture_output=True, text=True, timeout=300,
+        cwd=tmp_path, capture_output=True, encoding="utf-8", timeout=300,
         env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT),
-             "SYSTEMROOT": "C:\\Windows"})
+             "SYSTEMROOT": "C:\\Windows", "PYTHONIOENCODING": "utf-8"})
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
     loaded = set(json.loads(completed.stdout.strip().splitlines()[-1]))
