@@ -787,7 +787,11 @@ python run.py push                  выгрузить прогоны, сдел�
 python run.py docker [up|test|down] запуск в контейнере
 ```
 
-`python -m vistest.cli` даёт те же команды плюс `serve` и `user`.
+`vistest` (или `python -m vistest.cli`) даёт те же команды плюс `serve` и
+`user`, а `vistest --help` показывает их двумя группами: библиотечные —
+`compare`, `check`, `bench`, `doctor`, `baselines export|import` — и серверные,
+которым нужен `pip install "vistest[server]"`. Серверная команда без него
+говорит об этом одной строкой и выходит с кодом 2.
 
 ### Вход через корпоративный каталог
 

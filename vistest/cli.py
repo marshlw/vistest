@@ -6,7 +6,14 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""CLI: `check|snap|record|doctor|project|report|evidence|compare|serve|push|list|rm|prune`."""
+"""CLI: the library's commands, and the server's when `vistest[server]` is installed.
+
+`vistest --help` lists them in two groups (review v1, R6, 3.1): what a project
+using `expect_screenshot` needs — `compare`, `check`, `bench`, `doctor`,
+`baselines` — and the server's, which need the `server` extra. A server
+command without it says so in one line, with the line to install it, and exits
+2 — it used to die on `ModuleNotFoundError: No module named 'fastapi'`.
+"""
 
 from __future__ import annotations
 
@@ -22,11 +29,37 @@ from .config import VisTestConfig, platform_key
 #: The window `vistest snap` takes a page at when no --viewport is given.
 SNAP_VIEWPORT = "1440x900"
 
+#: The library's commands, in the order `--help` lists them. Every other
+#: command is the server's and needs `vistest[server]`.
+LIBRARY_COMMANDS = ("compare", "check", "bench", "doctor", "baselines")
+
+
+def _grouped(sub) -> str:
+    """The commands for `--help`: the library's, then the server's."""
+    helps = {a.dest: a.help or "" for a in getattr(sub, "_choices_actions", ())}
+    width = max(len(n) for n in helps) + 2
+    from ._extras import SERVER_INSTALL
+
+    def line(name: str) -> str:
+        import textwrap
+
+        return textwrap.fill(helps[name], width=79, initial_indent=f"  {name:<{width}}",
+                             subsequent_indent=" " * (width + 2))
+
+    library = [line(n) for n in LIBRARY_COMMANDS]
+    server = [line(n) for n in helps if n not in LIBRARY_COMMANDS]
+    return "\n".join(["library:", *library, "",
+                      f"server (needs vistest[server]: {SERVER_INSTALL}):", *server])
+
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="vistest")
+    p = argparse.ArgumentParser(
+        prog="vistest", usage="vistest [-h] [--version] COMMAND ...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="`vistest COMMAND --help` for the options of one command.")
     p.add_argument("--version", action="version", version=f"vistest {__version__}")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="COMMAND",
+                           help=argparse.SUPPRESS)
 
     c = sub.add_parser("compare", help="compare two PNGs")
     c.add_argument("expected")
@@ -389,8 +422,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="run files only, no database rows")
     pr.add_argument("--yes", "-y", action="store_true")
 
+    p.description = _grouped(sub)
     args = p.parse_args(argv)
     _safe_streams()
+    if args.cmd not in LIBRARY_COMMANDS or (args.cmd == "check" and args.api):
+        refused = _needs_server(args.cmd)
+        if refused:
+            return refused
     try:
         return _run(args)
     except _expected_errors() as e:
@@ -399,6 +437,17 @@ def main(argv: list[str] | None = None) -> int:
         #  the package. A bug still gets its traceback: only these are caught.
         print(f"vistest {args.cmd}: {_one_line(e)}", file=sys.stderr)
         return 2
+
+
+def _needs_server(command: str) -> int:
+    """2 and one line when the server's extra is not installed; 0 when it is."""
+    from ._extras import SERVER_INSTALL, server_missing
+
+    if not server_missing():
+        return 0
+    print(f"vistest {command}: this is the server's command and needs "
+          f"vistest[server] — {SERVER_INSTALL}", file=sys.stderr)
+    return 2
 
 
 def _expected_errors() -> tuple[type[BaseException], ...]:

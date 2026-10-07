@@ -80,6 +80,13 @@ was no public release that promised it. Each line is what to write instead.
     nothing → they set the service's address and switch the model on
   - `examples/test_demo_visual.py`, `examples/test_existing_suite.py` →
     `docs/server/examples/`; `examples/` is the library's
+- **`vistest --help` in two groups** (review v1, R6, 3.1, 3.9): the library's
+  commands — `compare`, `check`, `bench`, `doctor`, `baselines export|import` —
+  then the server's, headed with what they need.
+  - a server command without `vistest[server]` died on `ModuleNotFoundError:
+    No module named 'fastapi'` (or ran on the library's layout and found
+    nothing, like `vistest list`) → one line, `pip install "vistest[server]"`,
+    exit 2; `vistest check --api` too
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 
