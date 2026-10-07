@@ -1477,7 +1477,7 @@ def test_dark_theme(page, visual):
 
 ```bash
 python run.py compare design.png implementation.png
-vistest compare expected.png actual.png -o diff/ --preset strict
+vistest compare expected.png actual.png -o diff/
 ```
 
 ---
