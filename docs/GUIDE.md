@@ -1975,7 +1975,7 @@ carries one line in its notes: v1 is deprecated and goes in the next release.
 
 **The threshold under v2.** A preset's `fail_severity` is v1's and is not
 applied: under v2 the threshold is 0 — whatever no rule explains fails. When
-a person sets one — `threshold=` in the call, the snapshot's passport,
+a person sets one — `fail_severity=` in the call, the snapshot's passport,
 `diff.fail_severity` in vistest.yaml, `VISTEST_FAIL_SEVERITY`, an override
 in the interface — a region no rule explained whose severity is below it
 does not fail the check, and it is not dropped either: the result, the

@@ -415,14 +415,14 @@ def test_below_the_threshold_in_the_message_and_the_report(ctx):
     a, b = _pair()
     _accept(ctx, _png(a))
     with pytest.raises(ScreenshotMismatch) as e:
-        expect_screenshot(_png(b), "page.png", threshold=25)
+        expect_screenshot(_png(b), "page.png", fail_severity=25)
     text = str(e.value)
     assert "threshold 25 (call), area limit 0.15% (default)" in text
     assert "  below the threshold 25 (call): 1 region — " in text
 
     c = a.copy()
     c[100:104, 200:210] = (244, 244, 244)
-    result = expect_screenshot(_png(c), "page.png", threshold=25)
+    result = expect_screenshot(_png(c), "page.png", fail_severity=25)
     assert result.verdict is Verdict.PASS and len(result.below_threshold) == 1
 
     rows = [r for r in read_parts(ctx.parts_dir).entries if r.get("action") == "compared"]
@@ -445,15 +445,15 @@ def test_the_area_limit_in_the_message_says_where_from_and_what_to_do(ctx):
     _accept(ctx, _png(a), "other.png")
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(_png(b), "page.png",
-                          threshold={"fail_severity": 99, "max_changed_area_pct": 1})
+                          fail_severity=99, max_changed_area_pct=1)
     assert "threshold 99 (call), area limit 1.00% (call) — all below it" in str(e.value)
     with pytest.raises(ScreenshotMismatch) as e:
-        expect_screenshot(_png(b), "page.png", threshold=99)
+        expect_screenshot(_png(b), "page.png", fail_severity=99)
     assert ("threshold 99 (call), area limit 0.15% (default) — all below it, "
             "together 1.40% of the frame, at or over the area limit: raise "
             "max_changed_area_pct or mask the area") in str(e.value)
     passed = expect_screenshot(_png(b), "other.png",
-                               threshold={"fail_severity": 99, "max_changed_area_pct": 5})
+                               fail_severity=99, max_changed_area_pct=5)
     assert passed.verdict is Verdict.PASS
     html = render(read_parts(ctx.parts_dir))              # the last check of each
     assert "area 1.40% / 0.15% (default)" in html and "area 1.40% / 5.00% (call)" in html

@@ -24,6 +24,12 @@ was no public release that promised it. Each line is what to write instead.
   - `from vistest import FileStore, SnapshotKey, SnapshotMeta, SnapshotStore`
     → `from vistest.storage import …`
   - `from vistest import ChangeKind, DiffRegion` → `from vistest.models import …`
+- **`threshold=` is two numbers with their own names**, the names vistest.yaml
+  (`diff:`), the passport and the interface already use:
+  - `expect_screenshot(page, "a.png", threshold=40)` →
+    `expect_screenshot(page, "a.png", fail_severity=40)`
+  - `threshold={"fail_severity": 40, "max_changed_area_pct": 0.5}` →
+    `fail_severity=40, max_changed_area_pct=0.5`
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 

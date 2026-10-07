@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,7 @@ from typing import Any
 from ..capture.ready import LIBRARY_CAPTURE_VERSION as CAPTURE_VERSION
 from ..capture.ready import old_way
 from ..core import pngio
-from ..core.thresholds import ThresholdError, clean, patch_for
+from ..core.thresholds import ThresholdError, patch_for, validate
 from ..models import CompareResult, Verdict
 from ..storage import atomic
 from ..storage.base import (
@@ -78,31 +78,26 @@ __all__ = [
 LibraryContext = _context.LibraryContext
 
 
-def _call_thresholds(threshold) -> dict[str, float]:
-    """`threshold=` in the two spellings it is written in.
+def _call_thresholds(fail_severity, max_changed_area_pct) -> dict[str, float]:
+    """The call's two thresholds, checked here, at the call.
 
-    A bare number is the common one and means the severity at which this check
-    fails — the only threshold most people ever touch. A mapping is the
-    complete form and goes through the same validation the interface uses, so
-    a misspelled key or a value out of range is refused here, at the call, and
-    not folded in as if it had been understood.
+    Two numbers with the names they have everywhere else — vistest.yaml, the
+    passport, the interface. A misspelt name is Python's own TypeError; a value
+    out of range is refused here, and not folded in as if it had been understood.
     """
-    if threshold is None:
-        return {}
-    if isinstance(threshold, bool):
-        raise TypeError("threshold must be a number or a mapping, not a bool")
-    if isinstance(threshold, (int, float)):
-        raw: Mapping[str, Any] = {"fail_severity": float(threshold)}
-    elif isinstance(threshold, Mapping):
-        raw = threshold
-    else:
-        raise TypeError(
-            f"threshold must be a number or a mapping of thresholds, "
-            f"got {type(threshold).__name__}")
-    try:
-        return clean(dict(raw))
-    except ThresholdError as e:
-        raise ThresholdError(f"expect_screenshot(threshold=...): {e}") from None
+    out: dict[str, float] = {}
+    for name, value in (("fail_severity", fail_severity),
+                        ("max_changed_area_pct", max_changed_area_pct)):
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"expect_screenshot: {name} is a number from 0 to 100, "
+                            f"not {type(value).__name__}")
+        try:
+            out[name] = validate(name, value)
+        except ThresholdError as e:
+            raise ThresholdError(f"expect_screenshot({name}=...): {e}") from None
+    return out
 
 
 def _ignore_mask(shape, boxes):
@@ -119,7 +114,8 @@ def expect_screenshot(
     name: str,
     *,
     platform: str | None = None,
-    threshold: float | Mapping[str, float] | None = None,
+    fail_severity: float | None = None,
+    max_changed_area_pct: float | None = None,
     mask: Sequence[Any] | None = None,
     full_page: bool | None = None,
     store: SnapshotStore | None = None,
@@ -153,13 +149,14 @@ def expect_screenshot(
     already a thing: `NamingProfile` and `SuiteProfile` are the rules for
     reading somebody else's snapshot file names. One word, one meaning.
 
-    `threshold` is the severity at which this check fails, or a mapping for the
-    full form. It is the innermost layer: config, then the project, then the
-    snapshot's own passport, then this. Under engine v2, the default, a region
-    no rule explained fails the check whatever its severity unless a threshold
-    was set by one of those layers — a preset's number is v1's — and then a
-    region below it is listed in the result, the report and the failure
-    message, with where the threshold came from, and does not fail it.
+    `fail_severity` is the severity (0–100) at which this check fails, and
+    `max_changed_area_pct` the share of the picture (0–100 %) that fails it
+    whatever the severity — the same names as in vistest.yaml (`diff:`). They
+    are the innermost layer: config, then the snapshot's own passport, then
+    this. A region no rule explained fails the check whatever its severity
+    unless a threshold was set by one of those layers, and then a region below
+    it is listed in the result, the report and the failure message, with where
+    the threshold came from, and does not fail it.
 
     `engine` is "v2" or "v1" for this one check; left out, it is the one
     vistest.yaml (`engine:`) or `VISTEST_ENGINE` chose, and v2 when nobody
@@ -217,7 +214,7 @@ def expect_screenshot(
     started = time.perf_counter()
     _check_name(name)
     ctx = _context.current()
-    call_patch = _call_thresholds(threshold)
+    call_patch = _call_thresholds(fail_severity, max_changed_area_pct)
     wait = (ctx.config.capture.stable_timeout_ms if stable_timeout_ms is None
             else _targets.check_timeout(stable_timeout_ms))
     ready_wait = (ctx.config.capture.ready_timeout_ms if ready_timeout_ms is None

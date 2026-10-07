@@ -234,7 +234,7 @@ imported to find out which.
 expect_screenshot(
     page, "checkout.png",
     platform="chromium-1440x900",      # which directory the baseline is in
-    threshold=40,                      # or {"fail_severity": 40, ...}
+    fail_severity=40,                  # 0–100; and max_changed_area_pct=, in %
     mask=["#promo", (0, 0, 320, 64)],  # selectors are painted, boxes are ignored
     full_page=False,
     scale="css",                       # or "device"; the key says which
@@ -538,7 +538,7 @@ VISTEST_BASE_IMAGE=<mirror>/playwright/python:v1.47.0-jammy \
 Everything lives in `vistest.yaml`.
 
 **The engine.** v2 is the default: what no rule explains fails, and a
-threshold you set (`threshold=`, a snapshot's passport,
+threshold you set (`fail_severity=`, a snapshot's passport,
 `diff.fail_severity`, an override in the interface) lets regions below it
 through — listed, never dropped, with where the threshold came from. v1, the
 cascade below, stays for one release: `engine: v1` in vistest.yaml,

@@ -321,7 +321,7 @@ vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
 expect_screenshot(
     page, "checkout.png",
     platform="chromium-1440x900",      # в каком каталоге лежит эталон
-    threshold=40,                      # или {"fail_severity": 40, ...}
+    fail_severity=40,                  # 0–100; и max_changed_area_pct=, в %
     mask=["#promo", (0, 0, 320, 64)],  # селекторы закрашиваются, боксы игнорируются
     full_page=False,
     scale="css",                       # или "device"; ключ платформы это учитывает
@@ -613,7 +613,7 @@ VISTEST_BASE_IMAGE=<зеркало>/playwright/python:v1.47.0-jammy \
 Всё в `vistest.yaml`.
 
 **Движок.** По умолчанию — v2: падает то, что не объяснило ни одно правило, а
-порог, заданный вами (`threshold=`, паспорт снимка, `diff.fail_severity`,
+порог, заданный вами (`fail_severity=`, паспорт снимка, `diff.fail_severity`,
 переопределение в интерфейсе), пропускает регионы ниже себя — они
 перечисляются отдельно, с тем, откуда порог, и никогда не пропадают молча. v1,
 каскад ниже, остаётся на один релиз: `engine: v1` в vistest.yaml,
