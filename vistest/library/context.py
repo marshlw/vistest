@@ -57,6 +57,41 @@ UPDATE_MODES = ("missing", "changed", "all")
 #: A bare `--vistest-update`, and `VISTEST_UPDATE_BASELINES=1`.
 DEFAULT_UPDATE_MODE = "changed"
 
+#: What the library reads of vistest.yaml: the keys its check uses, and the
+#: sections it hands over whole (`plugins:` to the plugin runtime, `ai:` to the
+#: AI pipeline). The engine reads the `diff:` keys listed. Everything else in
+#: the file — `capture.full_page`, `matrix:`, `render:`, `service:`, the v1
+#: tuning of `diff:` — is the server's, and changes nothing in a library run;
+#: `unread_keys` names them. `tests/test_settings_review_b.py` holds this list
+#: to the code that reads it.
+LIBRARY_READS = frozenset({
+    "capture.stable_timeout_ms", "capture.ready_timeout_ms", "capture.quiet_ms",
+    "capture.track_requests", "capture.ignore_requests", "capture.retry_on_fail",
+    "capture.keep_pointer", "capture.blur_focus", "capture.match_baseline_scroll",
+    "capture.device_scale_factor",
+    "diff.fail_severity", "diff.max_changed_area_pct", "diff.max_pixels",
+    "diff.size_tolerance_px", "diff.ignore_kinds", "diff.fail_on_size_change",
+    "diff.above_fold_px", "diff.above_fold_weight",
+    "paths.root",
+    "plugins", "ai",
+})
+
+
+def unread_keys(config) -> list[str]:
+    """The keys `config`'s vistest.yaml sets and the library does not read."""
+    return [k for k in getattr(config, "written", ())
+            if k not in LIBRARY_READS and k.split(".", 1)[0] not in LIBRARY_READS]
+
+
+def unread_text(config) -> str:
+    """The one warning about them, or '' when every key is read."""
+    keys = unread_keys(config)
+    if not keys:
+        return ""
+    return (f"vistest: {config.source}: the library does not read "
+            f"{', '.join(keys)} — they change nothing in this run (they are the "
+            "server's settings)")
+
 
 def update_mode(value: Any) -> str | None:
     """`update=` in any of the forms it arrives in -> a mode, or None.
@@ -212,6 +247,23 @@ class LibraryContext:
 _current: LibraryContext | None = None
 _warned = False
 _warned_no_platform = False
+_warned_unread = False
+
+
+def warn_unread_once(config, *, say: bool = True) -> str:
+    """The warning about unread keys, once per process; returns its text.
+
+    `say=False` only marks it as said — for the pytest plugin, which issues it
+    itself, once per run, in the controller (not once per xdist worker).
+    """
+    global _warned_unread
+    if _warned_unread:
+        return ""
+    _warned_unread = True
+    text = unread_text(config)
+    if text and say:
+        warnings.warn(text, VisTestWarning, stacklevel=3)
+    return text
 
 
 def _warn_no_platform() -> None:
@@ -268,11 +320,14 @@ def current() -> LibraryContext:
             f"{ENV_BASELINES}/{ENV_PLATFORM}/{ENV_REPORT}/{ENV_UPDATE} "
             "environment variables.",
             VisTestWarning, stacklevel=3)
-    return install(LibraryContext.from_env())
+    context = install(LibraryContext.from_env())
+    warn_unread_once(context.config)
+    return context
 
 
 def reset_warning() -> None:
     """Test hook: forget that the warnings were already issued."""
-    global _warned, _warned_no_platform
+    global _warned, _warned_no_platform, _warned_unread
     _warned = False
     _warned_no_platform = False
+    _warned_unread = False

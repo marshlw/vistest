@@ -124,11 +124,22 @@ def pytest_addoption(parser):
         parser.addini(name, help_text, default="")
 
 
+#: The environment variable of each setting the command line and the ini have.
+_ENV = {"vistest_baselines": "VISTEST_BASELINES", "vistest_platform": "VISTEST_PLATFORM",
+        "vistest_report": "VISTEST_REPORT"}
+
+
 def _setting(config, option: str, ini: str) -> str:
-    """Command line first, then the project's ini. Precedence, once."""
+    """The command line, then the environment, then the project's ini — the
+    order every setting has (README, «Where a setting comes from»)."""
+    import os
+
     value = config.getoption(option, None)
     if value:
         return str(value)
+    env = (os.getenv(_ENV[ini]) or "").strip() if ini in _ENV else ""
+    if env:
+        return env
     return str(config.getini(ini) or "").strip()
 
 
@@ -206,6 +217,14 @@ def pytest_configure(config):
         raise pytest.UsageError(f"vistest: {' '.join(str(e).split())}") from None
     _context.install(ctx)
     config._vistest_context = ctx
+
+    #  vistest.yaml keys this run does not read: one warning per run, from
+    #  the controller — the workers only mark it as said (review v1, 2.3).
+    unread = _context.warn_unread_once(ctx.config, say=False)
+    if unread and not _is_worker(config):
+        from .library.errors import VisTestWarning
+
+        config.issue_config_time_warning(VisTestWarning(unread), stacklevel=2)
 
     if not _is_worker(config):
         #  Yesterday's rows are not this run's report. Cleared here rather than

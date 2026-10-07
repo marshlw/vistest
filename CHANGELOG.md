@@ -57,6 +57,17 @@ was no public release that promised it. Each line is what to write instead.
     command: the preset it built used to replace them
   - the server keeps `{"engine": "v1"}` and `preset=` in `POST /api/check`
     until phase 6; the benchmark and the bench corpus choose v1 in code
+- **One order for every setting:** the call or the command line, then the
+  environment, then vistest.yaml (or `pyproject.toml` for the flags), then the
+  default — one table in the README and in docs/GUIDE.md (review v1, 2.1, 2.5).
+  - `VISTEST_BASELINES`, `VISTEST_PLATFORM`, `VISTEST_REPORT` were read only
+    without the pytest plugin → read under it too, between the flag and
+    `pyproject.toml`. `VISTEST_UPDATE_BASELINES` still writes baselines only
+    without the plugin: under pytest only the command line does
+  - a key of vistest.yaml the library does not read was ignored in silence →
+    one warning per run names them all (review v1, 2.3)
+  - `vistest.local.yaml`, which the README promised, was never read → the
+    promise is gone
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 
