@@ -299,8 +299,7 @@ first — `pytest tests/ --vistest-update` — or spell the mode out:
 `pytest --vistest-update=changed tests/`. A path in the mode's place is
 refused with that advice rather than guessed at.
 
-Command line beats `pyproject.toml`, which beats `vistest.yaml`, which beats
-the defaults. A target that is not a live page — `bytes`, a file, an array —
+Where each setting comes from is the table below. A target that is not a live page — `bytes`, a file, an array —
 carries no browser and no window size, so those baselines go straight to the
 root of the baseline directory and a warning says so once per run: set
 `vistest_platform` yourself if the pictures depend on the machine that took
@@ -313,6 +312,35 @@ can be attached to a ticket.
 `pytest -n auto` is supported: every write goes through a temporary file and an
 atomic rename, there is no shared index and no lock, and the report is
 assembled once at the end from the rows each worker left behind.
+
+### Where a setting comes from
+
+One order for every setting: **the call or the command line, then the
+environment, then the file — vistest.yaml, or `pyproject.toml` for the
+flags —, then the default.** A threshold has one more layer, between the call
+and the environment: the snapshot's own passport (`meta.json` next to its
+baseline). A key of vistest.yaml the library does not read — `capture.full_page`,
+`matrix:`, `render:`, `service:`, the v1 tuning of `diff:` — is named in one
+warning per run instead of changing nothing in silence.
+
+| Setting | Call / command line | Environment | vistest.yaml / pyproject.toml | Default |
+| --- | --- | --- | --- | --- |
+| the severity that fails a check | `fail_severity=` | `VISTEST_FAIL_SEVERITY` | `diff.fail_severity` | none: whatever no rule explains fails |
+| the changed area that fails it | `max_changed_area_pct=` | `VISTEST_MAX_CHANGED_AREA_PCT` | `diff.max_changed_area_pct` | 0.15 % |
+| the time the check may take | `timeout_ms=` | — | `capture.ready_timeout_ms`, `capture.stable_timeout_ms` | 5 s each; the check 2 × ready + 3 × stable + 15 s |
+| the pointer kept where the test left it | `keep_pointer=` | — | `capture.keep_pointer` | moved off the page |
+| the focus taken off | `blur_focus=` | — | `capture.blur_focus` | left alone |
+| the largest picture | — | `VISTEST_ENGINE_MAX_PIXELS` | `diff.max_pixels` | 80 000 000 pixels |
+| artifacts (`actual/`, `diff/`) | — | `VISTEST_ROOT` | `paths.root` | `.vistest` |
+| the report | `--vistest-report` | `VISTEST_REPORT` | `vistest_report` | `.vistest/report/index.html` |
+| the baseline directory | `--vistest-baselines` | `VISTEST_BASELINES` | `vistest_baselines` | `tests/__vistest__` |
+| the platform directory | `platform=`, `--vistest-platform` | `VISTEST_PLATFORM` | `vistest_platform` | taken from the page |
+| what a plugin's score does | — | `VISTEST_FAIL_ON` | `plugins.fail_on` | `likely-real` |
+| writing baselines | `--vistest-update` | `VISTEST_UPDATE_BASELINES`, without the pytest plugin only | — | off |
+
+`VISTEST_UPDATE_BASELINES` is the one exception, on purpose: under pytest only
+the command line writes baselines into the repository — a variable a CI sets
+for the server must not accept a library run's pictures.
 
 ### Growing out of it
 
@@ -544,9 +572,9 @@ and the presets were removed before the first release; `engine:` or `preset:`
 in vistest.yaml and `VISTEST_ENGINE` are refused with a line that says so
 (docs/GUIDE.md, «The engine»).
 
-Local overrides go in `vistest.local.yaml` (git-ignored). Per-project and
-global thresholds can also be set through the API and are stored in the
-database, where they take precedence over the file.
+The order of the settings is the table in «Where a setting comes from» above.
+On a server, per-project and global thresholds can also be set through the API
+and are stored in the database, where they take precedence over the file.
 
 ### Baselines across machines
 

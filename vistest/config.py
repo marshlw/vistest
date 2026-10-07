@@ -120,7 +120,13 @@ class VisTestConfig:
     # Attached via the step {action: flow, name: login}.
     flows: dict[str, list] = field(default_factory=dict)
     update_baselines: bool = False
+    #  The server's presets, built in code (`preset_of`); not a key of vistest.yaml.
     preset: str = "balanced"
+    #  Where the settings came from and which keys it wrote, `capture.full_page`
+    #  style: the library says once which of them it does not read (review v1,
+    #  2.3). Not keys of vistest.yaml either.
+    source: str = ""
+    written: tuple[str, ...] = ()
 
     # ---------------- factories ----------------
     @classmethod
@@ -202,7 +208,7 @@ class VisTestConfig:
                 raise ConfigError(f"{path}: {key}: {V1_REMOVED}")
             if key not in top:
                 raise ConfigError(f"{path}: unknown key {key!r}{_did_you_mean(key, top)}")
-        cfg = cls()
+        cfg = cls(source=str(path), written=_written(raw, sections))
 
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
@@ -406,6 +412,20 @@ def _plugins_section(raw, path) -> PluginsConfig:
                 "%s: plugins.%s is not a setting VisTest knows and no installed "
                 "plugin is called %r; it is kept and ignored", path, key, key)
     return PluginsConfig(**patch, options=options).validated(f"{path}: plugins")
+
+
+def _written(raw: dict, sections) -> tuple[str, ...]:
+    """The keys the file sets: `capture.full_page` for a key of a section, the
+    bare name for a top-level key that is not a section (`flows`, `plugins`)."""
+    out: list[str] = []
+    for key, value in raw.items():
+        if key in sections and isinstance(value, dict):
+            out.extend(f"{key}.{k}" for k in value)
+        elif key in sections and value is None:
+            continue
+        else:
+            out.append(str(key))
+    return tuple(out)
 
 
 #: Top-level keys of vistest.yaml that are not a section of settings.
