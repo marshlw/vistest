@@ -15,6 +15,7 @@ recursive-include frontend *
 recursive-include docker *
 recursive-include clients *
 recursive-include examples *
+recursive-include docs/server/examples *.py
 recursive-include tests *.py
 
 # Never ship these

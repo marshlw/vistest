@@ -23,6 +23,10 @@ the service client; a suite that only wanted its own tests to run paid for all
 of it. Everything below imports what it needs inside the function that needs
 it.
 
+The server's fixtures (`visual`, `visual_soft`) and flags (`--vistest-api`,
+`--vistest-perceptual`, `--vistest-fail-on`) are in `pytest_server.py`, and
+this plugin registers them only when the `server` extra is installed.
+
 **Under `pytest -n` (xdist)** the work is split across processes and nothing is
 shared between them. Each worker writes its own artifacts and its own one-file
 report rows; the report itself is assembled at the end, in the controller,
@@ -80,7 +84,7 @@ def _update_mode(value: str) -> str:
         "--vistest-update=changed, or put test paths before the flag")
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser, pluginmanager):
     group = parser.getgroup("vistest", "Visual testing")
     group.addoption("--vistest-update", nargs="?", const="changed", default=None,
                     type=_update_mode, metavar="MODE",
@@ -106,22 +110,25 @@ def pytest_addoption(parser):
     group.addoption("--vistest-report", default=None, metavar="PATH",
                     help="Where to write the HTML report "
                          "(default: .vistest/report/index.html)")
-    group.addoption("--vistest-config", default=None,
+    group.addoption("--vistest-config", default=None, metavar="PATH",
                     help="Path to vistest.yaml")
-    group.addoption("--vistest-api", default=None,
-                    help="URL of the VisTest service")
-    group.addoption("--vistest-perceptual", action="store_true",
-                    help="Enable the perceptual ONNX model, if a plugin "
-                         "providing it is installed")
-    group.addoption("--vistest-fail-on", default=None,
-                    choices=["any", "likely-real", "confirmed"],
-                    help="What a region scorer's estimate does to a check: "
-                         "fail on any difference, on likely-real ones "
-                         "(default) or only on confirmed ones. Has no effect "
-                         "without a scorer installed.")
 
     for name, help_text in _INI.items():
         parser.addini(name, help_text, default="")
+
+    #  The server's fixtures and flags, only with the server's extra
+    #  (vistest/pytest_server.py). pytest_addoption is a historic hook: the
+    #  plugin registered here gets its own call at once.
+    from ._extras import server_missing
+
+    if not server_missing() and not pluginmanager.has_plugin(SERVER_PLUGIN):
+        from . import pytest_server
+
+        pluginmanager.register(pytest_server, SERVER_PLUGIN)
+
+
+#: The name the server's half of the plugin is registered under.
+SERVER_PLUGIN = "vistest.server"
 
 
 #: The environment variable of each setting the command line and the ini have.
@@ -208,7 +215,6 @@ def pytest_configure(config):
                                        "vistest_platform"),
             update=config.getoption("--vistest-update"),
             config_path=config.getoption("--vistest-config"),
-            fail_on=config.getoption("--vistest-fail-on"),
         )
     except ConfigError as e:
         #  A broken vistest.yaml stops the run before any test, on purpose —
@@ -325,11 +331,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 def _summary(terminalreporter, exitstatus, config) -> None:
     parts = getattr(config, "_vistest_parts", None)
     ctx = getattr(config, "_vistest_context", None)
-    runs_root = Path(config.rootpath) / ".vistest" / "runs"
-    runs = sorted(runs_root.glob("*/run.json"), key=lambda p: p.stat().st_mtime) \
-        if runs_root.exists() else []
-
-    if not (parts or runs):
+    if parts is None:
         return
 
     terminalreporter.write_sep("-", "vistest")
@@ -382,12 +384,6 @@ def _summary(terminalreporter, exitstatus, config) -> None:
                 f"{ctx.baselines} — commit them, or CI has nothing to compare "
                 "against.")
 
-    if runs:
-        terminalreporter.write_line(f"Run artifacts: {runs[-1].parent}")
-    api = config.getoption("--vistest-api")
-    if api:
-        terminalreporter.write_line(f"Review UI: {api.rstrip('/')}/")
-
 
 # --------------------------------------------------------------------------- #
 #  Fixtures
@@ -411,73 +407,6 @@ def vistest(request):
 
     request.node.add_marker(pytest.mark.visual)
     return expect_screenshot
-
-
-@pytest.fixture(scope="session")
-def vistest_run_id():
-    from .runner import _new_run_id
-
-    return _new_run_id()
-
-
-@pytest.fixture(scope="session")
-def _vistest_session(vistest_config, vistest_run_id):
-    """Session-wide result collector for the service mode: summary and flush."""
-    from .runner import VisualTester
-
-    tester = VisualTester(page=None, config=vistest_config, run_id=vistest_run_id)
-    yield tester
-    tester.flush()
-
-
-@pytest.fixture
-def visual(request, page, vistest_config, _vistest_session):
-    """The service-mode fixture. Needs Playwright's `page`."""
-    from .runner import VisualTester
-
-    tester = VisualTester(
-        page=page,
-        config=vistest_config,
-        run_id=_vistest_session.run_id,
-        browser=_browser_name(page),
-    )
-    tester.results = _vistest_session.results   # one list for the session
-    request.node.add_marker(pytest.mark.visual)
-    yield tester
-
-
-@pytest.fixture
-def visual_soft(visual):
-    """Soft mode: collect every mismatch, fail once at the end.
-
-    Useful on large pages — otherwise the first diff hides the rest.
-    """
-    from .models import Verdict
-
-    collected: list = []
-    original = visual.assert_screenshot
-
-    def wrapper(name, **kw):
-        kw["soft"] = True
-        res = original(name, **kw)
-        if res.verdict is Verdict.FAIL:
-            collected.append(res)
-        return res
-
-    visual.assert_screenshot = wrapper
-    yield visual
-    if collected:
-        raise AssertionError(
-            f"Visual mismatches: {len(collected)}\n\n"
-            + "\n\n".join(r.summary() for r in collected)
-        )
-
-
-def _browser_name(page) -> str:
-    try:
-        return page.context.browser.browser_type.name
-    except Exception:
-        return "chromium"
 
 
 # --------------------------------------------------------------------------- #
@@ -518,14 +447,6 @@ def _describe_visual_failure(report, call) -> None:
         _attach_allure_files(error.artifacts)
         if error.result is not None:
             _attach_allure_result(error.result)
-        return
-
-    from .runner import VisualMismatch
-
-    if isinstance(error, VisualMismatch):
-        result = error.result
-        _attach_allure(result)
-        report.sections.append(("Visual diff", result.summary()))
 
 
 def _allure():
@@ -554,34 +475,4 @@ def _attach_allure_result(result) -> None:
     if allure is None:
         return
     allure.attach(result.to_json(), name="result.json",
-                  attachment_type=allure.attachment_type.JSON)
-
-
-def _attach_allure(res) -> None:
-    allure = _allure()
-    if allure is None:
-        return
-
-    order = ["side_by_side", "boxes", "heatmap", "onion", "blink"]
-    titles = {
-        "side_by_side": "before | after | markup",
-        "boxes": "Detected changes",
-        "heatmap": "ΔE00 heatmap",
-        "onion": "Onion skin (red=before, cyan=after)",
-        "blink": "Blink animation",
-    }
-    for key in order:
-        p = res.artifacts.get(key)
-        if not p or not Path(p).exists():
-            continue
-        atype = (allure.attachment_type.GIF if p.endswith(".gif")
-                 else allure.attachment_type.PNG)
-        allure.attach.file(p, name=titles.get(key, key), attachment_type=atype)
-
-    for key, p in res.artifacts.items():
-        if key.startswith("region_") and Path(p).exists():
-            allure.attach.file(p, name=f"Close-up: {Path(p).stem}",
-                               attachment_type=allure.attachment_type.PNG)
-
-    allure.attach(res.to_json(), name="result.json",
                   attachment_type=allure.attachment_type.JSON)
