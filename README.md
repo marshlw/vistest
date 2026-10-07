@@ -204,10 +204,9 @@ vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
   accept it with: pytest --vistest-update
 ```
 
-A result of engine v2 — the default everywhere `compare()` runs; v1 stays
-for one release behind `engine: v1` — also says, for each region that
-counts, what was measured on it — under `changed:` in this message (three of
-them, the rest counted) and in a column of the report:
+A result also says, for each region that counts, what was measured on it —
+under `changed:` in this message (three of them, the rest counted) and in a
+column of the report:
 
 ```
   changed:  153x14 at (202, 242): ink colour: #1f2937 → #4d5666, ΔE00 14.8
@@ -537,21 +536,13 @@ VISTEST_BASE_IMAGE=<mirror>/playwright/python:v1.47.0-jammy \
 
 Everything lives in `vistest.yaml`.
 
-**The engine.** v2 is the default: what no rule explains fails, and a
-threshold you set (`fail_severity=`, a snapshot's passport,
+**The engine.** There is one, and nothing to choose: what no rule explains
+fails, and a threshold you set (`fail_severity=`, a snapshot's passport,
 `diff.fail_severity`, an override in the interface) lets regions below it
-through — listed, never dropped, with where the threshold came from. v1, the
-cascade below, stays for one release: `engine: v1` in vistest.yaml,
-`VISTEST_ENGINE=v1`, or `engine="v1"` in the call. The presets tune v1 only;
-v2 has none (docs/GUIDE.md, «The engine»).
-
-Three presets, for v1:
-
-| Preset | ΔE00 | fail_severity | Use for |
-|---|---|---|---|
-| `strict` | 1.2 | 10 | design systems, components in isolation |
-| `balanced` | 2.3 | 25 | the default |
-| `loose` | 4.0 | 45 | pages with live CMS content |
+through — listed, never dropped, with where the threshold came from. Engine v1
+and the presets were removed before the first release; `engine:` or `preset:`
+in vistest.yaml and `VISTEST_ENGINE` are refused with a line that says so
+(docs/GUIDE.md, «The engine»).
 
 Local overrides go in `vistest.local.yaml` (git-ignored). Per-project and
 global thresholds can also be set through the API and are stored in the

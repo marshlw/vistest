@@ -524,10 +524,17 @@ def _screenshot():
 
 
 def test_text():
-    #  v1 by name: the sentence checked below is its anti-aliasing re-draw.
-    #  Under v2 a text-only picture moved by a fraction, with no canary, is
-    #  not explained: nothing says the renderer is the same.
-    expect_screenshot(_screenshot(), "text.png", engine="v1")
+    #  v1, chosen in code — a project cannot choose it since 0.2.0.dev3: the
+    #  sentence checked below is its anti-aliasing re-draw. Under v2 a
+    #  text-only picture moved by a fraction, with no canary, is not
+    #  explained: nothing says the renderer is the same.
+    from dataclasses import replace
+
+    from vistest.library import context
+
+    config = context.current().config
+    config.diff = replace(config.diff, engine="v1")
+    expect_screenshot(_screenshot(), "text.png")
 '''
 
 

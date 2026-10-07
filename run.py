@@ -137,8 +137,6 @@ def cmd_test(args) -> int:
         env["VISTEST_UPDATE_BASELINES"] = "1"
 
     cmd = [str(py), "-m", "pytest"] + (args.pytest_args or ["tests/"])
-    if args.preset:
-        cmd += ["--vistest-preset", args.preset]
     say("$ " + " ".join(cmd), "b")
     return subprocess.run(cmd, cwd=str(ROOT), env=env).returncode
 
@@ -321,7 +319,6 @@ def main() -> int:
     for name, help_ in (("test", "run the tests"), ("update", "overwrite the baselines")):
         t = sub.add_parser(name, help=help_)
         t.add_argument("pytest_args", nargs="*")
-        t.add_argument("--preset", choices=["strict", "balanced", "loose"])
         t.add_argument("--api", default=os.getenv("VISTEST_API_URL"))
         t.add_argument("--update", action="store_true")
 

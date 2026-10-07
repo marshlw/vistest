@@ -1,5 +1,5 @@
-# Конфигурация проекта. Все значения необязательны — берётся из пресета.
-preset: balanced          # strict | balanced | loose
+# The configuration of this repository's own visual checks. Every key is
+# optional; what is left out is the default.
 
 diff:
   # ΔE00: 1.0 — теоретический порог различимости, 2.3 — общепринятый JND.

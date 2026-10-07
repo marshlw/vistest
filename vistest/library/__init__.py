@@ -120,7 +120,6 @@ def expect_screenshot(
     full_page: bool | None = None,
     store: SnapshotStore | None = None,
     scale: str = "css",
-    engine: str | None = None,
     keep_pointer: bool | None = None,
     blur_focus: bool | None = None,
     timeout_ms: int | None = None,
@@ -154,10 +153,6 @@ def expect_screenshot(
     unless a threshold was set by one of those layers, and then a region below
     it is listed in the result, the report and the failure message, with where
     the threshold came from, and does not fail it.
-
-    `engine` is "v2" or "v1" for this one check; left out, it is the one
-    vistest.yaml (`engine:`) or `VISTEST_ENGINE` chose, and v2 when nobody
-    did. v1 is deprecated and goes in the next release.
 
     `mask` takes locators and CSS selectors — painted out during capture, as
     Playwright does it — and boxes `(x, y, w, h)`, which are not painted at all
@@ -222,8 +217,7 @@ def expect_screenshot(
             return _check(ctx, target, name, started=started, call_patch=call_patch,
                           wait=wait, ready_wait=ready_wait, platform=platform,
                           mask=mask, full_page=full_page, store=store, scale=scale,
-                          engine=engine, keep_pointer=keep_pointer,
-                          blur_focus=blur_focus)
+                          keep_pointer=keep_pointer, blur_focus=blur_focus)
     except CaptureError as e:
         raise CaptureError(f"vistest: could not check {name!r}: {e}") from None
 
@@ -249,8 +243,7 @@ def _deadline(capture, timeout_ms) -> tuple[int, int, int]:
 
 def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
            wait: int, ready_wait: int, platform: str | None, mask, full_page,
-           store, scale: str, engine: str | None, keep_pointer,
-           blur_focus) -> CompareResult:
+           store, scale: str, keep_pointer, blur_focus) -> CompareResult:
     """`expect_screenshot` once its arguments are read: inside the check's deadline."""
     scale = _targets.check_scale(scale)
     away, blur = _targets.pointer_plan(ctx.config.capture, keep_pointer, blur_focus)
@@ -335,7 +328,6 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         if dpr_line:
             said.append(dpr_line)
         cfg = ctx.config.diff.merged(
-            engine=engine,
             **patch_for(snapshot_meta=(passport.to_dict() if passport else None),
                         call=call_patch))
 

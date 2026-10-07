@@ -6,7 +6,7 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Configuration. Presets + YAML + environment variables + per-call override.
+"""Configuration: defaults, then vistest.yaml, then environment variables.
 
 The settings objects themselves moved to `vistest.core.settings`, where they
 are plain data. What is left here is everything that *reads the world* to fill
@@ -24,7 +24,6 @@ import os
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
-from .core import engines as _engines
 from .core import thresholds as _thresholds
 from .core.settings import (
     AIConfig,
@@ -199,12 +198,11 @@ class VisTestConfig:
         #  one was refused. Both are refused now, with the nearest known name.
         top = {*sections, *TOP_LEVEL_KEYS}
         for key in raw:
+            if key in REMOVED_KEYS:
+                raise ConfigError(f"{path}: {key}: {V1_REMOVED}")
             if key not in top:
                 raise ConfigError(f"{path}: unknown key {key!r}{_did_you_mean(key, top)}")
-        try:
-            cfg = cls.preset_of(raw.get("preset", "balanced"))
-        except ValueError as e:
-            raise ConfigError(f"{path}: preset: {e}") from None
+        cfg = cls()
 
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
@@ -216,6 +214,8 @@ class VisTestConfig:
             known = {f.name for f in fields(klass)} - _DERIVED.get(key, set())
             patch = {}
             for k, v in raw[key].items():
+                if key == "diff" and k in REMOVED_KEYS:
+                    raise ConfigError(f"{path}: diff.{k}: {V1_REMOVED}")
                 if k in _RENAMED.get(key, {}):
                     raise ConfigError(f"{path}: {key}.{k} is called "
                                       f"{key}.{_RENAMED[key][k]} since 0.2.0.dev3")
@@ -230,22 +230,10 @@ class VisTestConfig:
                 raise ConfigError(f"{path}: {e}") from None
 
         #  A threshold written into the file is a threshold a person chose:
-        #  engine v2 applies it and names it (core/engines.py). A preset's
-        #  number is not one.
+        #  the engine applies it and names it (core/engines.py).
         for name, source_field in _thresholds.SOURCE_FIELD.items():
             if (raw.get("diff") or {}).get(name) is not None:
                 cfg.diff = replace(cfg.diff, **{source_field: _thresholds.SOURCE_YAML})
-
-        #  The engine: top level, because it is not a tuning of the diff but
-        #  the choice of what makes it. `diff.engine` is the same field and
-        #  is accepted; the two may not disagree.
-        if raw.get("engine") is not None:
-            engine = _engines.check(raw["engine"], f"{path}: engine")
-            inner = (raw.get("diff") or {}).get("engine")
-            if inner is not None and _engines.check(inner, f"{path}: diff.engine") != engine:
-                raise ConfigError(f"{path}: engine is {engine!r} and diff.engine is "
-                                  f"{inner!r} — keep one")
-            cfg.diff = replace(cfg.diff, engine=engine)
 
         if raw.get("plugins") is not None:
             cfg.plugins = _plugins_section(raw["plugins"], path)
@@ -294,9 +282,10 @@ class VisTestConfig:
             cfg.plugins = replace(cfg.plugins, fail_on=v).validated("VISTEST_FAIL_ON")
         if env_flag("VISTEST_PERCEPTUAL"):
             cfg.ai = replace(cfg.ai, perceptual_enabled=True)
-        #  Over vistest.yaml, under the call — like every other setting here.
-        if v := env_text("VISTEST_ENGINE"):
-            cfg.diff = replace(cfg.diff, engine=_engines.check(v, "VISTEST_ENGINE"))
+        #  Gone with v1 and the presets: refused rather than ignored, so that
+        #  a CI that sets it learns it does nothing.
+        if env_text("VISTEST_ENGINE"):
+            raise ConfigError(f"VISTEST_ENGINE: {V1_REMOVED}")
 
         # The engine's memory limit. A `DiffConfig` field like any other, so
         # the only thing that happens here is what happens to every environment
@@ -420,7 +409,14 @@ def _plugins_section(raw, path) -> PluginsConfig:
 
 
 #: Top-level keys of vistest.yaml that are not a section of settings.
-TOP_LEVEL_KEYS = ("preset", "engine", "plugins", "flows", "update_baselines")
+TOP_LEVEL_KEYS = ("plugins", "flows", "update_baselines")
+
+#: Keys that chose engine v1 or a preset, at the top of vistest.yaml and in
+#: `diff:`. v1 stays inside — the benchmark, the bench corpus and the server
+#: choose it in code — but nothing a project writes chooses it any more.
+REMOVED_KEYS = ("engine", "preset")
+V1_REMOVED = ("v1 and presets were removed before the first release; v2 is the "
+              "only engine")
 
 
 def _did_you_mean(key: str, known, prefix: str = "") -> str:

@@ -88,7 +88,6 @@ class LibraryContext:
     #  UPDATE_MODES. Read through `update_mode`, which validates it.
     update: bool | str | None = False
     config_path: str | None = None
-    preset: str | None = None
     #  `--vistest-fail-on`, folded over `plugins.fail_on` from the config.
     fail_on: str | None = None
     #  Filled on first use; both are process-wide and neither is cheap.
@@ -117,12 +116,7 @@ class LibraryContext:
         if self._config is None:
             from ..config import VisTestConfig
 
-            loaded = VisTestConfig.load(self.config_path)
-            #  A preset tunes v1's cascade; the engine stays the one chosen in
-            #  vistest.yaml or VISTEST_ENGINE (core/engines.py).
-            self._config = (VisTestConfig.preset_of(self.preset,
-                                                    engine=loaded.diff.engine)
-                            if self.preset else loaded)
+            self._config = VisTestConfig.load(self.config_path)
         return self._config
 
     @property

@@ -32,11 +32,6 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("expected")
     c.add_argument("actual")
     c.add_argument("-o", "--out", default="vistest-diff")
-    c.add_argument("--preset", choices=["strict", "balanced", "loose"], default="balanced")
-    c.add_argument("--engine", choices=["v1", "v2"],
-                   help="the comparison engine; by default the one vistest.yaml "
-                        "and VISTEST_ENGINE choose, v2 when nobody does (v1 is "
-                        "deprecated and goes in the next release)")
     c.add_argument("--json", action="store_true", help="print result.json to stdout")
 
     ch = sub.add_parser(
@@ -49,7 +44,6 @@ def main(argv: list[str] | None = None) -> int:
     ch.add_argument("--platform", help="platform key; defaults to the current OS")
     ch.add_argument("--browser", default="chromium")
     ch.add_argument("--run-key", help="groups checks into one run")
-    ch.add_argument("--preset", choices=["strict", "balanced", "loose"])
     ch.add_argument("--update", action="store_true", help="overwrite the baseline")
     ch.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="override a threshold, e.g. --set fail_severity=40")
@@ -641,10 +635,9 @@ def _compare(args) -> int:
     from .core.comparator import compare, strip_internal
     from .render.artifacts import render_all
 
-    #  The preset tunes v1's cascade; the engine is chosen where every other
-    #  setting is — the flag, VISTEST_ENGINE, vistest.yaml, the default.
-    cfg = VisTestConfig.preset_of(
-        args.preset, engine=args.engine or VisTestConfig.load().diff.engine)
+    #  vistest.yaml and the environment, like every other command: the preset
+    #  that stood here used to replace them all (review v1, 2.1).
+    cfg = VisTestConfig.load()
     res = compare(read_png(args.expected), read_png(args.actual),
                   cfg=cfg.diff, name=Path(args.actual).stem)
     res.artifacts.update(render_all(res, args.out, cfg=cfg.render))
@@ -669,6 +662,11 @@ def _check(args) -> int:
     результат в обоих случаях одинаковый: код возврата 0 — прошло, 1 — регресс.
     """
     overrides = _parse_set(args.set)
+    from .config import V1_REMOVED, ConfigError
+
+    for key in ("engine", "preset"):
+        if key in overrides:
+            raise ConfigError(f"--set {key}: {V1_REMOVED}")
 
     if args.api:
         return _check_via_api(args, overrides)
@@ -677,10 +675,6 @@ def _check(args) -> int:
     from .service import CheckService
 
     cfg = VisTestConfig.load()
-    if args.preset:
-        #  A preset tunes v1's cascade; it does not undo the engine chosen in
-        #  vistest.yaml or VISTEST_ENGINE (`--set engine=v1` chooses per call).
-        cfg = VisTestConfig.preset_of(args.preset, engine=cfg.diff.engine)
     run_dir = cfg.runs_path() / (args.run_key or "cli")
     svc = CheckService(cfg, platform=args.platform, browser=args.browser,
                        run_dir=run_dir)
@@ -719,8 +713,7 @@ def _check_via_api(args, overrides: dict) -> int:
         files.append(("dom", ("dom.json", open(args.dom, "rb"), "application/json")))
 
     data = {"name": args.name, "browser": args.browser}
-    for key, val in (("platform", args.platform), ("run_key", args.run_key),
-                     ("preset", args.preset)):
+    for key, val in (("platform", args.platform), ("run_key", args.run_key)):
         if val:
             data[key] = val
     if args.update:
