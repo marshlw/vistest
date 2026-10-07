@@ -88,3 +88,6 @@ def test_the_server_flags_set_what_their_help_says(project):
                                      "confirmed"], project, hide=False)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "SAID http://127.0.0.1:9 True confirmed" in done.stdout
+    #  The server's lines of the summary are the server plugin's now.
+    assert "vistest server" in done.stdout
+    assert "Review UI: http://127.0.0.1:9/" in done.stdout
