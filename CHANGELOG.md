@@ -30,6 +30,18 @@ was no public release that promised it. Each line is what to write instead.
     `expect_screenshot(page, "a.png", fail_severity=40)`
   - `threshold={"fail_severity": 40, "max_changed_area_pct": 0.5}` →
     `fail_severity=40, max_changed_area_pct=0.5`
+- **The capture knobs of the call are two switches and one time limit**
+  (review v1, R8 and 1.1): `keep_pointer`, `blur_focus` and `timeout_ms` — the
+  time the whole check may spend on the page; past it, `CaptureError` saying
+  what it was waiting for.
+  - `stable_timeout_ms=N`, `ready_timeout_ms=N` in the call →
+    `capture.stable_timeout_ms`, `capture.ready_timeout_ms` in vistest.yaml;
+    for one check, `timeout_ms=N` (both limits are cut to it)
+  - `reset_hover_focus=True` → `keep_pointer=False, blur_focus=True`;
+    `reset_hover_focus=False` → `keep_pointer=True`. `capture.reset_hover_focus`
+    in vistest.yaml is the service's; the library does not read it
+  - `restore_scroll=False` → `capture.match_baseline_scroll: false`; the key
+    `capture.restore_scroll` is refused with its new name
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 

@@ -73,7 +73,7 @@ capture:
   reset_hover_focus: false      # both at once: pointer off the page and focus off before the picture
   keep_pointer: false           # library: leave the pointer where the test put it (a hover captured on purpose); default is away
   blur_focus: false             # library: take the focus off whatever has it (default: untouched)
-  restore_scroll: true          # library, window shots: set the window to the scroll its baseline had, put it back after
+  match_baseline_scroll: true   # library, window shots: set the window to the scroll its baseline had, put it back after
   scroll_through_page: true     # прогрев lazy-load перед full_page
   auto_mask_media: true         # video/canvas/iframe/[data-vistest=ignore]
   auto_mask_animated: true

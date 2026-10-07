@@ -140,10 +140,13 @@ class LoadingPage:
 
 
 def test_accepting_a_page_that_was_not_ready_is_said(ctx):
+    from dataclasses import replace
+
+    ctx._config = replace(ctx.config, capture=replace(
+        ctx.config.capture, ready_timeout_ms=150, stable_timeout_ms=0))
     with warnings.catch_warnings(record=True) as seen:
         warnings.simplefilter("always")
-        expect_screenshot(LoadingPage(), "loading.png", ready_timeout_ms=150,
-                          stable_timeout_ms=0)
+        expect_screenshot(LoadingPage(), "loading.png")
     said = [str(w.message) for w in seen if issubclass(w.category, VisTestWarning)]
     assert any("not ready" in t and "accepted as the baseline anyway" in t
                and "div.spinner" in t for t in said), said

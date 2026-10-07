@@ -216,6 +216,9 @@ class VisTestConfig:
             known = {f.name for f in fields(klass)} - _DERIVED.get(key, set())
             patch = {}
             for k, v in raw[key].items():
+                if k in _RENAMED.get(key, {}):
+                    raise ConfigError(f"{path}: {key}.{k} is called "
+                                      f"{key}.{_RENAMED[key][k]} since 0.2.0.dev3")
                 if k not in known:
                     raise ConfigError(f"{path}: unknown key {key}.{k}"
                                       + _did_you_mean(str(k), known, prefix=f"{key}."))
@@ -426,6 +429,11 @@ def _did_you_mean(key: str, known, prefix: str = "") -> str:
 
     close = difflib.get_close_matches(str(key), sorted(known), n=1, cutoff=0.6)
     return f" — did you mean {prefix + close[0]!r}?" if close else ""
+
+
+#: Keys of a section that were renamed before the first release: old -> new.
+#: Refused by name, so that the setting is not lost in silence.
+_RENAMED: dict[str, dict[str, str]] = {"capture": {"restore_scroll": "match_baseline_scroll"}}
 
 
 #: Fields of a section that are derived, never written in vistest.yaml:

@@ -238,15 +238,15 @@ expect_screenshot(
     mask=["#promo", (0, 0, 320, 64)],  # selectors are painted, boxes are ignored
     full_page=False,
     scale="css",                       # or "device"; the key says which
-    stable_timeout_ms=5000,            # 0: one frame, no stability check
+    timeout_ms=10000,                  # the whole check; past it, CaptureError
 )
 ```
 
 A live page is photographed the way Playwright's `toHaveScreenshot()` does
 it: animations stopped, the text caret hidden, web fonts waited for, one
 picture pixel per CSS pixel, and frames taken until two in a row are identical
-— for at most five seconds (`capture.stable_timeout_ms` in `vistest.yaml`, or
-the argument above). A page that does not settle in time is compared on its
+— for at most five seconds (`capture.stable_timeout_ms` in `vistest.yaml`; a
+`timeout_ms` in the call cuts it to the check's). A page that does not settle in time is compared on its
 last frame, and the reason and the report say that it did not settle. The
 number of frames and the time to stability are in every report row.
 

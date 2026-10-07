@@ -114,26 +114,25 @@ def test_two_identical_later_frames_are_settled_only_when_the_page_was_calm():
 
 
 # --- the pointer and the focus ---------------------------------------------- #
-@pytest.mark.parametrize("reset,keep,blur,want", [
-    (None, None, None, (True, False)),          # the default: pointer away, focus left
-    (True, None, None, (True, True)),           # as it was
-    (False, None, None, (False, False)),        # as it was: nothing touched
-    (None, True, None, (False, False)),         # a hover on purpose
-    (None, None, True, (True, True)),
-    (True, True, None, (False, True)),          # the pointer kept, the focus off
-    (None, True, True, (False, True)),
+@pytest.mark.parametrize("keep, blur, want", [
+    (None, None, (True, False)),                # the default: pointer away, focus left
+    (True, None, (False, False)),               # a hover on purpose
+    (None, True, (True, True)),
+    (True, True, (False, True)),                # the pointer kept, the focus off
+    (False, False, (True, False)),
 ])
-def test_pointer_plan(reset, keep, blur, want):
+def test_pointer_plan(keep, blur, want):
     cfg = SimpleNamespace(reset_hover_focus=False, keep_pointer=False, blur_focus=False)
-    assert targets.pointer_plan(cfg, reset, keep, blur) == want
+    assert targets.pointer_plan(cfg, keep, blur) == want
 
 
 def test_the_config_decides_when_the_call_does_not():
-    assert targets.pointer_plan(SimpleNamespace(reset_hover_focus=True), None, None, None) \
-        == (True, True)
-    assert targets.pointer_plan(SimpleNamespace(keep_pointer=True), None, None, None) \
+    #  `capture.reset_hover_focus` is the service's; the library reads the two halves.
+    assert targets.pointer_plan(SimpleNamespace(reset_hover_focus=True), None, None) \
+        == (True, False)
+    assert targets.pointer_plan(SimpleNamespace(keep_pointer=True), None, None) \
         == (False, False)
-    assert targets.pointer_plan(SimpleNamespace(blur_focus=True), None, None, None) \
+    assert targets.pointer_plan(SimpleNamespace(blur_focus=True), None, None) \
         == (True, True)
 
 
@@ -157,7 +156,7 @@ def test_only_a_concrete_element_is_blamed(item, size, concrete):
 def test_the_window_note_says_where_it_was_and_where_it_was_set():
     note = targets._window_note(
         {"x": 0, "y": 646}, {"x": 0, "y": 0}, {"at": [0, 0], "max": [0, 900]})
-    assert "(0, 646)" in note and "(0, 0)" in note and "restore_scroll" in note
+    assert "(0, 646)" in note and "(0, 0)" in note and "match_baseline_scroll" in note
     assert targets._window_note({"x": 0, "y": 0}, {"x": 0, "y": 0}, {"at": [0, 0]}) == ""
 
 

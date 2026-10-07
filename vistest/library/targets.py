@@ -516,7 +516,8 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         readiness = None
         if page is not None and ready_timeout_ms > 0:
             readiness = _wait_ready(target, page, painted, boxes,
-                                    bool(options.get("full_page")), ready_timeout_ms,
+                                    bool(options.get("full_page")),
+                                    _within_deadline(ready_timeout_ms),
                                     quiet_ms, tuple(ignore_requests))
         if set_window is not None:
             #  Once the page has arrived: set the window to where the baseline's
@@ -531,7 +532,8 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
                                                    int(before.get("y") or 0))
                     if before is not None else True):
                 readiness = _wait_ready(target, page, painted, boxes,
-                                        bool(options.get("full_page")), ready_timeout_ms,
+                                        bool(options.get("full_page")),
+                                        _within_deadline(ready_timeout_ms),
                                         quiet_ms, tuple(ignore_requests))
 
         _js.check()
@@ -539,8 +541,12 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         taken_at = time.monotonic()
         mark = _page_clock(page) if page is not None else None
 
+        waited = readiness.waited() if readiness is not None else ""
+        shooting = "taking the screenshot" + (
+            f", after waiting for the page: {waited}" if waited else "")
+
         def shoot() -> bytes:
-            _js.check()
+            _js.deadline(shooting)
             if "timeout" in options and _js.current() is not None:
                 options["timeout"] = _js.screenshot_timeout()
             try:
@@ -673,7 +679,7 @@ def _window_note(before: dict, wanted: dict, got: dict | None) -> str:
                 f"photographed at {at} — the difference stays")
     return (f"the window was at scroll {was}; set to {want}, where the baseline was "
             "taken, for the picture and put back after "
-            "(capture.restore_scroll: false turns this off)")
+            "(capture.match_baseline_scroll: false turns this off)")
 
 
 _PAGE_CLOCK_JS = "() => performance.now()"
@@ -726,30 +732,20 @@ def _inflight_for(page):
     return _inflight.for_page(page)
 
 
-def pointer_plan(cfg, reset_hover_focus: bool | None, keep_pointer: bool | None,
-                 blur_focus: bool | None) -> tuple[bool, bool]:
+def pointer_plan(cfg, keep_pointer: bool | None, blur_focus: bool | None
+                 ) -> tuple[bool, bool]:
     """(pointer away, focus off) for one check.
 
-    By default: the pointer away, the focus left. `reset_hover_focus=True` (or
-    `capture.reset_hover_focus`) is both. `keep_pointer` and `blur_focus` —
-    the call's, else the config's — each decide their own half, and win.
-    `reset_hover_focus=False` is what it always was: the pointer and the focus
-    left exactly where the test put them.
+    By default: the pointer away, the focus left. `keep_pointer` and
+    `blur_focus` — the call's, else the config's — each decide their own half.
+    `capture.reset_hover_focus` is the service's and is not read here: one
+    word in two places used to mean opposite pictures (review v1, 1.1).
     """
-    reset = getattr(cfg, "reset_hover_focus", False) if reset_hover_focus is None \
-        else bool(reset_hover_focus)
-    if reset_hover_focus is False:
-        away, blur = False, False
-    elif reset:
-        away, blur = True, True
-    else:
-        away = not getattr(cfg, "keep_pointer", False)
-        blur = bool(getattr(cfg, "blur_focus", False))
-    if keep_pointer is not None:
-        away = not keep_pointer
-    if blur_focus is not None:
-        blur = bool(blur_focus)
-    return away, blur
+    keep = bool(getattr(cfg, "keep_pointer", False)) if keep_pointer is None \
+        else bool(keep_pointer)
+    blur = bool(getattr(cfg, "blur_focus", False)) if blur_focus is None \
+        else bool(blur_focus)
+    return not keep, blur
 
 
 _URL = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
@@ -900,6 +896,25 @@ def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: b
     return _ready.wait(probe, inflight=held,
                        quiet_ms=_ready.DEFAULT_QUIET_MS if quiet_ms is None else quiet_ms,
                        limit_ms=limit_ms, sleep=sleep)
+
+
+#: The readiness wait asks once more after its limit; it stops this long
+#: before the check's deadline, so that the last question is not past it.
+READY_DEADLINE_MARGIN_MS = 250
+
+
+def _within_deadline(limit_ms: int) -> int:
+    """The readiness limit, cut to what is left of the check's deadline.
+
+    So that a wait that reaches the deadline gives up the way it gives up at
+    its own limit — with the words for what it was waiting for — and the
+    `CaptureError` that follows, if the frames do not fit either, can say so.
+    Without `timeout_ms` the deadline is far behind the limit and nothing is cut.
+    """
+    b = _js.current()
+    if b is None:
+        return limit_ms
+    return max(0, min(limit_ms, b.remaining_ms() - READY_DEADLINE_MARGIN_MS))
 
 
 def _box(b) -> tuple[int, int, int, int]:

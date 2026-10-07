@@ -120,13 +120,10 @@ def expect_screenshot(
     full_page: bool | None = None,
     store: SnapshotStore | None = None,
     scale: str = "css",
-    stable_timeout_ms: int | None = None,
     engine: str | None = None,
-    ready_timeout_ms: int | None = None,
-    reset_hover_focus: bool | None = None,
     keep_pointer: bool | None = None,
     blur_focus: bool | None = None,
-    restore_scroll: bool | None = None,
+    timeout_ms: int | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -169,15 +166,20 @@ def expect_screenshot(
 
     A live page is photographed as `toHaveScreenshot()` photographs it:
     animations stopped, the caret hidden, web fonts loaded, and frames taken
-    until two in a row are identical — for at most `stable_timeout_ms`
-    (default `capture.stable_timeout_ms`, five seconds; 0 takes one frame).
-    A page that does not settle in that time is compared on its last frame,
-    and the reason says so. Before the frames the page is asked whether it is
-    ready — loaded, no request in flight (counted when the pytest plugin is
-    active), no loader in the area, its images in, nothing changing for a
-    moment —, each step for at most `ready_timeout_ms` (default
-    `capture.ready_timeout_ms`, five seconds; 0 does not ask); a step that
-    gives up is said in the reason.
+    until two in a row are identical — for at most `capture.stable_timeout_ms`
+    (vistest.yaml; five seconds, 0 takes one frame). A page that does not
+    settle in that time is compared on its last frame, and the reason says
+    so. Before the frames the page is asked whether it is ready — loaded, no
+    request in flight (counted when the pytest plugin is active), no loader in
+    the area, its images in, nothing changing for a moment —, each step for at
+    most `capture.ready_timeout_ms` (five seconds; 0 does not ask); a step
+    that gives up is said in the reason.
+
+    `timeout_ms` is the time this whole check may spend on the page: the
+    readiness, the frames, the second look and the renderer's canary together.
+    A page that keeps the check waiting past it raises `CaptureError` saying
+    what it was waiting for; the two limits above are cut to it. Left out, the
+    deadline is made of those limits (library/js.py, `budget_ms`).
 
     A check that fails gets a second look (core/retry.py): more frames, until
     two in a row are identical. Nothing it sees is masked. When the page
@@ -191,11 +193,10 @@ def expect_screenshot(
     the focus is left alone. `keep_pointer=True` (`capture.keep_pointer`) keeps
     the pointer where the test left it — for a hover captured on purpose —,
     `blur_focus=True` (`capture.blur_focus`) takes the focus off whatever has
-    it. `reset_hover_focus=True` (`capture.reset_hover_focus`) is both: the
-    pointer away and the focus off, as before. A Locator's element is put back
-    where it was in the window when its baseline was taken, when the
-    baseline's passport records that place; so is the window's scroll for a
-    picture of the window (`restore_scroll`, `capture.restore_scroll`).
+    it. A Locator's element is put back where it was in the window when its
+    baseline was taken, when the baseline's passport records that place; so is
+    the window's scroll for a picture of the window
+    (`capture.match_baseline_scroll`, on by default).
 
     `scale` is `"css"` (the default: one picture pixel
     per CSS pixel on any screen) or `"device"` (the screen's own pixels); the
@@ -215,37 +216,49 @@ def expect_screenshot(
     _check_name(name)
     ctx = _context.current()
     call_patch = _call_thresholds(fail_severity, max_changed_area_pct)
-    wait = (ctx.config.capture.stable_timeout_ms if stable_timeout_ms is None
-            else _targets.check_timeout(stable_timeout_ms))
-    ready_wait = (ctx.config.capture.ready_timeout_ms if ready_timeout_ms is None
-                  else _targets.check_timeout(ready_timeout_ms, "ready_timeout_ms"))
+    total, ready_wait, wait = _deadline(ctx.config.capture, timeout_ms)
     try:
-        with _js.budget(_js.budget_ms(ready_wait, wait),
-                        cap_ms=max(_js.CALL_CAP_MS, ready_wait)):
+        with _js.budget(total, cap_ms=max(_js.CALL_CAP_MS, ready_wait)):
             return _check(ctx, target, name, started=started, call_patch=call_patch,
                           wait=wait, ready_wait=ready_wait, platform=platform,
                           mask=mask, full_page=full_page, store=store, scale=scale,
-                          engine=engine, reset_hover_focus=reset_hover_focus,
-                          keep_pointer=keep_pointer, blur_focus=blur_focus,
-                          restore_scroll=restore_scroll)
+                          engine=engine, keep_pointer=keep_pointer,
+                          blur_focus=blur_focus)
     except CaptureError as e:
         raise CaptureError(f"vistest: could not check {name!r}: {e}") from None
 
 
+def _deadline(capture, timeout_ms) -> tuple[int, int, int]:
+    """(the whole check, each readiness step, the frames), in ms.
+
+    Without `timeout_ms` the deadline is made of the two limits of vistest.yaml
+    with room for everything else (`_js.budget_ms`). With it, it is the
+    deadline, and neither limit may be longer than it.
+    """
+    ready, stable = capture.ready_timeout_ms, capture.stable_timeout_ms
+    if timeout_ms is None:
+        return _js.budget_ms(ready, stable), ready, stable
+    if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
+        raise TypeError(f"expect_screenshot: timeout_ms is a whole number of "
+                        f"milliseconds, got {timeout_ms!r}")
+    if timeout_ms <= 0:
+        raise ValueError(f"expect_screenshot: timeout_ms must be more than 0, "
+                         f"got {timeout_ms}")
+    return timeout_ms, min(ready, timeout_ms), min(stable, timeout_ms)
+
+
 def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
            wait: int, ready_wait: int, platform: str | None, mask, full_page,
-           store, scale: str, engine: str | None, reset_hover_focus, keep_pointer,
-           blur_focus, restore_scroll) -> CompareResult:
+           store, scale: str, engine: str | None, keep_pointer,
+           blur_focus) -> CompareResult:
     """`expect_screenshot` once its arguments are read: inside the check's deadline."""
     scale = _targets.check_scale(scale)
-    away, blur = _targets.pointer_plan(ctx.config.capture, reset_hover_focus,
-                                       keep_pointer, blur_focus)
+    away, blur = _targets.pointer_plan(ctx.config.capture, keep_pointer, blur_focus)
     store = store or ctx.store
     #  A Locator goes back where its baseline had it: the passport is read
     #  before the picture, under the key the picture will have.
     place = _place_from_passport(ctx, store, target, name, platform, scale)
-    restore = (ctx.config.capture.restore_scroll if restore_scroll is None
-               else bool(restore_scroll))
+    restore = ctx.config.capture.match_baseline_scroll
     window = (_window_from_passport(ctx, store, target, name, platform, scale)
               if restore else None)
     shot = _targets.capture(target, mask=mask, full_page=full_page,

@@ -44,7 +44,7 @@ from typing import Any
 from .errors import CaptureError, hide_for_verdicts
 
 __all__ = ["Budget", "SlowAnswer", "budget", "budget_ms", "call", "check", "current",
-           "diagnose", "screenshot_timeout"]
+           "deadline", "diagnose", "screenshot_timeout"]
 
 #: The longest one question may take, unless the readiness limit is longer.
 CALL_CAP_MS = 5000
@@ -124,6 +124,20 @@ def check() -> None:
         raise CaptureError(b.dead)
 
 
+def deadline(what: str) -> None:
+    """Raise `CaptureError` when the check's time is up, before `what` is asked.
+
+    For what has no timeout of its own to be given — a project's page wrapper,
+    the next frame: the question is not cut short, but none is asked past the
+    deadline, so `timeout_ms` bounds the check for any page, not only for
+    Playwright's.
+    """
+    check()
+    b = _current.get()
+    if b is not None:
+        b.timeout_for(what)
+
+
 def screenshot_timeout() -> int | None:
     """The `timeout` for `page.screenshot`: what is left of the deadline, or None
     outside a check (Playwright's own default then)."""
@@ -165,6 +179,7 @@ def call(owner: Any, script: str, arg: Any = _ARG_UNSET, *, what: str) -> Any:
     page_way = _playwright(owner) and callable(getattr(owner, "wait_for_function", None))
     locator_way = _is_locator(owner)
     if not (page_way or locator_way):
+        deadline(what)
         evaluate = owner.evaluate
         return evaluate(script) if arg is _ARG_UNSET else evaluate(script, arg)
     b = _current.get()

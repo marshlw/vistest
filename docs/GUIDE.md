@@ -2186,8 +2186,8 @@ page, step by step:
 | quiet | nothing in the area changed for `capture.quiet_ms`: no DOM mutation outside `<head>` and the masks, no layout shift, no finished response |
 
 All of them must hold at the same moment. Each waits at most
-`capture.ready_timeout_ms` (5 s; `expect_screenshot(..., ready_timeout_ms=)`
-for one check, 0 turns the wait off); a step that gives up is named in the
+`capture.ready_timeout_ms` (5 s, cut to `expect_screenshot(..., timeout_ms=)`
+when the call gives one; 0 turns the wait off); a step that gives up is named in the
 reason — `the page was not ready within the limits: 1 request (GET /api/poll)
 still in flight after 5000 ms (a request the page never waits for, like a long
 poll, goes into capture.ignore_requests) — it was photographed as it was` —
@@ -2232,7 +2232,9 @@ picture handed in gets none of the waiting and frames a page gets.
 page closed before the check — fails the check with `CaptureError` and the
 reason, in seconds: every question to the page has a deadline, at most
 `max(5 s, capture.ready_timeout_ms)` each and never past
-`2 × ready_timeout_ms + 3 × stable_timeout_ms + 15 s` for the whole check.
+`2 × ready_timeout_ms + 3 × stable_timeout_ms + 15 s` for the whole check —
+or past `timeout_ms` when the call gives one: then the check spends at most
+that much on the page and raises `CaptureError` with what it was waiting for.
 
 **Loader or decoration.** An endless animation in the area counts as a
 loader when its element (or one of two ancestors) is named like one — class,
@@ -2288,8 +2290,9 @@ page can say what it is. When a check fails:
   photographed; the focus is left alone. `keep_pointer=True`
   (`capture.keep_pointer: true`) keeps the pointer where the test put it — for
   a hover captured on purpose —, `blur_focus=True` (`capture.blur_focus:
-  true`) takes the focus off whatever has it, and `reset_hover_focus=True`
-  (`capture.reset_hover_focus: true`) is both. With the pointer or the focus
+  true`) takes the focus off whatever has it; `keep_pointer=False,
+  blur_focus=True` is both (`capture.reset_hover_focus` is the service's and
+  the library does not read it). With the pointer or the focus
   kept, a failure whose region is that element names it — a concrete element
   only: never `html`, `body`, `#root` or a container as large as the window,
   which is under every pointer;
@@ -2321,15 +2324,15 @@ before.
 `full_page`) the passport keeps how far the window was scrolled. Before the
 picture it is set to that scroll instantly, and after the picture put back
 where the test left it; one line in the message says where it was and where it
-was set. `restore_scroll=False` (`capture.restore_scroll: false`) switches it
-off. A page too short to scroll that far stays where it can, the difference
+was set. `capture.match_baseline_scroll: false` (`restore_scroll` until
+0.2.0.dev3) switches it off. A page too short to scroll that far stays where it can, the difference
 remains, and the line says so.
 
 **What a picture of an element leaves behind.** The scrolling: after the
 picture — a failed check's further frames included — the window and every
 scrollable box around the element are scrolled where the test left them.
 The side effects that remain: the pointer is moved off the page (unless
-`keep_pointer` is on), and, with `blur_focus` or `reset_hover_focus`, the focus
+`keep_pointer` is on), and, with `blur_focus`, the focus
 is taken off its element; neither is put back.
 
 **How the baseline was taken.** The passport records the capture's version
