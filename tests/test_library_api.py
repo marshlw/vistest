@@ -141,7 +141,7 @@ def test_a_page_supplies_its_own_browser_and_size(ctx):
 #  threshold
 # --------------------------------------------------------------------------- #
 def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
-    """`threshold=60` has to arrive in the `DiffConfig` the comparison uses.
+    """`fail_severity=60` has to arrive in the `DiffConfig` the comparison uses.
 
     Asserted through the limit the failure reports rather than through a
     changed verdict, and deliberately: a solid block on a flat background
@@ -162,33 +162,30 @@ def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
     assert "no threshold is set, so any such region fails" in str(default.value)
 
     with pytest.raises(ScreenshotMismatch) as raised:
-        expect_screenshot(changed, "page.png", threshold=60)
+        expect_screenshot(changed, "page.png", fail_severity=60)
     assert "threshold 60 (call)" in str(raised.value)
 
     with pytest.raises(ScreenshotMismatch) as both:
         expect_screenshot(changed, "page.png",
-                          threshold={"fail_severity": 60,
-                                     "max_changed_area_pct": 30})
+                          fail_severity=60, max_changed_area_pct=30)
     assert "threshold 60 (call), area limit 30.00%" in str(both.value)
 
     #  Engine v1, by name, reads the same plumbing as its limit.
     with pytest.raises(ScreenshotMismatch) as v1:
-        expect_screenshot(changed, "page.png", threshold=60, engine="v1")
+        expect_screenshot(changed, "page.png", fail_severity=60, engine="v1")
     assert "limit 60.0" in str(v1.value)
 
 
 def test_an_unknown_threshold_is_refused_at_the_call(ctx):
     accept(ctx, frame(), "page.png")
-    with pytest.raises(ThresholdError) as e:
-        expect_screenshot(frame(), "page.png", threshold={"fail_severtiy": 40})
-    assert "fail_severtiy" in str(e.value)
-    assert "fail_severity" in str(e.value)          # the correct spelling is offered
+    with pytest.raises(TypeError, match="unexpected keyword argument 'fail_severtiy'"):
+        expect_screenshot(frame(), "page.png", fail_severtiy=40)
 
 
 def test_a_threshold_outside_its_range_is_refused_at_the_call(ctx):
     accept(ctx, frame(), "page.png")
     with pytest.raises(ThresholdError):
-        expect_screenshot(frame(), "page.png", threshold=900)
+        expect_screenshot(frame(), "page.png", fail_severity=900)
 
 
 def test_the_passport_thresholds_reach_the_comparison(ctx):
@@ -226,7 +223,7 @@ def test_the_call_beats_the_passport(ctx):
               meta=SnapshotMeta(thresholds={"fail_severity": 70.0}))
 
     with pytest.raises(ScreenshotMismatch) as e:
-        expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png", threshold=42)
+        expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png", fail_severity=42)
     assert "threshold 42 (call)" in str(e.value)
 
 
