@@ -6,23 +6,24 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""VisTest — a visual regression testing framework.
+"""VisTest — visual regression testing for pytest.
 
-Everything below `vistest.core` is the comparison engine and nothing else: it
-knows how to compare two pictures, which regions to ignore, how snapshot files
-are named and which threshold wins. It reads no config file, opens no database
-and imports no web framework.
+The top of the package is the library: `expect_screenshot`, the exceptions it
+raises and the warning it gives, and the comparison itself (`compare`, its
+`CompareResult` and `Verdict`). That is what a project that drops VisTest into
+its own tests needs, and nothing else is exported here.
 
-Everything above it — capture, storage, artifacts, the runner, the service —
-is reached through this module's attributes and is imported on first use. That
-is not a micro-optimisation. `import vistest.core` runs this file first, and
-while these were plain imports it pulled the whole orchestrator, the baseline
-storage and the Playwright capture module along with it. For the library mode,
-where somebody drops the engine into their own project, that is the difference
-between a package that fits into their test run and one that brings a service
-with it.
+Everything else — the server's runner and check service, the stores, the
+config loader, the integrations — is reached by its full path:
+`from vistest.service import CheckService`. Asking the top for one of those
+names is an AttributeError that says where it is now (`_MOVED`); there is no
+shim that keeps the old spelling working with a warning — there was no public
+release that promised it.
 
-The names are unchanged, so `from vistest import CheckService` still works.
+Everything below `vistest.core` is the comparison engine and nothing else, and
+`import vistest` does not import the layers above it: the library itself is
+loaded on first use (`_LAZY`). `vistest.library` reads the config and touches
+the filesystem, and `import vistest` must keep doing neither.
 
 `__getattr__` is invisible to a type checker and to an editor: both read the
 source, and in the source these names do not exist. The `TYPE_CHECKING` block
@@ -37,29 +38,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .core.comparator import compare
-from .models import ChangeKind, CompareResult, DiffRegion, Verdict
+from .models import CompareResult, Verdict
 
 if TYPE_CHECKING:
     #  Never executed. This is the same import list `__getattr__` performs at
     #  runtime, written so that a type checker and an editor can see it. Adding
     #  a name to `_LAZY` means adding it here too.
-    from .config import VisTestConfig as VisTestConfig
-    from .integrations import VisualSession as VisualSession
-    from .integrations import VisualTestCase as VisualTestCase
-    from .integrations import visual_check as visual_check
-    from .integrations import visual_session as visual_session
     from .library import BaselineMissing as BaselineMissing
+    from .library import CaptureError as CaptureError
     from .library import ScreenshotMismatch as ScreenshotMismatch
     from .library import VisTestWarning as VisTestWarning
     from .library import VisualCheckError as VisualCheckError
     from .library import expect_screenshot as expect_screenshot
-    from .runner import VisualMismatch as VisualMismatch
-    from .runner import VisualTester as VisualTester
-    from .service import CheckService as CheckService
-    from .storage import FileStore as FileStore
-    from .storage import SnapshotKey as SnapshotKey
-    from .storage import SnapshotMeta as SnapshotMeta
-    from .storage import SnapshotStore as SnapshotStore
 
 #  The one place the version is written: pyproject.toml reads it from here.
 __version__ = "0.2.0.dev2"
@@ -67,35 +57,36 @@ __version__ = "0.2.0.dev2"
 #  attribute -> module it comes from, relative to this package. Kept as data so
 #  that the list of what is deliberately deferred can be read at a glance.
 _LAZY = {
-    #  The loader, not the settings objects: `vistest.config` is what searches
-    #  the working directory for `vistest.yaml` and reads the environment. The
-    #  engine is configured with `vistest.core.settings.DiffConfig`, which is
-    #  plain data and stays eager.
-    "VisTestConfig": ".config",
-    #  The library mode. Deferred for the same reason as everything else here,
-    #  and for one more: `vistest.library` reads the config and touches the
-    #  filesystem, and `import vistest` must keep doing neither.
     "expect_screenshot": ".library",
     "BaselineMissing": ".library",
     "ScreenshotMismatch": ".library",
     "VisualCheckError": ".library",
+    "CaptureError": ".library",
     "VisTestWarning": ".library",
-    "SnapshotKey": ".storage",
-    "SnapshotMeta": ".storage",
-    "SnapshotStore": ".storage",
-    "FileStore": ".storage",
-    "VisualTester": ".runner",
-    "VisualMismatch": ".runner",
-    "CheckService": ".service",
-    "visual_check": ".integrations",
-    "visual_session": ".integrations",
-    "VisualSession": ".integrations",
-    "VisualTestCase": ".integrations",
+}
+
+#  Exported at the top until 0.2.0.dev3, and where each one is now. Only for
+#  the message: asking for one of these is still an AttributeError.
+_MOVED = {
+    "VisTestConfig": "vistest.config",
+    "VisualSession": "vistest.integrations",
+    "VisualTestCase": "vistest.integrations",
+    "visual_check": "vistest.integrations",
+    "visual_session": "vistest.integrations",
+    "VisualTester": "vistest.runner",
+    "VisualMismatch": "vistest.runner",
+    "CheckService": "vistest.service",
+    "FileStore": "vistest.storage",
+    "SnapshotKey": "vistest.storage",
+    "SnapshotMeta": "vistest.storage",
+    "SnapshotStore": "vistest.storage",
+    "ChangeKind": "vistest.models",
+    "DiffRegion": "vistest.models",
 }
 
 
 def __getattr__(name):
-    """Deferred access to the layers above the engine.
+    """Deferred access to the library, and where a name that left the top went.
 
     The imported object is written back into the module's own namespace, so
     this runs once per name and the second access is an ordinary attribute
@@ -103,6 +94,11 @@ def __getattr__(name):
     """
     module = _LAZY.get(name)
     if module is None:
+        moved = _MOVED.get(name)
+        if moved is not None:
+            raise AttributeError(
+                f"module {__name__!r} has no attribute {name!r}: it is not exported "
+                f"at the top since 0.2.0.dev3 — from {moved} import {name}")
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
 
@@ -122,29 +118,13 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
-    # the library mode
     "expect_screenshot",
     "BaselineMissing",
     "ScreenshotMismatch",
     "VisualCheckError",
+    "CaptureError",
     "VisTestWarning",
-    "SnapshotKey",
-    "SnapshotMeta",
-    "SnapshotStore",
-    "FileStore",
-    # the service
-    "VisualTester",
-    "VisualMismatch",
-    "VisTestConfig",
-    "CheckService",
     "CompareResult",
-    "DiffRegion",
-    "ChangeKind",
     "Verdict",
     "compare",
-    # from vistest.integrations
-    "visual_check",
-    "visual_session",
-    "VisualSession",
-    "VisualTestCase",
 ]

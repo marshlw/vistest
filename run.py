@@ -151,7 +151,7 @@ def cmd_update(args) -> int:
 def cmd_compare(args) -> int:
     py = ensure_venv()
     code = (
-        "import sys, json; from vistest import VisualTester;"
+        "import sys, json; from vistest.runner import VisualTester;"
         "t=VisualTester();"
         "r=None\n"
         "try:\n"

@@ -3374,7 +3374,10 @@ vistest user rights                    # кто, где и что может
 ### Программный API
 
 ```python
-from vistest import CheckService, VisualTester, compare, visual_check
+from vistest import compare
+from vistest.integrations import visual_check
+from vistest.runner import VisualTester
+from vistest.service import CheckService
 from vistest.capture.playwright_capture import read_png
 
 # pytest + Playwright
