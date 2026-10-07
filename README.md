@@ -697,7 +697,7 @@ python run.py ui                    start the service and open the UI
 python run.py doctor [URL]          check the environment, or a project's noise
 python run.py record URL            record baselines with the mouse
 python run.py snap URL              capture baselines by URL
-python run.py check IMAGE           check a ready PNG against the baseline
+python run.py check NAME PNG        check a PNG against its baseline: exit 0, 1, 2
 python run.py compare A.png B.png   compare two PNGs, no browser
 python run.py test [pytest args]    run the tests
 python run.py update                overwrite the baselines

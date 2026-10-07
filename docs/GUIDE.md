@@ -501,13 +501,18 @@ test('checkout', async ({ page }) => {
 Если проще вызвать процесс, чем ходить по HTTP:
 
 ```bash
-vistest check checkout.png shot.png --frames shot2.png shot3.png
-vistest check checkout.png shot.png --set fail_severity=40 --json
-vistest check checkout.png shot.png --api http://localhost:8420
+vistest check checkout.png shot.png            # exit 2: no baseline yet
+vistest check checkout.png shot.png --update   # writes tests/__vistest__/checkout.png
+vistest check checkout.png shot.png --json     # 0 matches, 1 differs; one JSON object
+vistest check checkout.png shot.png --api http://localhost:8420 --frames shot2.png shot3.png
 ```
 
-Код возврата `0` — прошло, `1` — регресс. Работает и локально, и через сервис;
-результат одинаковый.
+Exit 0 — it matches, 1 — it differs, 2 — there is no baseline yet (`--update`
+writes it). Without a server it is `expect_screenshot` on a file, in the
+library's layout (`--baselines`, `--platform`); `--json` prints one object —
+`verdict`, `message`, `baseline`, `actual`, `diff`. With `--api` (or
+`VISTEST_API_URL`) it is the server's check, in the server's layout, with its
+options (`--frames`, `--dom`, `--set`).
 
 ### Одинаковая стабилизация для всех клиентов
 
@@ -3323,12 +3328,12 @@ python run.py doctor                   # диагностика окружени
 python run.py doctor URL [--runs N] [--viewport] [--selector] [--json] [--out DIR]
                                        # собственный шум проекта
 python run.py ui [--host --port --no-browser]
-python run.py test [пути] [--preset] [--api] [--update]
+python run.py test [пути] [--api] [--update]
 python run.py update [пути]            # перезаписать эталоны
 python run.py record [URL] [--cdp URL] [--viewport WxH] [--out файл] [--pom]
                      [--shots N] [--no-scroll] [--no-freeze-time] [--no-code]
 python run.py snap URL [--name] [--viewport] [--selector] [--suite] [--update]
-python run.py check ИМЯ ФАЙЛ [--frames ...] [--set K=V] [--api URL] [--json]
+python run.py check ИМЯ ФАЙЛ [--baselines DIR] [--platform P] [--update] [--json]
 python run.py compare a.png b.png
 python run.py list                     # эталоны по платформам
 python run.py codegen [--project] [--platform] [--out tests/] [--pom]
@@ -3359,11 +3364,12 @@ pytest tests/ --vistest-perceptual
 ```bash
 vistest doctor https://app.local --runs 5
 vistest doctor --name checkout.png --json
-vistest check checkout.png actual.png --frames f2.png f3.png --set fail_severity=40
+vistest check checkout.png actual.png --update
+vistest check checkout.png actual.png --api http://localhost:8420 --frames f2.png f3.png --set fail_severity=40
 vistest record https://app.local --out tests/test_visual.py
 vistest snap https://app.local/cart --name cart --viewport 1440x900
 vistest snap --suite pages.yaml --update
-vistest compare expected.png actual.png -o diff/ --preset strict --json
+vistest compare expected.png actual.png -o diff/ --json
 vistest serve --host 0.0.0.0 --port 8420
 vistest list                           # все эталоны по платформам
 vistest approve checkout.png --actual path/to/actual.png
