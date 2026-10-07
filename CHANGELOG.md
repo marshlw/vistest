@@ -68,6 +68,18 @@ was no public release that promised it. Each line is what to write instead.
     one warning per run names them all (review v1, 2.3)
   - `vistest.local.yaml`, which the README promised, was never read → the
     promise is gone
+- **The server's fixtures and flags come with the server** (review v1, R2, R6
+  and 2.7). With `vistest` or `vistest[browser]` alone, `pytest --fixtures`
+  shows `vistest` and `vistest_config`, and `pytest --help` five flags:
+  `--vistest-update`, `--vistest-baselines`, `--vistest-platform`,
+  `--vistest-report`, `--vistest-config`.
+  - `visual`, `visual_soft`, `_vistest_session`, `vistest_run_id`,
+    `--vistest-api`, `--vistest-perceptual`, `--vistest-fail-on` →
+    `pip install "vistest[server]"` (they are registered only then)
+  - `--vistest-api` only printed the address and `--vistest-perceptual` did
+    nothing → they set the service's address and switch the model on
+  - `examples/test_demo_visual.py`, `examples/test_existing_suite.py` →
+    `docs/server/examples/`; `examples/` is the library's
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 

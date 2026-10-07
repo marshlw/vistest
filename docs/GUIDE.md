@@ -154,14 +154,14 @@ python tests/benchmark.py --compare
 ### Шаг 2. Прогнать реальные тесты на демо-странице
 
 ```bash
-python run.py test examples/ -v
+python run.py test docs/server/examples/ -v
 ```
 
 Первый прогон создаёт эталоны и помечает тесты как `NEW_BASELINE` — это
 нормально. Запустите ещё раз:
 
 ```bash
-python run.py test examples/ -v
+python run.py test docs/server/examples/ -v
 ```
 
 Второй прогон уже сравнивает. Всё должно пройти зелёным, несмотря на то что
@@ -1567,7 +1567,7 @@ python run.py codegen --project shop --out tests/
 python run.py update
 
 # только конкретный тест
-python run.py update examples/test_demo_visual.py::test_landing_page
+python run.py update docs/server/examples/test_demo_visual.py::test_landing_page
 
 # через pytest напрямую
 pytest tests/ --vistest-update
@@ -3535,4 +3535,4 @@ VisTest ставит странице фиксированную точку от
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — разбор алгоритма сравнения,
   схема БД, API, этапы внедрения
 - `tests/benchmark.py` — инструмент подстройки порогов
-- `examples/` — рабочие примеры тестов
+- `examples/` — the library's example; `docs/server/examples/` — the server mode's

@@ -241,6 +241,10 @@ python run.py snap https://your-app.example.com/checkout
 
 ## Использование в тестах
 
+Фикстура `visual` — серверного режима и ставится с `pip install
+"vistest[server]"` (примеры в `docs/server/examples/`). Проект без сервера
+вызывает `expect_screenshot` — «Режим библиотеки» ниже.
+
 ```python
 def test_checkout(page, visual):
     page.goto("https://shop.example/checkout")
@@ -372,6 +376,7 @@ git lfs track "tests/__vistest__/**/*.png"
 | `--vistest-baselines=PATH` | `vistest_baselines` | где лежат эталоны (по умолчанию `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | каталог платформы; без него берётся со страницы |
 | `--vistest-report=PATH` | `vistest_report` | куда положить HTML-отчёт |
+| `--vistest-config=PATH` | — | какой vistest.yaml читать, если не тот, что нашёлся от рабочего каталога вверх |
 
 Голый `--vistest-update` берёт следующий аргумент как режим, поэтому пути пишутся
 первыми — `pytest tests/ --vistest-update`, — или режим пишется явно:
@@ -906,7 +911,8 @@ deploy/                шаблоны compose и Caddyfile
 clients/               клиент для Node и контракт API для других языков
 docker/                образы: Dockerfile.api, .full, .runner
 tests/                 синтетический бенчмарк движка и автотесты API
-examples/              демо-страница и примеры тестов
+examples/              пример теста библиотеки и его демо-страница
+docs/server/examples/  примеры серверного режима (фикстура `visual`)
 ```
 
 Все входы — pytest-фикстура, HTTP-эндпоинт, CLI и режим записи — ходят в один

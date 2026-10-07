@@ -132,6 +132,10 @@ python run.py snap https://your-app.example.com/checkout
 
 ## Use in tests
 
+The `visual` fixture is the server mode's, and comes with `pip install
+"vistest[server]"` (examples in `docs/server/examples/`). A project without a
+server calls `expect_screenshot` — «Library mode» below.
+
 ```python
 def test_checkout(page, visual):
     page.goto("https://shop.example/checkout")
@@ -293,6 +297,7 @@ git lfs track "tests/__vistest__/**/*.png"
 | `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | the platform directory; taken from the page when not set |
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
+| `--vistest-config=PATH` | — | the vistest.yaml to read, when it is not the one found from the working directory up |
 
 A bare `--vistest-update` takes the next argument as its mode, so write paths
 first — `pytest tests/ --vistest-update` — or spell the mode out:
@@ -829,7 +834,8 @@ deploy/                compose templates and a Caddyfile
 clients/               Node client and the API contract for other languages
 docker/                images: Dockerfile.api, .full, .runner
 tests/                 synthetic engine benchmark and API tests
-examples/              demo page and example tests
+examples/              the library's example test and its demo page
+docs/server/examples/  the server mode's examples (the `visual` fixture)
 ```
 
 Every entry point — the pytest fixture, the HTTP endpoint, the CLI and the

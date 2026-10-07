@@ -303,7 +303,6 @@ def test_secrets_are_masked_in_logs():
 
 def test_flows_load_from_yaml(tmp_path, monkeypatch):
     (tmp_path / "vistest.yaml").write_text(
-        "preset: balanced\n"
         "auth:\n  flow: login\n  reuse_state: true\n"
         "flows:\n"
         "  login:\n"

@@ -6,11 +6,14 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Пример визуального теста. Требует playwright:  pip install -e ".[browser]".
+"""The server mode's `visual` fixture on the demo page. Needs vistest[server]
+and a browser:  pip install -e ".[server,browser]".
 
-Запуск:
-    python run.py test examples/ -v
-Первый прогон создаёт эталоны, второй — сравнивает.
+    python run.py test docs/server/examples/ -v
+
+The first run creates the baselines (in the server's layout, `.vistest/`),
+the second compares. A library project does not need any of this: it calls
+`expect_screenshot` — `examples/test_library.py`.
 """
 
 from __future__ import annotations
@@ -21,7 +24,8 @@ import pytest
 
 pytest.importorskip("playwright")
 
-DEMO = (Path(__file__).parent / "demo_page.html").resolve().as_uri()
+#  The library's demo page, shared: examples/ is the library's (review v1, R2).
+DEMO = (Path(__file__).resolve().parents[3] / "examples" / "demo_page.html").as_uri()
 
 
 @pytest.fixture
@@ -32,12 +36,12 @@ def demo(page):
 
 
 def test_landing_page(demo, visual):
-    """Простейший случай: вся страница целиком."""
+    """The simplest case: the whole page."""
     visual.assert_screenshot("landing.png")
 
 
 def test_pricing_card_only(demo, visual):
-    """Сравниваем один компонент — быстрее и стабильнее, чем вся страница."""
+    """One component — faster and steadier than the whole page."""
     visual.assert_screenshot("pricing-card.png", clip_selector="#pricing")
 
 
@@ -47,16 +51,16 @@ def test_dark_theme(demo, visual):
 
 
 def test_with_manual_mask(demo, visual):
-    """Ручная маска нужна редко: динамику ловит stability-маска автоматически.
+    """A manual mask is rarely needed: the stability mask catches what moves.
 
-    Она полезна для контента, который меняется медленнее интервала между
-    кадрами — например, курс валют, подгружаемый раз в минуту.
+    It helps with content that changes slower than the frames are taken —
+    an exchange rate loaded once a minute, for one.
     """
     visual.assert_screenshot("landing-masked.png", mask_selectors=["#live-counter"])
 
 
 def test_soft_mode_collects_everything(demo, visual_soft):
-    """Все расхождения за тест собираются и падают одним отчётом."""
+    """Every difference of the test is collected and fails once, in one report."""
     visual_soft.assert_screenshot("soft-top.png", clip_selector="header")
     visual_soft.assert_screenshot("soft-pricing.png", clip_selector="#pricing")
     visual_soft.assert_screenshot("soft-footer.png", clip_selector="footer")
@@ -64,7 +68,7 @@ def test_soft_mode_collects_everything(demo, visual_soft):
 
 @pytest.mark.parametrize("width,label", [(390, "mobile"), (768, "tablet"), (1440, "desktop")])
 def test_responsive(page, visual, width, label):
-    """Отдельный эталон на каждую ширину — иначе адаптив не проверить."""
+    """A baseline per width — there is no other way to check a responsive page."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(DEMO)
     visual.assert_screenshot(f"landing-{label}.png")

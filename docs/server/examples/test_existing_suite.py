@@ -6,12 +6,13 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Подключение VisTest к уже написанным тестам — три формы.
+"""VisTest's server mode in tests that are already written — four ways in.
 
-Эти тесты пропускаются, если нет selenium/playwright. Смысл файла —
-показать минимальный объём изменений в существующем проекте.
+Needs vistest[server]; the tests are skipped without Playwright (and the
+unittest one without Selenium). The point of the file is how little an
+existing project has to change.
 
-Запуск:  python run.py test examples/test_existing_suite.py -v
+    python run.py test docs/server/examples/test_existing_suite.py -v
 """
 
 from __future__ import annotations
@@ -23,18 +24,19 @@ import pytest
 
 pytest.importorskip("playwright")
 
-DEMO = (Path(__file__).parent / "demo_page.html").resolve().as_uri()
+#  The library's demo page, shared: examples/ is the library's (review v1, R2).
+DEMO = (Path(__file__).resolve().parents[3] / "examples" / "demo_page.html").as_uri()
 
 
 # --------------------------------------------------------------------------- #
-#  1. Одна строка в существующем тесте
+#  1. One line in a test that exists
 # --------------------------------------------------------------------------- #
 def test_one_liner(page):
-    """Ваш тест уже написан — добавляется ровно одна строка.
+    """The test is written already — exactly one line is added.
 
-    `visual_check` сам определит тип драйвера (Playwright Page или Selenium
-    WebDriver), стабилизирует страницу, снимет три кадра для детекта динамики
-    и сравнит с эталоном.
+    `visual_check` finds out the driver (a Playwright Page or a Selenium
+    WebDriver), steadies the page, takes three frames to find what moves and
+    compares with the baseline.
     """
     from vistest.integrations import visual_check
 
@@ -43,7 +45,7 @@ def test_one_liner(page):
 
 
 # --------------------------------------------------------------------------- #
-#  2. Явная сессия: несколько проверок в один прогон
+#  2. An explicit session: several checks in one run
 # --------------------------------------------------------------------------- #
 def test_explicit_session(page):
     from vistest.integrations import visual_session
@@ -52,21 +54,21 @@ def test_explicit_session(page):
     with visual_session() as vs:
         vs.check(page, "existing-header.png", clip_selector="header")
         vs.check(page, "existing-pricing.png", clip_selector="#pricing")
-        # soft=True — собрать расхождение, но не падать здесь
+        # soft=True: collect the difference, do not fail here
         res = vs.check(page, "existing-footer.png", clip_selector="footer", soft=True)
         assert res.verdict.value in ("pass", "new_baseline"), res.summary()
 
 
 # --------------------------------------------------------------------------- #
-#  3. Готовый снимок, сделанный чужим кодом
+#  3. A picture someone else's code took
 # --------------------------------------------------------------------------- #
 def test_check_bytes_from_elsewhere(page):
-    """Скриншот делает существующий хелпер проекта — VisTest только сравнивает."""
+    """The project's own helper takes the screenshot — VisTest only compares."""
     from vistest.integrations import visual_session
 
     page.goto(DEMO)
     # Bytes taken elsewhere are not stabilised: mask the counter that ticks every 200 ms.
-    png_bytes = page.screenshot(full_page=True,     # ваш существующий код
+    png_bytes = page.screenshot(full_page=True,     # your existing code
                                 mask=[page.locator("#live-counter")])
 
     with visual_session() as vs:
@@ -74,17 +76,17 @@ def test_check_bytes_from_elsewhere(page):
 
 
 # --------------------------------------------------------------------------- #
-#  4. unittest через миксин
+#  4. unittest through a mixin
 # --------------------------------------------------------------------------- #
 from vistest.integrations import VisualTestCase  # noqa: E402
 
 
 class LegacyUnittestSuite(VisualTestCase, unittest.TestCase):
-    """Проект на unittest + Selenium.
+    """A unittest + Selenium project.
 
-    Всё изменение в существующем классе — добавить `VisualTestCase` в базовые
-    и вызывать `self.assert_screenshot(...)`. Драйвер берётся из `self.driver`
-    (или `self.page` / `self.browser` / `self.wd`), настройка не нужна.
+    The whole change to the class is `VisualTestCase` among its bases and
+    `self.assert_screenshot(...)` calls. The driver is `self.driver` (or
+    `self.page` / `self.browser` / `self.wd`); nothing to configure.
     """
 
     @classmethod
@@ -98,8 +100,8 @@ class LegacyUnittestSuite(VisualTestCase, unittest.TestCase):
         opts.add_argument("--font-render-hinting=none")
         try:
             cls.driver = webdriver.Chrome(options=opts)
-        except Exception as e:  # драйвера нет в окружении — не наша проблема
-            raise unittest.SkipTest(f"Chrome WebDriver недоступен: {e}") from e
+        except Exception as e:  # no driver in this environment
+            raise unittest.SkipTest(f"Chrome WebDriver is not available: {e}") from e
 
     @classmethod
     def tearDownClass(cls):
