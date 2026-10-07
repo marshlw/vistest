@@ -96,7 +96,10 @@ def test_an_engine_that_is_not_one_is_refused_everywhere(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-#  Who chooses: default < vistest.yaml < VISTEST_ENGINE < the call
+#  Who chooses: the code. vistest.yaml, VISTEST_ENGINE, the library's call and
+#  the presets do not since 0.2.0.dev3 (review v1, R5) — that refusal is
+#  tests/test_removed_v1_and_presets.py; what stays is compare(engine=...) and
+#  a DiffConfig, for the benchmark, the bench corpus and the server.
 # --------------------------------------------------------------------------- #
 def _yaml(tmp_path, text: str) -> Path:
     path = tmp_path / "vistest.yaml"
@@ -104,24 +107,10 @@ def _yaml(tmp_path, text: str) -> Path:
     return path
 
 
-def test_vistest_yaml_chooses_and_the_environment_beats_it(tmp_path, monkeypatch):
+def test_the_derived_fields_of_diff_are_not_written_in_vistest_yaml(tmp_path, monkeypatch):
     monkeypatch.delenv("VISTEST_ENGINE", raising=False)
-    path = _yaml(tmp_path, "engine: v1\n")
-    assert VisTestConfig.load(path).diff.engine == "v1"
-    monkeypatch.setenv("VISTEST_ENGINE", "v2")
-    assert VisTestConfig.load(path).diff.engine == "v2"
-    monkeypatch.setenv("VISTEST_ENGINE", "V1")
-    assert VisTestConfig.load(_yaml(tmp_path, "preset: strict\n")).diff.engine == "v1"
-
-
-def test_the_two_spellings_in_vistest_yaml_may_not_disagree(tmp_path, monkeypatch):
-    monkeypatch.delenv("VISTEST_ENGINE", raising=False)
-    assert VisTestConfig.load(_yaml(tmp_path, "diff:\n  engine: v1\n")).diff.engine == "v1"
-    with pytest.raises(ConfigError, match="keep one"):
-        VisTestConfig.load(_yaml(tmp_path, "engine: v1\ndiff:\n  engine: v2\n"))
-    for derived in ("threshold_source", "preset"):
-        with pytest.raises(ValueError, match=f"unknown key diff.{derived}"):
-            VisTestConfig.load(_yaml(tmp_path, f"diff:\n  {derived}: x\n"))
+    with pytest.raises(ValueError, match="unknown key diff.threshold_source"):
+        VisTestConfig.load(_yaml(tmp_path, "diff:\n  threshold_source: x\n"))
 
 
 def test_the_call_beats_everything(monkeypatch):
@@ -129,17 +118,6 @@ def test_the_call_beats_everything(monkeypatch):
     cfg = DiffConfig(engine="v1")
     assert any(n.startswith("Engine v2") for n in compare(a, b, cfg=cfg, engine="v2").notes)
     assert compare(a, b, engine="v1").notes[-1] == engines.V1_DEPRECATED
-
-
-def test_a_preset_does_not_undo_the_engine_chosen_elsewhere(tmp_path, monkeypatch):
-    """The library's --vistest-preset, `vistest check --preset`, the API's
-    preset= — each builds the preset's numbers and keeps the engine."""
-    from vistest.library.context import LibraryContext
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("VISTEST_ENGINE", "v1")
-    ctx = LibraryContext(root=tmp_path, preset="strict")
-    assert ctx.config.diff.engine == "v1" and ctx.config.diff.preset == "strict"
 
 
 # --------------------------------------------------------------------------- #
@@ -269,8 +247,8 @@ def test_every_layer_names_itself(tmp_path, monkeypatch):
     monkeypatch.delenv("VISTEST_FAIL_SEVERITY", raising=False)
     monkeypatch.delenv("VISTEST_THRESHOLD_SOURCE", raising=False)
     assert VisTestConfig.load(tmp_path / "none.yaml").diff.threshold_source == ""
-    path = _yaml(tmp_path, "preset: strict\n")
-    assert VisTestConfig.load(path).diff.threshold_source == ""       # a preset's
+    #  A preset's number (the server's presets, built in code) names no source.
+    assert VisTestConfig.preset_of("strict").diff.threshold_source == ""
     path = _yaml(tmp_path, "diff:\n  fail_severity: 30\n")
     assert VisTestConfig.load(path).diff.threshold_source == "vistest.yaml"
     monkeypatch.setenv("VISTEST_FAIL_SEVERITY", "12")
@@ -291,10 +269,9 @@ def test_every_layer_names_the_area_limit_too(tmp_path, monkeypatch):
     for name in ("VISTEST_MAX_CHANGED_AREA_PCT", "VISTEST_AREA_SOURCE"):
         monkeypatch.delenv(name, raising=False)
     assert VisTestConfig.load(tmp_path / "none.yaml").diff.area_source == ""
-    path = _yaml(tmp_path, "preset: loose\n")
-    cfg = VisTestConfig.load(path).diff                                  # a preset's
+    cfg = VisTestConfig.preset_of("loose").diff                # a preset's (the server's)
     assert (cfg.area_source, cfg.v2_area_limit, cfg.v2_area_source) == ("", 0.15, "default")
-    path = _yaml(tmp_path, "preset: loose\ndiff:\n  max_changed_area_pct: 2\n")
+    path = _yaml(tmp_path, "diff:\n  max_changed_area_pct: 2\n")
     cfg = VisTestConfig.load(path).diff
     assert (cfg.v2_area_limit, cfg.v2_area_source) == (2, "vistest.yaml")
     monkeypatch.setenv("VISTEST_MAX_CHANGED_AREA_PCT", "3")
@@ -384,7 +361,7 @@ def _accept(ctx, png, name="page.png"):
         ctx.update = False
 
 
-def test_the_library_takes_engine_in_the_call(ctx):
+def test_the_library_compares_with_v2_and_says_so(ctx):
     from vistest import expect_screenshot
     from vistest.library.errors import ScreenshotMismatch
 
@@ -394,17 +371,7 @@ def test_the_library_takes_engine_in_the_call(ctx):
         expect_screenshot(_png(b), "page.png")
     assert "engine v2: 2 regions that no rule of the engine explains away" in str(v2.value)
     assert "no threshold is set, so any such region fails" in str(v2.value)
-    with pytest.raises(ScreenshotMismatch) as v1:
-        expect_screenshot(_png(b), "page.png", engine="v1")
-    assert "(limit 25.0)" in str(v1.value)
-    assert engines.V1_DEPRECATED in v1.value.result.notes
-    assert f"  {engines.V1_DEPRECATED}" in str(v1.value).splitlines()
     assert engines.V1_DEPRECATED not in str(v2.value)
-
-    from vistest.report.library import read_parts, render
-
-    html = render(read_parts(ctx.parts_dir))
-    assert "engine v1 is deprecated and goes in the next release" in html
 
 
 def test_below_the_threshold_in_the_message_and_the_report(ctx):

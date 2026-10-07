@@ -170,10 +170,6 @@ def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
                           fail_severity=60, max_changed_area_pct=30)
     assert "threshold 60 (call), area limit 30.00%" in str(both.value)
 
-    #  Engine v1, by name, reads the same plumbing as its limit.
-    with pytest.raises(ScreenshotMismatch) as v1:
-        expect_screenshot(changed, "page.png", fail_severity=60, engine="v1")
-    assert "limit 60.0" in str(v1.value)
 
 
 def test_an_unknown_threshold_is_refused_at_the_call(ctx):

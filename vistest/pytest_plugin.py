@@ -106,9 +106,6 @@ def pytest_addoption(parser):
     group.addoption("--vistest-report", default=None, metavar="PATH",
                     help="Where to write the HTML report "
                          "(default: .vistest/report/index.html)")
-    group.addoption("--vistest-preset", default=None,
-                    choices=["strict", "balanced", "loose"],
-                    help="Preset of comparison thresholds")
     group.addoption("--vistest-config", default=None,
                     help="Path to vistest.yaml")
     group.addoption("--vistest-api", default=None,
@@ -200,7 +197,6 @@ def pytest_configure(config):
                                        "vistest_platform"),
             update=config.getoption("--vistest-update"),
             config_path=config.getoption("--vistest-config"),
-            preset=config.getoption("--vistest-preset"),
             fail_on=config.getoption("--vistest-fail-on"),
         )
     except ConfigError as e:

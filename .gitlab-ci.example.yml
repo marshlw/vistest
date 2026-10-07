@@ -52,7 +52,6 @@ visual:test:
     # снимки начинают дрожать. Экономия времени того не стоит.
     - >
       pytest tests/ -v
-      --vistest-preset balanced
       -p no:randomly
   variables:
     VISTEST_PROJECT: "$CI_PROJECT_PATH"

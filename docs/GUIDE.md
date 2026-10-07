@@ -1940,11 +1940,11 @@ allure serve allure-results
 
 ## 7. Настройка порогов
 
-### The engine: v2 by default, v1 for one more release
+### The engine
 
 Every check — the library's `expect_screenshot`, the pytest fixture, the
 service and `POST /api/check`, `vistest check`, `vistest compare`,
-`vistest doctor` — runs **engine v2** unless somebody chose otherwise. v2
+`vistest doctor` — runs **engine v2**, and there is nothing to choose. v2
 catches every difference a person can see (ΔE00 above 1 per pixel, grouped
 within 2 px, from 4 px up) and takes out only what a named rule explains: a
 scroll bar that appeared, a JPEG re-encode, the page moved by a fraction of a
@@ -1953,25 +1953,15 @@ region no rule explained fails the check.** Each region that counts is said
 in words in the report and the failure message («ink colour: #1f2937 →
 #4d5666, ΔE00 14.8»).
 
-Engine v1, the cascade, stays for one release and then goes. Choose it, in
-increasing strength, with:
-
-```yaml
-engine: v1          # vistest.yaml, top level
-```
-
-```bash
-VISTEST_ENGINE=v1 pytest tests/
-vistest compare expected.png actual.png --engine v1
-vistest check checkout.png shot.png --set engine=v1
-```
-
-```python
-expect_screenshot(page, "home.png", engine="v1")
-```
-
-and `{"engine": "v1"}` in the `options` of `POST /api/check`. A v1 result
-carries one line in its notes: v1 is deprecated and goes in the next release.
+Engine v1, the cascade, and the presets that tuned it were removed before
+the first release (0.2.0.dev3). `engine:` and `preset:` in vistest.yaml (also
+under `diff:`) and `VISTEST_ENGINE` are refused in one line —
+`v1 and presets were removed before the first release; v2 is the only engine`
+—, and `engine=` of the call, `--engine` and `--preset` of the CLI and
+`--vistest-preset` of pytest are gone. v1 stays inside: the benchmark and the
+bench corpus run it in code, and the server keeps `{"engine": "v1"}` in the
+`options` of `POST /api/check` and its presets until phase 6. A v1 result
+carries one line in its notes saying it is deprecated.
 
 **The threshold under v2.** A preset's `fail_severity` is v1's and is not
 applied: under v2 the threshold is 0 — whatever no rule explains fails. When
@@ -2037,18 +2027,11 @@ picture after looking at it.
   gives a diagnosis, not a pass: accept the baselines again on the renderer
   the checks run on.
 
-### Пресеты
+### Presets
 
-```bash
-python run.py test --preset strict
-pytest tests/ --vistest-preset loose
-```
-
-| Пресет | ΔE00 | fail_severity | Изм. площадь | Когда |
-|---|---|---|---|---|
-| `strict` | 1.2 | 10 | 0.02% | дизайн-система, компоненты в изоляции |
-| `balanced` | 2.3 | 25 | 0.15% | по умолчанию |
-| `loose` | 4.0 | 45 | 0.8% | страницы с контентом от CMS |
+The presets (`strict`, `balanced`, `loose`) tune engine v1 and are the
+server's until phase 6 (`preset=` of `POST /api/check`). The library, pytest
+and the CLI have none since 0.2.0.dev3.
 
 ### Из интерфейса
 
@@ -2083,8 +2066,6 @@ vistest.yaml» снимает переопределение — это не т�
 Лежит в корне проекта, ищется вверх по дереву до `.git`. Ключевые параметры:
 
 ```yaml
-preset: balanced
-
 diff:
   delta_e_threshold: 2.3     # ΔE00. 1.0 — предел различимости, 2.3 — общепринятый JND
   ssim_threshold: 0.90       # структурный порог
@@ -2141,17 +2122,11 @@ python tests/benchmark.py --preset balanced
 
 ### Приоритет настроек
 
-Аргумент `assert_screenshot` → `--vistest-preset` → `vistest.yaml` →
-переменные окружения → дефолт.
-
-The engine follows the same order, with one difference: a preset never
-chooses the engine — `--vistest-preset strict` keeps whatever vistest.yaml
-or `VISTEST_ENGINE` chose.
+Аргумент `assert_screenshot` → `vistest.yaml` → переменные окружения → дефолт.
 
 Переменные окружения:
 
 ```
-VISTEST_ENGINE=v1            # engine v1 for one more release; v2 by default
 VISTEST_ROOT=.vistest
 VISTEST_API_URL=http://localhost:8420
 VISTEST_PROJECT=my-shop
@@ -3346,7 +3321,6 @@ python run.py test tests/test_checkout.py::test_cart -v -k "not slow"
 
 ```bash
 pytest tests/ --vistest-update
-pytest tests/ --vistest-preset strict
 pytest tests/ --vistest-config custom.yaml
 pytest tests/ --vistest-api http://localhost:8420
 pytest tests/ --vistest-perceptual

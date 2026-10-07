@@ -42,6 +42,21 @@ was no public release that promised it. Each line is what to write instead.
     in vistest.yaml is the service's; the library does not read it
   - `restore_scroll=False` → `capture.match_baseline_scroll: false`; the key
     `capture.restore_scroll` is refused with its new name
+- **Engine v1 and the presets are off the public surface** (review v1, R5 and
+  8.1). There is one engine and nothing to choose; what chose v1 or a preset is
+  refused in one line — `v1 and presets were removed before the first
+  release; v2 is the only engine` — or is gone:
+  - `expect_screenshot(..., engine="v1")` → nothing (`engine=` is a TypeError)
+  - `engine: v1`, `preset: strict` in vistest.yaml, `diff.engine`, `diff.preset`
+    → remove the key (refused)
+  - `VISTEST_ENGINE=v1` → unset it (refused)
+  - `pytest --vistest-preset strict` → nothing (an unknown option);
+    `vistest compare --engine v1 / --preset strict`, `vistest check --preset`
+    → nothing; `vistest check --set engine=v1` → refused
+  - `vistest compare` reads vistest.yaml and the environment like every other
+    command: the preset it built used to replace them
+  - the server keeps `{"engine": "v1"}` and `preset=` in `POST /api/check`
+    until phase 6; the benchmark and the bench corpus choose v1 in code
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 

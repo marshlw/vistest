@@ -58,8 +58,8 @@ def test_a_misspelt_section_is_refused_not_ignored(tmp_path):
 
 
 def test_a_misspelt_top_level_choice_is_refused(tmp_path):
-    with pytest.raises(ConfigError, match=r"unknown key 'engin' — did you mean 'engine'\?"):
-        _load(tmp_path, "engin: v1\n")
+    with pytest.raises(ConfigError, match=r"unknown key 'plugin' — did you mean 'plugins'\?"):
+        _load(tmp_path, "plugin: {}\n")
 
 
 def test_a_misspelt_key_in_a_section_names_the_file_and_the_nearest_key(tmp_path):
@@ -86,7 +86,7 @@ def test_a_section_that_is_not_a_mapping_is_refused(tmp_path):
 
 
 def test_every_known_section_and_choice_still_loads(tmp_path):
-    cfg = _load(tmp_path, "preset: balanced\nengine: v2\nupdate_baselines: false\n"
+    cfg = _load(tmp_path, "update_baselines: false\n"
                           "plugins: {}\nflows: {}\ndiff: {}\ncapture: {}\nmatrix: {}\n"
                           "ai: {}\nrender: {}\npaths: {}\nservice: {}\nauth: {}\n")
     assert cfg.diff.engine == "v2"
