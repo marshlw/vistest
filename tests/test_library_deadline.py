@@ -16,6 +16,7 @@ hang ever comes back this file fails instead of hanging the suite with it.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -208,7 +209,8 @@ def test_a_dead_page_fails_the_check_in_seconds_with_the_reason(tmp_path, case, 
     started = time.monotonic()
     try:
         done = subprocess.run([sys.executable, str(script), case], cwd=tmp_path,
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, encoding="utf-8", timeout=120,
+                              env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     except subprocess.TimeoutExpired:
         pytest.fail(f"expect_screenshot on a {case} page did not return in 120 s")
     out = done.stdout + done.stderr

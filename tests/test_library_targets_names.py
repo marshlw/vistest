@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -101,7 +102,8 @@ def test_a_real_async_page_gets_the_sentence_not_a_coroutine_error(tmp_path):
     script = tmp_path / "case.py"
     script.write_text(ASYNC_CASE, encoding="utf-8")
     done = subprocess.run([sys.executable, str(script)], cwd=tmp_path,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, encoding="utf-8", timeout=120,
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     out = done.stdout + done.stderr
     if out.startswith("SKIP"):
         pytest.skip(out.strip())

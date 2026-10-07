@@ -145,6 +145,9 @@ def example_outcomes(py, examples: Path, project: Path, env: dict) -> None:
         "[tool.pytest.ini_options]\n", encoding="utf-8")
     base = tests / "__vistest__"
     report = project / "junit.xml"
+    #  `run` reads the output as UTF-8, and the sentence looked for below has
+    #  a dash in it: on Windows pytest would write it in the ANSI code page.
+    env = {**env, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
 
     def pictures() -> list[Path]:
         return sorted(p for p in base.rglob("*.png") if ".renderers" not in p.parts) \
