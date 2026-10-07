@@ -46,6 +46,32 @@ steps. The engine, the corpora and `metrics.json` are not touched.
 - Four functions nobody called are gone; the dev2 branches only the hazard
   stand reached have unit tests.
 
+### Review A2: what CI found on the review A pull request
+
+- **Plugin migrations work on Python 3.10.** `set_authorizer(None)` takes the
+  authorizer off only from 3.11; on 3.10 the None became the callback, and the
+  version row, the `COMMIT` and the `ROLLBACK` after a plugin's steps were all
+  "not authorized" — every plugin migration failed. One helper lifts it, with
+  an authorizer that allows everything before 3.11.
+- **The install check reads the example's outcomes from a JUnit report**, one
+  per test, not from pytest's text: how many times a message appeared there
+  depended on the terminal's width, and all fifteen install jobs went red.
+- **Windows:** the review A tests compare paths whatever the separator, and
+  read their child processes as UTF-8 whatever the code page.
+- **Ten e2e tests are `xfail`** (`strict=False`, "server tails, phase 6 — see
+  the plan"). They fail on main as well; the interface is not changed here.
+  When phase 6 makes one pass, its marker comes off:
+  - `tests/e2e/test_ui_auth.py::test_every_screen_survives_the_access_gate[/baselines]`
+  - `tests/e2e/test_ui_auth.py::test_the_sidebar_badge_counts_unreviewed_failures`
+  - `tests/e2e/test_ui_auth.py::test_a_snapshot_can_be_reached_from_the_baselines_tab`
+  - `tests/e2e/test_ui_auth.py::test_a_snapshot_says_what_captured_it`
+  - `tests/e2e/test_ui_auth.py::test_a_snapshot_without_a_url_is_still_runnable_through_its_test`
+  - `tests/e2e/test_ui_auth.py::test_the_button_says_which_way_it_will_go`
+  - `tests/e2e/test_ui_smoke.py::test_every_run_has_a_delete_button`
+  - `tests/e2e/test_ui_smoke.py::test_baselines_screen_has_a_store_picker`
+  - `tests/e2e/test_ui_smoke.py::test_project_snapshots_are_visible_and_runnable`
+  - `tests/e2e/test_ui_smoke.py::test_projects_screen_shows_the_vistest_set`
+
 ### 0.2.0.dev2: capture and messages, after the first trial on a real application
 
 The engine, engine v1 and `metrics.json` are not touched. Stand numbers and
