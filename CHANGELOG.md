@@ -5,6 +5,26 @@
 
 ## [Unreleased]
 
+### Breaking in 0.2.0.dev3
+
+The public surface of the library, before its first release on PyPI (review
+v1, step B). Nothing here keeps the old spelling working with a warning: there
+was no public release that promised it. Each line is what to write instead.
+
+- **`vistest` exports the library only:** `expect_screenshot`,
+  `BaselineMissing`, `ScreenshotMismatch`, `VisualCheckError`, `CaptureError`,
+  `VisTestWarning`, `CompareResult`, `Verdict`, `compare`. Everything else by
+  its full path; `vistest.CheckService` is an AttributeError that names it,
+  `from vistest import CheckService` Python's ImportError.
+  - `from vistest import VisTestConfig` → `from vistest.config import VisTestConfig`
+  - `from vistest import VisualTester, VisualMismatch` → `from vistest.runner import …`
+  - `from vistest import CheckService` → `from vistest.service import CheckService`
+  - `from vistest import visual_check, visual_session, VisualSession, VisualTestCase`
+    → `from vistest.integrations import …`
+  - `from vistest import FileStore, SnapshotKey, SnapshotMeta, SnapshotStore`
+    → `from vistest.storage import …`
+  - `from vistest import ChangeKind, DiffRegion` → `from vistest.models import …`
+
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 
 From the review of the library before it is shown to anyone (review v1); the
