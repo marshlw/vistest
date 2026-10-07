@@ -711,7 +711,11 @@ python run.py push                  upload runs made offline
 python run.py docker [up|test|down] run in a container
 ```
 
-`python -m vistest.cli` exposes the same commands plus `serve` and `user`.
+`vistest` (or `python -m vistest.cli`) exposes the same commands plus `serve`
+and `user`, and `vistest --help` lists them in two groups: the library's —
+`compare`, `check`, `bench`, `doctor`, `baselines export|import` — and the
+server's, which need `pip install "vistest[server]"`. A server command without
+it says so in one line and exits 2.
 
 ### Signing in through a corporate directory
 
