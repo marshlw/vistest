@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
@@ -68,20 +69,35 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--json", action="store_true", help="print result.json to stdout")
 
     ch = sub.add_parser(
-        "check", help="check a ready PNG against a baseline (for foreign tests)")
+        "check", help="check a PNG against its baseline, as expect_screenshot does: "
+                      "exit 0 matches, 1 differs, 2 no baseline yet",
+        description="Check a ready PNG against its baseline — expect_screenshot "
+                    "from any language. Without a server: the library's layout "
+                    "(tests/__vistest__), the same rules for the name and the "
+                    "platform; exit 0 when it matches, 1 when it differs, 2 when "
+                    "there is no baseline yet (--update writes it). With --api, "
+                    "or a server configured (VISTEST_API_URL, service.api_url), "
+                    "the server's layout and its options.")
     ch.add_argument("name", help="snapshot name, e.g. checkout.png")
-    ch.add_argument("image", help="path to the actual screenshot")
-    ch.add_argument("--frames", nargs="*", default=[],
-                    help="extra frames of the same page, to detect motion")
-    ch.add_argument("--dom", help="DOM snapshot JSON")
-    ch.add_argument("--platform", help="platform key; defaults to the current OS")
-    ch.add_argument("--browser", default="chromium")
-    ch.add_argument("--run-key", help="groups checks into one run")
-    ch.add_argument("--update", action="store_true", help="overwrite the baseline")
-    ch.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="override a threshold, e.g. --set fail_severity=40")
-    ch.add_argument("--json", action="store_true")
-    ch.add_argument("--api", help="check through the service instead of locally")
+    ch.add_argument("actual", metavar="ACTUAL", help="path to the actual screenshot (PNG)")
+    ch.add_argument("--baselines", metavar="DIR",
+                    help="where the baselines are (tests/__vistest__ by default, "
+                         "__vistest__ without a tests/ folder)")
+    ch.add_argument("--platform", help="the platform directory of the baseline, e.g. "
+                                       "chromium-1440x900; none by default")
+    ch.add_argument("--update", action="store_true",
+                    help="accept the picture as the baseline when it is missing or differs")
+    ch.add_argument("--json", action="store_true",
+                    help="print one JSON object: verdict, message, baseline, actual, diff")
+    server = ch.add_argument_group("the server's (with --api or a configured server)")
+    server.add_argument("--api", help="check through this service, in its layout")
+    server.add_argument("--frames", nargs="*", default=[],
+                        help="extra frames of the same page, to detect motion")
+    server.add_argument("--dom", help="DOM snapshot JSON")
+    server.add_argument("--browser", default=None, help="chromium by default")
+    server.add_argument("--run-key", help="groups checks into one run")
+    server.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                        help="override a threshold, e.g. --set fail_severity=40")
 
     sn = sub.add_parser("snap", help="capture baselines by URL, without writing a test")
     sn.add_argument("url", nargs="?", help="page address")
@@ -705,10 +721,14 @@ def _compare(args) -> int:
 
 
 def _check(args) -> int:
-    """Проверка готового PNG — точка подключения тестов на любом языке.
+    """`vistest check NAME ACTUAL` — the library's check, or the server's.
 
-    Работает и локально (движок в этом же процессе), и через сервис (--api),
-    результат в обоих случаях одинаковый: код возврата 0 — прошло, 1 — регресс.
+    Without a server it is `expect_screenshot` on a file (review v1, R4): the
+    library's layout, its rules for the name and the platform, and a first
+    run without a baseline is a failure (exit 2), not a baseline written with
+    exit 0, which it used to be — in the server's layout, which a library
+    project does not read. With `--api` or a configured server it goes to
+    that server, which keeps its own layout and options.
     """
     overrides = _parse_set(args.set)
     from .config import V1_REMOVED, ConfigError
@@ -717,51 +737,103 @@ def _check(args) -> int:
         if key in overrides:
             raise ConfigError(f"--set {key}: {V1_REMOVED}")
 
-    if args.api:
+    api = args.api or VisTestConfig.load().service.api_url
+    if api:
+        if _needs_server("check"):
+            return 2
+        args.api = api
         return _check_via_api(args, overrides)
 
-    from .capture.playwright_capture import read_png
-    from .service import CheckService
+    server_only = [flag for flag, used in (
+        ("--frames", args.frames), ("--dom", args.dom), ("--browser", args.browser),
+        ("--run-key", args.run_key), ("--set", args.set)) if used]
+    if server_only:
+        print(f"vistest check: {', '.join(server_only)} is the server's — pass --api URL "
+              "or configure one (VISTEST_API_URL); without a server the check takes "
+              "NAME ACTUAL [--baselines DIR] [--platform P] [--update] [--json]",
+              file=sys.stderr)
+        return 2
+    return _check_library(args)
 
-    cfg = VisTestConfig.load()
-    run_dir = cfg.runs_path() / (args.run_key or "cli")
-    svc = CheckService(cfg, platform=args.platform, browser=args.browser,
-                       run_dir=run_dir)
 
-    frames = [read_png(args.image)] + [read_png(f) for f in args.frames]
-    dom = json.loads(Path(args.dom).read_text("utf-8")) if args.dom else None
+def _check_library(args) -> int:
+    """`expect_screenshot(ACTUAL, NAME)` with a context made of the flags."""
+    import warnings
 
-    res = svc.check(
-        args.name, frames[0],
-        frames=frames if len(frames) > 1 else None,
-        dom=dom,
-        diff_overrides=overrides or None,
-        update_baseline=args.update or None,
-    )
+    from . import expect_screenshot
+    from .config import env_text
+    from .library import context as _context
+    from .library.errors import BaselineMissing, ScreenshotMismatch
 
+    baselines = args.baselines or env_text("VISTEST_BASELINES")
+    root = Path.cwd()
+    ctx = _context.LibraryContext(
+        root=root, baselines=(root / baselines) if baselines else None,
+        platform_override=args.platform or env_text("VISTEST_PLATFORM"),
+        update="changed" if args.update else None)
+    _context.install(ctx)
+    started = time.time()
+    try:
+        with warnings.catch_warnings():
+            #  The library says these once per process; here they go to stderr,
+            #  so that --json keeps one object on stdout.
+            warnings.simplefilter("default")
+            try:
+                result = expect_screenshot(Path(args.actual), args.name)
+            except BaselineMissing as e:
+                verdict, code, message, files = "missing", 2, str(e), e.artifacts
+            except ScreenshotMismatch as e:
+                verdict, code, message, files = "fail", 1, str(e), e.artifacts
+            except (TypeError, ValueError) as e:
+                if not str(e).startswith("expect_screenshot"):
+                    raise
+                print(f"vistest check: {str(e).removeprefix('expect_screenshot: ')}",
+                      file=sys.stderr)
+                return 2
+            else:
+                files = _row_images(ctx, started)
+                if result.verdict.value == "new_baseline":
+                    verdict, code = "new_baseline", 0
+                    message = f"vistest: {args.name!r} accepted as the baseline (--update)"
+                else:
+                    verdict, code = "pass", 0
+                    message = f"vistest: {args.name!r} matches its baseline"
+    finally:
+        _context.uninstall()
+
+    out = {"verdict": verdict, "message": message,
+           "baseline": files.get("baseline"), "actual": files.get("actual"),
+           "diff": files.get("diff")}
     if args.json:
-        print(res.to_json())
+        print(json.dumps(out, ensure_ascii=False))
     else:
-        print(res.summary() if res.failed else
-              f"{res.verdict.value}: {res.name}"
-              + (f"  severity={res.max_severity:.1f}" if res.regions else ""))
-        for n in res.notes:
-            print(f"  note: {n}")
-        if res.artifacts.get("boxes"):
-            print(f"  markup: {res.artifacts['boxes']}")
-    return 1 if res.failed else 0
+        print(message)
+    return code
+
+
+def _row_images(ctx, since: float) -> dict:
+    """The files of the check that just ran, from the row it left for the report."""
+    rows = []
+    for part in ctx.parts_dir.glob("*.json"):
+        try:
+            if part.stat().st_mtime >= since - 1:
+                rows.append(json.loads(part.read_text("utf-8")))
+        except (OSError, ValueError):
+            continue
+    rows.sort(key=lambda r: str(r.get("written_at") or ""))
+    return dict(rows[-1].get("images") or {}) if rows else {}
 
 
 def _check_via_api(args, overrides: dict) -> int:
     import requests
 
-    files = [("image", (Path(args.image).name, open(args.image, "rb"), "image/png"))]
+    files = [("image", (Path(args.actual).name, open(args.actual, "rb"), "image/png"))]
     for f in args.frames:
         files.append(("frames", (Path(f).name, open(f, "rb"), "image/png")))
     if args.dom:
         files.append(("dom", ("dom.json", open(args.dom, "rb"), "application/json")))
 
-    data = {"name": args.name, "browser": args.browser}
+    data = {"name": args.name, "browser": args.browser or "chromium"}
     for key, val in (("platform", args.platform), ("run_key", args.run_key)):
         if val:
             data[key] = val

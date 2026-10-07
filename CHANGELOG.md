@@ -87,6 +87,17 @@ was no public release that promised it. Each line is what to write instead.
     No module named 'fastapi'` (or ran on the library's layout and found
     nothing, like `vistest list`) → one line, `pip install "vistest[server]"`,
     exit 2; `vistest check --api` too
+- **`vistest check NAME ACTUAL` without a server is `expect_screenshot` on a
+  file** (review v1, R4, 3.2) — the library's layout and rules, the contract the
+  JS wrapper will stand on: exit 0 matches, 1 differs, 2 no baseline yet;
+  `--update` accepts; `--json` prints one object (`verdict`, `message`,
+  `baseline`, `actual`, `diff`).
+  - it wrote into the server's `.vistest/baselines/<os>-chromium-1x/` and
+    created a baseline on the first run with exit 0 → `tests/__vistest__/`
+    (`--baselines DIR`, `--platform P`), and the first run is exit 2
+  - `vistest check NAME IMAGE` in the server's layout → `--api URL`, or a
+    server configured with `VISTEST_API_URL` / `service.api_url`; `--frames`,
+    `--dom`, `--browser`, `--run-key` and `--set` without one are refused
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 
