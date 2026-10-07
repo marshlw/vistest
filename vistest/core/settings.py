@@ -313,7 +313,7 @@ class CaptureConfig:
     # identical, as Playwright's `toHaveScreenshot()` does, for at most this
     # long. Five seconds is Playwright's default. 0 turns the loop off: one
     # frame, and nobody claims it held still. `expect_screenshot(...,
-    # stable_timeout_ms=...)` overrides it for one check.
+    # timeout_ms=...)` cuts it for one check, with the rest of the check.
     stable_timeout_ms: int = 5000
 
     # Before the frames: is the page ready? (capture/ready.py) — loaded, fonts
@@ -336,21 +336,22 @@ class CaptureConfig:
     # beacon, a stream the page never waits for itself. Example:
     # ["*/api/poll*", "https://www.google-analytics.com/*"].
     ignore_requests: tuple[str, ...] = ()
-    # Both halves at once: the pointer off the page and the focus off whatever
-    # has it, before the picture (the service's `reset_hover_focus`, and the
-    # library's when set: the same as `blur_focus` with the pointer away).
-    # `expect_screenshot(..., reset_hover_focus=True)` for one check.
+    # The service's: the pointer off the page and the focus off whatever has
+    # it, before the picture. The library does not read it — it has the two
+    # halves below, by name (review v1, 1.1).
     reset_hover_focus: bool = False
     # The pointer is moved off the page before the picture of the library
     # (`expect_screenshot`) so that no element is under it; `keep_pointer`
     # leaves it where the test put it — for a hover captured on purpose.
-    # `blur_focus` takes the focus off whatever has it; off by default.
+    # `blur_focus` takes the focus off whatever has it; off by default. Both
+    # can be given to one check in the call.
     keep_pointer: bool = False
     blur_focus: bool = False
-    # Window shots (not full_page): the baseline's passport keeps where the
-    # window was scrolled; the picture is taken from there and the window is
-    # put back after. Off: the window is photographed where the test left it.
-    restore_scroll: bool = True
+    # Library, window shots (not full_page): the baseline's passport keeps
+    # where the window was scrolled; the picture is taken from there and the
+    # window is put back after. Off: the window is photographed where the test
+    # left it. Called `restore_scroll` until 0.2.0.dev3.
+    match_baseline_scroll: bool = True
 
     freeze_css: bool = True
     hide_scrollbars: bool = True

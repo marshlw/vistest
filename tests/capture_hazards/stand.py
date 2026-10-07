@@ -129,9 +129,10 @@ HAZARDS: tuple[Hazard, ...] = (
     Hazard("spinning_logo", "logo",
            "a static page with a decorative mark that turns for ever; no request"),
     Hazard("hover_focus_reset", "hover",
-           "hover_focus, photographed with the option that moves the pointer away and "
-           "takes the focus off", step="hover_focus",
-           call=(("reset_hover_focus", True),)),
+           "hover_focus, photographed with the options that move the pointer away and "
+           "take the focus off (reset_hover_focus=True until 0.2.0.dev3)",
+           step="hover_focus",
+           call=(("keep_pointer", False), ("blur_focus", True))),
     #  Added in dev2 (the addendum to the pre-registration, DEV2_PREREG.md).
     Hazard("chained", "chained",
            "request A, at its answer the same spinner and request B, at its answer a "

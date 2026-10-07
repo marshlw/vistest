@@ -57,6 +57,14 @@ def accept(ctx, target, name="page.png", **kw):
         ctx.update = False
 
 
+def capture_cfg(ctx, **kw) -> None:
+    """vistest.yaml's `capture:` for this context: the limits are not the call's
+    since 0.2.0.dev3 (review v1, R8)."""
+    from dataclasses import replace
+
+    ctx._config = replace(ctx.config, capture=replace(ctx.config.capture, **kw))
+
+
 def rows(ctx) -> list[dict]:
     """The report rows written so far, oldest first."""
     found = [json.loads(p.read_text("utf-8")) for p in ctx.parts_dir.glob("*.json")]
@@ -213,8 +221,9 @@ def test_an_unsettled_page_is_compared_on_its_last_frame_and_says_so(ctx):
             return png
 
     page = Moving(frame(0))
+    capture_cfg(ctx, stable_timeout_ms=400)
     try:
-        result = expect_screenshot(page, "page.png", stable_timeout_ms=400)
+        result = expect_screenshot(page, "page.png")
         notes = result.notes
     except ScreenshotMismatch as e:
         notes = e.result.notes
@@ -236,8 +245,9 @@ def test_an_unsettled_failure_carries_the_line_in_the_exception(ctx):
         def screenshot(self, **kwargs):
             return frame(140 + next(counter) % 100)
 
+    capture_cfg(ctx, stable_timeout_ms=300)
     with pytest.raises(ScreenshotMismatch) as e:
-        expect_screenshot(Moving(frame(0)), "page.png", stable_timeout_ms=300)
+        expect_screenshot(Moving(frame(0)), "page.png")
     assert "did not settle" in str(e.value)
 
 
@@ -248,12 +258,13 @@ def test_accepting_an_unsettled_frame_warns(ctx):
         def screenshot(self, **kwargs):
             return frame(next(counter))
 
+    capture_cfg(ctx, stable_timeout_ms=300)
     with pytest.warns(Warning, match="did not settle"):
-        accept(ctx, Moving(frame(0)), stable_timeout_ms=300)
+        accept(ctx, Moving(frame(0)))
 
 
 # --------------------------------------------------------------------------- #
-#  The time limit: the call, the config, and nonsense in either
+#  The time limit: the config, the call's deadline, and nonsense in either
 # --------------------------------------------------------------------------- #
 def test_the_limit_comes_from_the_config(tmp_path, monkeypatch):
     (tmp_path / "vistest.yaml").write_text(
@@ -269,8 +280,8 @@ def test_the_limit_comes_from_the_config(tmp_path, monkeypatch):
         _context.uninstall()
 
 
-def test_the_call_beats_the_config(ctx):
-    accept(ctx, FakePage(frame()), stable_timeout_ms=777)
+def test_the_calls_deadline_cuts_the_configs_limit(ctx):
+    accept(ctx, FakePage(frame()), timeout_ms=777)
     assert rows(ctx)[-1]["capture"]["timeout_ms"] == 777
 
 
@@ -297,8 +308,8 @@ def test_a_misspelt_key_is_loud(tmp_path):
 @pytest.mark.parametrize("value, error", [(-5, ValueError), ("1s", TypeError),
                                           (1.5, TypeError)])
 def test_a_bad_limit_in_the_call_is_refused(ctx, value, error):
-    with pytest.raises(error, match="stable_timeout_ms"):
-        expect_screenshot(FakePage(frame()), "page.png", stable_timeout_ms=value)
+    with pytest.raises(error, match="timeout_ms"):
+        expect_screenshot(FakePage(frame()), "page.png", timeout_ms=value)
 
 
 def test_an_unknown_scale_is_refused(ctx):
@@ -417,20 +428,21 @@ def test_a_bare_screenshot_of_this_page_really_does_move(page):
 #  The animated page spins for ever: by the loader rule (capture/ready.py) that
 #  is a page still loading, and the readiness wait would hold each check for
 #  its whole limit. The frames are what these tests are about; the wait gets a
-#  short limit here, and has tests of its own below.
+#  short limit here (`capture.ready_timeout_ms`), and has tests of its own below.
 SHORT = {"ready_timeout_ms": 300}
 
 
 def test_css_animation_and_a_blinking_caret_give_a_stable_frame(ctx, page):
     page.set_content(ANIMATED_PAGE)
     page.focus("#field")
-    accept(ctx, page, "animated.png", **SHORT)
+    capture_cfg(ctx, **SHORT)
+    accept(ctx, page, "animated.png")
     first = rows(ctx)[-1]["capture"]
     assert first["stable"] is True, first
 
     for _ in range(3):
         page.wait_for_timeout(130)            # a different moment of every cycle
-        result = expect_screenshot(page, "animated.png", **SHORT)
+        result = expect_screenshot(page, "animated.png")
         assert result.verdict.value == "pass"
         captured = rows(ctx)[-1]["capture"]
         assert captured["stable"] is True and captured["frames"] == 2, captured
@@ -438,11 +450,12 @@ def test_css_animation_and_a_blinking_caret_give_a_stable_frame(ctx, page):
 
 def test_a_restless_page_is_judged_on_its_last_frame_and_says_so(ctx, page):
     page.set_content(RESTLESS_PAGE)
+    capture_cfg(ctx, stable_timeout_ms=600, **SHORT)
     with pytest.warns(Warning, match="did not settle"):
-        accept(ctx, page, "restless.png", stable_timeout_ms=600, **SHORT)
+        accept(ctx, page, "restless.png")
 
     try:
-        expect_screenshot(page, "restless.png", stable_timeout_ms=600, **SHORT)
+        expect_screenshot(page, "restless.png")
     except ScreenshotMismatch as e:
         assert "did not settle" in str(e)
     row = rows(ctx)[-1]
@@ -454,16 +467,18 @@ def test_a_restless_page_is_judged_on_its_last_frame_and_says_so(ctx, page):
 
 def test_a_locator_is_photographed_the_same_way(ctx, page):
     page.set_content(ANIMATED_PAGE)
-    accept(ctx, page.locator(".spinner"), "spinner.png", **SHORT)
+    capture_cfg(ctx, **SHORT)
+    accept(ctx, page.locator(".spinner"), "spinner.png")
     page.wait_for_timeout(170)
-    assert expect_screenshot(page.locator(".spinner"), "spinner.png",
-                             **SHORT).verdict.value == "pass"
+    assert expect_screenshot(page.locator(".spinner"),
+                             "spinner.png").verdict.value == "pass"
 
 
 def test_missing_baseline_still_raises_with_a_live_page(ctx, page):
     page.set_content(ANIMATED_PAGE)
+    capture_cfg(ctx, **SHORT)
     with pytest.raises(BaselineMissing):
-        expect_screenshot(page, "nothing-yet.png", **SHORT)
+        expect_screenshot(page, "nothing-yet.png")
 
 
 # --------------------------------------------------------------------------- #
@@ -536,7 +551,8 @@ def test_a_decoration_is_not_waited_for(ctx, page):
 def test_a_loader_that_never_goes_away_is_given_up_and_said(ctx, page_only):
     page = page_only
     page.set_content(ANIMATED_PAGE)
-    accept(ctx, page, "forever.png", ready_timeout_ms=300)
+    capture_cfg(ctx, ready_timeout_ms=300)
+    accept(ctx, page, "forever.png")
     row = rows(ctx)[-1]
     assert row["capture"]["ready"]["ok"] is False
     assert "still showing a loader after 300 ms" in row["reason"]
@@ -549,7 +565,8 @@ def test_with_requests_counted_a_spinner_over_no_request_does_not_hold_it(ctx, p
 
     inflight.track(page.context)
     page.set_content(ANIMATED_PAGE)
-    accept(ctx, page, "forever.png", ready_timeout_ms=300)
+    capture_cfg(ctx, ready_timeout_ms=300)
+    accept(ctx, page, "forever.png")
     ready = rows(ctx)[-1]["capture"]["ready"]
     assert ready["ok"] is True and ready["path"] == "requests", ready
     assert "div.spinner" in ready["guessed"]

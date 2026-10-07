@@ -365,13 +365,16 @@ class Readiness:
     def failed_steps(self) -> list[Step]:
         return [s for s in self.steps if s.ok is False]
 
+    def waited(self) -> str:
+        """What the page kept the wait waiting for, in words; empty when nothing."""
+        return "; ".join(_WORDS[s.name](s) for s in self.failed_steps())
+
     def text(self) -> str:
         """The words for a page that was not ready; empty when it was."""
-        bad = self.failed_steps()
-        if not bad:
+        waited = self.waited()
+        if not waited:
             return ""
-        parts = [_WORDS[s.name](s) for s in bad]
-        return ("the page was not ready within the limits: " + "; ".join(parts)
+        return ("the page was not ready within the limits: " + waited
                 + " — it was photographed as it was")
 
     def as_dict(self) -> dict:

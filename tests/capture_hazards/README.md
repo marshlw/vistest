@@ -64,7 +64,7 @@ the page — and comes from the seed (`stand.delay_ms`, 50–1500 ms).
 | `silent_fetch` | data by request after 300–1500 ms, with no sign that it is coming |
 | `after_click` | the test's click asks for data (50–1500 ms); `networkidle` has long passed |
 | `spinning_logo` | a static page with a decorative logo that turns for ever, named like nothing that loads: nothing to wait for |
-| `hover_focus_reset` | `hover_focus`, checked with `expect_screenshot(..., reset_hover_focus=True)` (Playwright has no such option: printed as `hover_focus`) |
+| `hover_focus_reset` | `hover_focus`, checked with `expect_screenshot(..., keep_pointer=False, blur_focus=True)` (`reset_hover_focus=True` until 0.2.0.dev3) (Playwright has no such option: printed as `hover_focus`) |
 | `chained` | request A, at its answer the same spinner and request B, at its answer a picture C answered late; between two requests nothing is in flight for a few ms |
 | `modal_scroll` | a long page whose blocks arrive 30–130 ms after load; the test's click on the button at the bottom opens a modal; how far the page was scrolled depends on which answer came first; the signal variant is a change in the background under the modal |
 

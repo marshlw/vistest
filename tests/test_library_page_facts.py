@@ -63,6 +63,14 @@ def page(chromium):
     context.close()
 
 
+def capture_cfg(ctx, **kw) -> None:
+    """vistest.yaml's `capture:` for this context (the limits left the call in
+    0.2.0.dev3, review v1 R8)."""
+    from dataclasses import replace
+
+    ctx._config = replace(ctx.config, capture=replace(ctx.config.capture, **kw))
+
+
 def accept(ctx, target, name, **kw):
     ctx.update = True
     try:
@@ -118,15 +126,16 @@ def test_a_focus_left_by_the_previous_step_is_named(ctx, page):
     assert "blur_focus=True" in str(e.value)
 
 
-def test_the_option_moves_the_pointer_away_and_takes_the_focus_off(ctx, page):
+def test_the_two_switches_move_the_pointer_away_and_take_the_focus_off(ctx, page):
+    """What `reset_hover_focus=True` was, in the library's two words (review v1, 1.1)."""
     page.set_content(BUTTONS)
-    accept(ctx, page, "buttons.png", reset_hover_focus=True)
+    accept(ctx, page, "buttons.png", keep_pointer=False, blur_focus=True)
     page.hover("#save")
-    assert expect_screenshot(page, "buttons.png",
-                             reset_hover_focus=True).verdict.value == "pass"
+    assert expect_screenshot(page, "buttons.png", keep_pointer=False,
+                             blur_focus=True).verdict.value == "pass"
     page.focus("#q")
-    assert expect_screenshot(page, "buttons.png",
-                             reset_hover_focus=True).verdict.value == "pass"
+    assert expect_screenshot(page, "buttons.png", keep_pointer=False,
+                             blur_focus=True).verdict.value == "pass"
 
 
 def test_a_hover_photographed_on_purpose_still_works(ctx, page):
@@ -216,10 +225,11 @@ CANVAS = """<!doctype html><html><body style="margin:0">
 
 def test_a_canvas_a_script_redraws_is_named_and_why_css_does_not_stop_it(ctx, page):
     page.set_content(CANVAS)
+    capture_cfg(ctx, stable_timeout_ms=600)
     with pytest.warns(Warning):
-        accept(ctx, page, "canvas.png", stable_timeout_ms=600)
+        accept(ctx, page, "canvas.png")
     with pytest.raises(ScreenshotMismatch) as e:
-        expect_screenshot(page, "canvas.png", stable_timeout_ms=600)
+        expect_screenshot(page, "canvas.png")
     text = str(e.value)
     assert 'mask=["#anim"]' in text and 'animations="disabled"' in text
 
@@ -489,8 +499,9 @@ def test_the_window_scroll_can_be_switched_off(ctx, page):
     page.evaluate("() => window.scrollTo(0, 650)")
     accept(ctx, page, "window.png")
     page.evaluate("() => window.scrollTo(0, 100)")
+    capture_cfg(ctx, match_baseline_scroll=False)
     with pytest.raises(ScreenshotMismatch):
-        expect_screenshot(page, "window.png", restore_scroll=False)
+        expect_screenshot(page, "window.png")
     assert page.evaluate("() => window.scrollY") == 100
 
 
