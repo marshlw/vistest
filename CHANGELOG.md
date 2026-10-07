@@ -98,6 +98,11 @@ was no public release that promised it. Each line is what to write instead.
   - `vistest check NAME IMAGE` in the server's layout → `--api URL`, or a
     server configured with `VISTEST_API_URL` / `service.api_url`; `--frames`,
     `--dom`, `--browser`, `--run-key` and `--set` without one are refused
+- **The CLI and the matrix speak English** (review v1, 3.5): the help of
+  `snap --matrix/--browsers/--viewports` and of `matrix`, the output of
+  `vistest matrix` and the errors of `matrix:` in vistest.yaml were Russian →
+  English; for one, `window size '1440*900' is not WIDTHxHEIGHT, for example
+  1440x900`
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 

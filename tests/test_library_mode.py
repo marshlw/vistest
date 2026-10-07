@@ -112,10 +112,12 @@ def run(project: Path, *args: str, state: str = "before"):
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT), *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])])
     env["DEMO_STATE"] = state
+    #  Written and read as UTF-8 whatever the console's code page (review A2).
+    env["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, "-m", "pytest", *PLUGIN_ARGS,
          "-p", "no:cacheprovider", "-q", *args],
-        cwd=project, env=env, capture_output=True, text=True, timeout=300)
+        cwd=project, env=env, capture_output=True, encoding="utf-8", timeout=300)
     return completed.returncode, completed.stdout + completed.stderr
 
 
