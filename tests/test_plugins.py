@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import sys
 from dataclasses import dataclass
 
 import numpy as np
@@ -670,6 +671,36 @@ def test_one_plugins_failure_does_not_block_another(core_db):
         reg.add_migrations(["CREATE TABLE ext_good_t (id INTEGER)"])
     outcome = migrations.apply_all(core_db.path, reg)
     assert outcome["good"] == 1 and outcome["bad"].startswith("failed")
+
+
+@pytest.mark.parametrize("none_clears", [True, False], ids=["py3.11+", "py3.10"])
+def test_after_a_plugins_steps_the_core_statements_are_allowed(core_db, monkeypatch,
+                                                                none_clears):
+    """The authorizer comes off before the version row and the COMMIT (or the
+    ROLLBACK). On 3.10 `set_authorizer(None)` does not clear it — None became
+    the callback and every statement after it was "not authorized" — so there
+    an authorizer that allows everything stands in. Both ways are run on any
+    Python the second can run on."""
+    if none_clears and sys.version_info < (3, 11):
+        pytest.skip("set_authorizer(None) clears the authorizer from Python 3.11")
+    monkeypatch.setattr(migrations, "_NONE_CLEARS", none_clears)
+    reg = PluginRegistry()
+    with reg.registering("broken"):
+        reg.add_migrations(["CREATE TABLE ext_broken_a (id INTEGER)",
+                            "CREATE TABLE ext_broken_a (id INTEGER)"])
+    with reg.registering("good"):
+        reg.add_migrations(["CREATE TABLE ext_good_t (id INTEGER)"])
+    outcome = migrations.apply_all(core_db.path, reg)
+    assert outcome["good"] == 1
+    assert migrations.version_of(core_db.path, "good") == 1
+    #  The step's own error, not a refused ROLLBACK in its place; and the
+    #  ROLLBACK did run: the first, valid step is gone.
+    assert outcome["broken"] == ("failed: OperationalError: "
+                                 "table ext_broken_a already exists"), outcome
+    assert migrations.version_of(core_db.path, "broken") == 0
+    tables = {r["name"] for r in core_db.query(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "ext_good_t" in tables and "ext_broken_a" not in tables
 
 
 # --------------------------------------------------------------------------- #

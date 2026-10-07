@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import sys
 from collections.abc import Sequence
 from typing import Any
 
@@ -87,6 +88,29 @@ def _authorizer(prefix: str):
     return check
 
 
+#  `set_authorizer(None)` takes the authorizer off only from Python 3.11.
+_NONE_CLEARS = sys.version_info >= (3, 11)
+
+
+def _allow_everything(*_args) -> int:
+    return sqlite3.SQLITE_OK
+
+
+def _lift_authorizer(conn: sqlite3.Connection) -> None:
+    """Take the plugin's authorizer off ``conn``: the core's statements follow.
+
+    ``set_authorizer(None)`` clears it only from Python 3.11. On 3.10 the None
+    is stored as the callback, calling it fails, and SQLite takes that for a
+    refusal — every statement after it, ``COMMIT`` and ``ROLLBACK`` included,
+    is "not authorized". There an authorizer that allows everything does the
+    same job.
+    """
+    if _NONE_CLEARS:
+        conn.set_authorizer(None)
+    else:
+        conn.set_authorizer(_allow_everything)
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plugin_schema_version (
   plugin     TEXT PRIMARY KEY,
@@ -138,7 +162,7 @@ def apply_one(path: str, plugin: str, steps: Sequence[str]) -> int:
             conn.set_authorizer(_authorizer(table_prefix(plugin)))
             for step in steps[found:]:
                 conn.execute(step)
-            conn.set_authorizer(None)
+            _lift_authorizer(conn)
             conn.execute(
                 "INSERT INTO plugin_schema_version(plugin, version, updated_at)"
                 " VALUES(?, ?, datetime('now'))"
@@ -146,7 +170,7 @@ def apply_one(path: str, plugin: str, steps: Sequence[str]) -> int:
                 " updated_at=excluded.updated_at", (plugin, len(steps)))
             conn.execute("COMMIT")
         except BaseException:
-            conn.set_authorizer(None)
+            _lift_authorizer(conn)
             conn.execute("ROLLBACK")
             raise
         return len(steps)
