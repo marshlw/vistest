@@ -96,10 +96,125 @@ def tree_hash(root: Path) -> dict[str, str]:
             for p in sorted(root.rglob("*")) if p.is_file()}
 
 
-def pytest_tail(out: str) -> str:
-    """The last line of a pytest run — `3 passed in 4.1s` — for the log."""
-    lines = [ln for ln in out.strip().splitlines() if ln.strip()]
-    return lines[-1] if lines else "(no output)"
+def junit_cases(path: Path) -> list[tuple[str, str, str]]:
+    """(test, outcome, exception) for every test case of a pytest JUnit XML report.
+
+    `outcome` is passed, failed, error or skipped; `exception` the qualified
+    name of what a failed test raised (`vistest.library.errors.BaselineMissing`),
+    '' otherwise. The outcomes are read from the report, not from pytest's
+    terminal output: how often a message appears there depends on the width
+    of the terminal — on a wide one the short summary repeats it in full —
+    and counting lines of text counted that width (review A2).
+    """
+    import xml.etree.ElementTree as ET
+
+    cases = []
+    for case in ET.parse(path).getroot().iter("testcase"):
+        outcome, exception = "passed", ""
+        for kind in ("failure", "error", "skipped"):
+            found = case.find(kind)
+            if found is None:
+                continue
+            outcome = {"failure": "failed", "error": "error", "skipped": "skipped"}[kind]
+            if kind != "skipped":
+                exception = (found.get("message") or "").split(":", 1)[0].strip()
+            break
+        cases.append((case.get("name") or "?", outcome, exception))
+    return cases
+
+
+def example_outcomes(py, examples: Path, project: Path, env: dict) -> None:
+    """Step 6: the library's example, as a project has it, four times.
+
+    Red with `BaselineMissing` for every test and nothing written;
+    `--vistest-update` green, one baseline per test under `tests/__vistest__/`;
+    green with the baselines untouched; after a change in the demo page's style
+    sheet, red with `ScreenshotMismatch` for every test, baselines untouched.
+    Raises `Failed` with the run's last lines when an outcome is not that.
+    """
+    if project.exists():
+        shutil.rmtree(project)
+    tests = project / "tests"
+    tests.mkdir(parents=True)
+    for name in (EXAMPLE, DEMO_PAGE):
+        shutil.copy2(examples / name, tests / name)
+    #  A project has a configuration file, and that makes its root pytest's
+    #  rootdir: the baselines then go where the README says they go.
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "check-install"\nversion = "0"\n\n'
+        "[tool.pytest.ini_options]\n", encoding="utf-8")
+    base = tests / "__vistest__"
+    report = project / "junit.xml"
+
+    def pictures() -> list[Path]:
+        return sorted(p for p in base.rglob("*.png") if ".renderers" not in p.parts) \
+            if base.is_dir() else []
+
+    def ran(*extra: str) -> tuple[list[tuple[str, str, str]], str]:
+        report.unlink(missing_ok=True)
+        done = run([py, "-m", "pytest", f"tests/{EXAMPLE}", "-q", "-p", "no:cacheprovider",
+                    f"--junitxml={report}", *extra], cwd=project, env=env, timeout=900)
+        out = (done.stdout or "") + (done.stderr or "")
+        if not report.is_file():
+            raise Failed(f"pytest wrote no report (exit {done.returncode}):\n{out[-800:]}")
+        return junit_cases(report), out
+
+    def each(cases, outcome: str, exception: str = "") -> bool:
+        return bool(cases) and all(o == outcome and (not exception or e.endswith(exception))
+                                   for _, o, e in cases)
+
+    def counted(cases) -> str:
+        tally: dict[str, int] = {}
+        for _, outcome, exception in cases:
+            key = outcome + (f" ({exception.rsplit('.', 1)[-1]})" if exception else "")
+            tally[key] = tally.get(key, 0) + 1
+        return ", ".join(f"{n} {k}" for k, n in tally.items())
+
+    cases, out = ran()
+    if not each(cases, "failed", "BaselineMissing"):
+        raise Failed("the first run, with no baselines, was not red with BaselineMissing "
+                     f"for every test ({counted(cases)}):\n{out[-800:]}")
+    if pictures():
+        raise Failed("the first run wrote baselines without --vistest-update: "
+                     + ", ".join(str(p) for p in pictures()[:5]))
+    tests_n = len(cases)
+    print(f"  1. no baselines    : {counted(cases)}")
+
+    cases, out = ran("--vistest-update")
+    if not each(cases, "passed"):
+        raise Failed(f"--vistest-update did not end green ({counted(cases)}):\n{out[-800:]}")
+    written = pictures()
+    if len(written) != tests_n:
+        raise Failed(f"--vistest-update wrote {len(written)} baselines under {base}, "
+                     f"expected {tests_n}, one per test:\n{out[-800:]}")
+    said = re.search(r"baselines written to (.+?) — commit them", out)
+    if not said or Path(said.group(1)).resolve() != base.resolve():
+        raise Failed(f"the run did not say it wrote the baselines to {base}:\n" + out[-800:])
+    before = tree_hash(base)
+    shown = ", ".join(str(p.relative_to(project)).replace("\\", "/") for p in written)
+    print(f"  2. --vistest-update: {counted(cases)} — {shown}")
+
+    cases, out = ran()
+    if not each(cases, "passed"):
+        raise Failed(f"the run after --vistest-update did not end green ({counted(cases)}):"
+                     f"\n{out[-800:]}")
+    if tree_hash(base) != before:
+        raise Failed("the green run changed the baselines it compared with")
+    print(f"  3. compared        : {counted(cases)} — baselines untouched")
+
+    page = tests / DEMO_PAGE
+    html = page.read_text(encoding="utf-8")
+    old, new = DEMO_CHANGE
+    if old not in html:
+        raise Failed(f"{DEMO_PAGE} no longer has {old!r} to change")
+    page.write_text(html.replace(old, new), encoding="utf-8")
+    cases, out = ran()
+    if not each(cases, "failed", "ScreenshotMismatch"):
+        raise Failed("a changed page did not turn every test red with ScreenshotMismatch "
+                     f"({counted(cases)}):\n{out[-800:]}")
+    if tree_hash(base) != before:
+        raise Failed("the red run changed the baselines it compared with")
+    print(f"  4. page changed    : {counted(cases)} — baselines untouched")
 
 
 def wheel_version(path: Path) -> str | None:
@@ -200,76 +315,7 @@ def main(argv=None) -> int:
         print("  --vistest-update is a pytest option: the pytest11 entry point works")
 
         step(f"6. examples/{EXAMPLE}: red, --vistest-update, green, changed page red")
-        project = work / "project"
-        if project.exists():
-            shutil.rmtree(project)
-        tests = project / "tests"
-        tests.mkdir(parents=True)
-        for name in (EXAMPLE, DEMO_PAGE):
-            shutil.copy2(args.examples / name, tests / name)
-        #  A project has a configuration file, and that makes its root pytest's
-        #  rootdir: the baselines then go where the README says they go.
-        (project / "pyproject.toml").write_text(
-            '[project]\nname = "check-install"\nversion = "0"\n\n'
-            "[tool.pytest.ini_options]\n", encoding="utf-8")
-        pytest = [py, "-m", "pytest", f"tests/{EXAMPLE}", "-q", "-p", "no:cacheprovider"]
-        base = tests / "__vistest__"
-
-        def pictures() -> list[Path]:
-            return sorted(base.rglob("*.png")) if base.is_dir() else []
-
-        def ran(extra: list[str]) -> tuple[int, str]:
-            done = run([*pytest, *extra], cwd=project, env=env, timeout=900)
-            return done.returncode, (done.stdout or "") + (done.stderr or "")
-
-        code, out = ran([])
-        missing = out.count("BaselineMissing: vistest: no baseline for")
-        if code == 0 or not missing:
-            raise Failed("the first run, with no baselines, was not red with "
-                         "BaselineMissing:\n" + out[-800:])
-        if pictures():
-            raise Failed("the first run wrote baselines without --vistest-update: "
-                         + ", ".join(str(p) for p in pictures()[:5]))
-        print(f"  1. no baselines   : {pytest_tail(out)} — BaselineMissing ×{missing}")
-
-        code, out = ran(["--vistest-update"])
-        if code != 0:
-            raise Failed(f"--vistest-update did not end green:\n{out[-800:]}")
-        written = [p for p in pictures() if ".renderers" not in p.parts]
-        if len(written) < missing:
-            raise Failed(f"--vistest-update wrote {len(written)} baselines under {base}, "
-                         f"expected {missing}:\n{out[-800:]}")
-        said = re.search(r"baselines written to (.+?) — commit them", out)
-        if not said or Path(said.group(1)).resolve() != base.resolve():
-            raise Failed(f"the run did not say it wrote the baselines to {base}:\n"
-                         + out[-800:])
-        before = tree_hash(base)
-        shown = ", ".join(str(p.relative_to(project)).replace("\\", "/")
-                          for p in written)
-        print(f"  2. --vistest-update: {pytest_tail(out)} — {shown}")
-
-        code, out = ran([])
-        if code != 0 or " failed" in out:
-            raise Failed(f"the run after --vistest-update did not end green:\n{out[-800:]}")
-        if tree_hash(base) != before:
-            raise Failed("the green run changed the baselines it compared with")
-        print(f"  3. compared       : {pytest_tail(out)} — baselines untouched")
-
-        page = tests / DEMO_PAGE
-        html = page.read_text(encoding="utf-8")
-        old, new = DEMO_CHANGE
-        if old not in html:
-            raise Failed(f"{DEMO_PAGE} no longer has {old!r} to change")
-        page.write_text(html.replace(old, new), encoding="utf-8")
-        code, out = ran([])
-        differs = out.count("ScreenshotMismatch: vistest:")
-        if code == 0 or not differs:
-            raise Failed("a changed page did not turn the run red with "
-                         "ScreenshotMismatch:\n" + out[-800:])
-        if tree_hash(base) != before:
-            raise Failed("the red run changed the baselines it compared with")
-        print(f"  4. page changed   : {pytest_tail(out)} — ScreenshotMismatch ×{differs}, "
-              "baselines untouched")
+        example_outcomes(py, args.examples, work / "project", env)
     except Failed as e:
         print(f"\nFAILED  {e}", file=sys.stderr)
         return 1
