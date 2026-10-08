@@ -30,7 +30,7 @@ jobs:
           VISTEST_IN_DOCKER: "1"
           VISTEST_PROJECT: ${{ github.repository }}
           VISTEST_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: pytest tests/ -v --vistest-preset balanced
+        run: pytest tests/ -v
         continue-on-error: true
 
       - name: Upload artifacts
