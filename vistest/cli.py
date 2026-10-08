@@ -487,20 +487,24 @@ def _safe_streams() -> None:
 
     On Windows a redirected stdout is in the ANSI code page (cp1252 and the
     like) unless PYTHONUTF8 is set, and `vistest compare` crashed on its first
-    «Δ» with UnicodeEncodeError. A character the stream cannot encode becomes
-    «?» instead; a stream that can is left alone.
+    «Δ» with UnicodeEncodeError. A character the stream cannot encode is
+    written the way `library/words.py` spells it there — «->» for «→», «dE»
+    for «ΔE» (review v1, item 9 of step C) — and anything else it has no
+    spelling for as «?»; a stream that can hold them is left alone.
     """
+    from .library.words import ERRORS
+
     for stream in (sys.stdout, sys.stderr):
         encoding = getattr(stream, "encoding", None)
         reconfigure = getattr(stream, "reconfigure", None)
         if not encoding or not callable(reconfigure):
             continue
         try:
-            "ΔE00 → — × «»".encode(encoding)
+            "ΔE00 → — × «» ≈".encode(encoding)
         except (UnicodeEncodeError, LookupError):
             try:
-                reconfigure(errors="replace")
-            except (ValueError, OSError):  # pragma: no cover - a closed stream
+                reconfigure(errors=ERRORS)
+            except (ValueError, OSError, LookupError):  # pragma: no cover - closed
                 pass
 
 

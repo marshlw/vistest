@@ -150,7 +150,7 @@ class BaselineMissing(VisualCheckError):
         lines += words.command("create it", accept)
         lines += words.labelled("", "then commit the file — in CI the baseline has to come "
                                     "from the repository, not from the run")
-        return cls("\n".join(lines),
+        return cls(words.console("\n".join(lines)),
                    artifacts={"baseline": str(baseline),
                               "actual": str(actual) if actual else ""})
 
@@ -220,7 +220,7 @@ class ScreenshotMismatch(VisualCheckError):
         if report is not None:
             lines.append(_path("report", report))
         lines += words.command("accept it", accept)
-        return cls("\n".join(lines), result=result,
+        return cls(words.console("\n".join(lines)), result=result,
                    artifacts={"baseline": str(baseline), "actual": str(actual),
                               "diff": str(diff) if diff else "",
                               "report": str(report) if report else ""})
