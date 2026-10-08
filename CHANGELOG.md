@@ -184,6 +184,10 @@ come out byte for byte the same. In the engine only the words of
   answering takes up to 1.5 s more, to say why — whether it still answers and
   whether its tab crashed is asked after the deadline. `timeout_ms=2000` on a
   page stuck in a loop raises in about 3.5 s, held under 3.7 s by a test.
+- **«→» and «Δ» on a console that cannot print them** (from A2; 9): on cp1252
+  — a Windows runner's pipe — they are written `->` and `dE`, in the failure
+  message under pytest and in every command's output; pytest used to print the
+  line as `\u2192` and the CLI as `?`.
 - **No line of a message is longer than 120 characters but a path**: the
   lines wrap under their label, never inside a bracket or around an arrow; a
   command to copy stays on one line.

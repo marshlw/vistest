@@ -22,14 +22,18 @@ The rules the words follow:
 * no word of the machinery: not «engine v2», not «rule», not «region»;
 * the color difference is one number per change, and its scale is said once
   per message (`SCALE`), not after every number;
-* one thing per line, at most `WIDTH` characters; only a path may be longer.
+* one thing per line, at most `WIDTH` characters; only a path may be longer;
+* «→» and «Δ» become «->» and «d» where the console cannot print them
+  (`console`), rather than «?» or `\\u2192`.
 """
 
 from __future__ import annotations
 
+import codecs
 import re
+import sys
 
-__all__ = ["SCALE", "WIDTH", "below", "category", "command", "counted",
+__all__ = ["SCALE", "WIDTH", "below", "category", "command", "console", "counted",
            "detail", "joined", "labelled", "limits_line", "limits_lines", "look", "reason",
            "region", "scale_for", "sentence", "suppressed", "suppressed_detail", "where",
            "wrap"]
@@ -411,3 +415,49 @@ def joined(parts: list[str], first: str = "  ", rest: str = "    ",
         text = y.lstrip(" ")
         out += wrap(text, y[:len(y) - len(text)], rest + "  ", width)
     return out
+
+
+# --------------------------------------------------------------------------- #
+#  A console that cannot print every character
+# --------------------------------------------------------------------------- #
+#: What a character becomes where the console's encoding has no place for it.
+FALLBACK = {"→": "->", "←": "<-", "Δ": "d", "≈": "~", "≥": ">=", "≤": "<=",
+            "−": "-", "×": "x", "—": "-", "–": "-", "…": "...", "«": '"', "»": '"',
+            "·": "-", "’": "'"}
+ERRORS = "vistest-fallback"
+
+
+def _fallback(error: UnicodeError):
+    if not isinstance(error, UnicodeEncodeError):
+        raise error
+    bad = error.object[error.start:error.end]
+    return "".join(FALLBACK.get(c, "?") for c in bad), error.end
+
+
+try:
+    codecs.lookup_error(ERRORS)
+except LookupError:
+    codecs.register_error(ERRORS, _fallback)
+
+
+def _encoding(stream=None) -> str:
+    stream = stream if stream is not None else (sys.__stdout__ or sys.stdout)
+    return str(getattr(stream, "encoding", None) or "utf-8")
+
+
+def console(text: str, stream=None) -> str:
+    """`text` as the console will print it: «→» as «->», «ΔE» as «dE» where the
+    console's encoding (cp1252 on a Windows runner) has no place for them.
+
+    The console is the one the process started with (`sys.__stdout__`): under
+    pytest `sys.stdout` is a capture that takes anything, and the message is
+    printed later through the real one.
+    """
+    encoding = _encoding(stream)
+    try:
+        text.encode(encoding)
+        return text
+    except UnicodeEncodeError:
+        return text.encode(encoding, errors=ERRORS).decode(encoding)
+    except LookupError:
+        return text
