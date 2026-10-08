@@ -60,6 +60,7 @@ jobs:
           pytest -q
           tests/test_core_*.py
           tests/test_library_*.py
+          tests/test_console_review_c.py
           tests/test_naming.py
           tests/test_warp.py
           tests/test_corpus_frozen.py
@@ -93,6 +94,7 @@ jobs:
           pytest -q
           tests/test_core_*.py
           tests/test_library_*.py
+          tests/test_console_review_c.py
           tests/test_naming.py
           tests/test_warp.py
           tests/test_corpus_frozen.py
