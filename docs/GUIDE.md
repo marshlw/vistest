@@ -2242,6 +2242,9 @@ reason, in seconds: every question to the page has a deadline, at most
 `2 × ready_timeout_ms + 3 × stable_timeout_ms + 15 s` for the whole check —
 or past `timeout_ms` when the call gives one: then the check spends at most
 that much on the page and raises `CaptureError` with what it was waiting for.
+A page that stopped answering takes up to 1.5 s more than that, to say why —
+whether it answers at all and whether its tab crashed is asked after the
+deadline: `timeout_ms=2000` on a page stuck in a loop raises in about 3.5 s.
 
 **Loader or decoration.** An endless animation in the area counts as a
 loader when its element (or one of two ancestors) is named like one — class,

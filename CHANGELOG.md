@@ -33,7 +33,9 @@ was no public release that promised it. Each line is what to write instead.
 - **The capture knobs of the call are two switches and one time limit**
   (review v1, R8 and 1.1): `keep_pointer`, `blur_focus` and `timeout_ms` — the
   time the whole check may spend on the page; past it, `CaptureError` saying
-  what it was waiting for.
+  what it was waiting for. A page that stopped answering takes up to 1.5 s
+  more, to say why (is it alive, did its tab crash): `timeout_ms=2000` on a
+  page stuck in a loop raises in about 3.5 s.
   - `stable_timeout_ms=N`, `ready_timeout_ms=N` in the call →
     `capture.stable_timeout_ms`, `capture.ready_timeout_ms` in vistest.yaml;
     for one check, `timeout_ms=N` (both limits are cut to it)
@@ -175,6 +177,13 @@ come out byte for byte the same. In the engine only the words of
   `vistest check: warning: byte targets have no platform: baselines go to the
   root; pass --platform if they vary by machine` — not Python's warning with a
   path into cli.py and a line of its source, advising `vistest_platform`.
+- **One key the library does not read is «it»** (8b): «does not read
+  service.api_url — it changes nothing in this run (it is the server's
+  setting)».
+- **What a hung page costs past `timeout_ms`, said** (8c): a page that stopped
+  answering takes up to 1.5 s more, to say why — whether it still answers and
+  whether its tab crashed is asked after the deadline. `timeout_ms=2000` on a
+  page stuck in a loop raises in about 3.5 s, held under 3.7 s by a test.
 - **No line of a message is longer than 120 characters but a path**: the
   lines wrap under their label, never inside a bracket or around an arrow; a
   command to copy stays on one line.

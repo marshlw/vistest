@@ -174,8 +174,12 @@ def expect_screenshot(
     `timeout_ms` is the time this whole check may spend on the page: the
     readiness, the frames, the second look and the renderer's canary together.
     A page that keeps the check waiting past it raises `CaptureError` saying
-    what it was waiting for; the two limits above are cut to it. Left out, the
-    deadline is made of those limits (library/js.py, `budget_ms`).
+    what it was waiting for; the two limits above are cut to it. A page that
+    stopped answering takes up to 1.5 s more, to say why: whether it still
+    answers at all (`js.ALIVE_MS`) and whether its tab crashed is asked after
+    the deadline — `timeout_ms=2000` on a page stuck in a loop raises in about
+    3.5 s. Left out, the deadline is made of those limits (library/js.py,
+    `budget_ms`).
 
     A check that fails gets a second look (core/retry.py): more frames, until
     two in a row are identical. Nothing it sees is masked. When the page

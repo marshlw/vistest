@@ -103,9 +103,10 @@ def unread_text(config) -> str:
     keys = unread_keys(config)
     if not keys:
         return ""
+    said = ("it changes nothing in this run (it is the server's setting)" if len(keys) == 1
+            else "they change nothing in this run (they are the server's settings)")
     return (f"vistest: {config.source}: the library does not read "
-            f"{', '.join(keys)} — they change nothing in this run (they are the "
-            "server's settings)")
+            f"{', '.join(keys)} — {said}")
 
 
 def update_mode(value: Any) -> str | None:
