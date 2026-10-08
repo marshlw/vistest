@@ -194,6 +194,9 @@ vistest: no baseline for 'home.png' (linux-chromium-1x-1440x900)
                then commit the file — in CI the baseline has to come from the repository, not from the run
 ```
 
+From a script (no pytest) the line reads `set VISTEST_UPDATE_BASELINES=1 and
+run it again`; from `vistest check`, the same command with `--update`.
+
 Run `pytest --vistest-update`, look at the PNG, commit it. From then on the
 check compares against it, and when it goes red it says where everything is:
 

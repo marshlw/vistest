@@ -215,6 +215,7 @@ def pytest_configure(config):
                                        "vistest_platform"),
             update=config.getoption("--vistest-update"),
             config_path=config.getoption("--vistest-config"),
+            origin="pytest",
         )
     except ConfigError as e:
         #  A broken vistest.yaml stops the run before any test, on purpose —
