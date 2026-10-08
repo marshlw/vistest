@@ -152,7 +152,8 @@ def test_a_vistest_run_the_library_wrote(tmp_path, monkeypatch, capsys):
     assert [p.id for p in found.pairs] == ["linux-chromium-1x-60x40/cart"]
     out = run(capsys, folder=str(tmp_path), out=str(tmp_path / "bench"))
     assert "layout: VisTest run; 1 pair" in out
-    assert "linux-chromium-1x-60x40/cart · v2 fail — 1 region: 10x10 at (5, 5)" in out
+    assert "linux-chromium-1x-60x40/cart · v2 fail — 1 change · Playwright" in out
+    assert "\n    10x10 at (5, 5): " in out
     assert "renderer: unknown — the baseline names no canary" in out
 
 
@@ -286,7 +287,7 @@ def test_labels_csv_and_back(tmp_path, capsys):
     before = (out_dir / "labels.csv").read_text(encoding="utf-8")
     header, row = before.splitlines()
     assert header == "pair,v2,playwright 0.05/0,playwright 0.2/0,v2 says,label"
-    assert row.startswith('button,fail,—,—,"fail — 1 region: 10x10 at (5, 5): ')
+    assert row.startswith('button,fail,—,—,"fail — 1 change: 10x10 at (5, 5): ')
     assert row.endswith('",')                                     # the label: empty
     (out_dir / "labels.csv").write_text(before.rstrip("\n") + "SIGNAL\n", encoding="utf-8")
     text = run(capsys, expected=str(a), actual=str(b), out=str(out_dir),

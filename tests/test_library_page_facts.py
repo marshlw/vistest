@@ -273,8 +273,9 @@ def test_a_baseline_taken_the_old_way_says_so_when_it_fails(ctx, page):
     page.evaluate("() => { document.getElementById('save').textContent = 'Saved'; }")
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(page, "buttons.png")
-    assert "taken the old way" in str(e.value)
-    assert "--vistest-update=changed" in str(e.value)
+    said = " ".join(str(e.value).split())
+    assert "taken the old way" in said
+    assert "accept it again: pytest --vistest-update" in said
 
 
 def test_a_passport_capture_record_is_checked_and_round_trips():

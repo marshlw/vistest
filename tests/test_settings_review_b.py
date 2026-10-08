@@ -167,10 +167,11 @@ def _frame(box: bool = False) -> bytes:
 
 
 @pytest.mark.parametrize("yaml, env, call, said", [
-    ("", None, None, "no threshold is set"),
-    ("diff:\n  fail_severity: 25\n", None, None, "threshold 25 (vistest.yaml)"),
-    ("diff:\n  fail_severity: 25\n", "30", None, "threshold 30 (VISTEST_FAIL_SEVERITY)"),
-    ("diff:\n  fail_severity: 25\n", "30", 60, "threshold 60 (call)"),
+    ("", None, None, "no threshold set"),
+    ("diff:\n  fail_severity: 25\n", None, None, "threshold 25 (from vistest.yaml)"),
+    ("diff:\n  fail_severity: 25\n", "30", None,
+     "threshold 30 (from VISTEST_FAIL_SEVERITY)"),
+    ("diff:\n  fail_severity: 25\n", "30", 60, "threshold 60 (set in the call)"),
 ])
 def test_the_threshold_comes_from_the_call_the_environment_the_file_the_default(
         tmp_path, monkeypatch, yaml, env, call, said):

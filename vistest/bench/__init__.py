@@ -90,11 +90,10 @@ class PairResult:
 #  v2, pair by pair
 # --------------------------------------------------------------------------- #
 def _words(region) -> str:
-    from ..core.engines import region_words
+    """The change in the words of the failure message and the report."""
+    from ..library import words
 
-    where = f"{region.w}x{region.h} at ({region.x}, {region.y})"
-    words = region_words(region)
-    return where if words == where else f"{where}: {words}"
+    return words.region(region)
 
 
 def measure(found: layouts.Found, out: Path, *, ai: bool = True,
@@ -167,11 +166,16 @@ def _verdict(failed: bool | None) -> str:
     return "—" if failed is None else ("fail" if failed else "pass")
 
 
+def _changes(n: int) -> str:
+    return f"{n} change{'s' if n != 1 else ''}"
+
+
 def v2_says(res: PairResult) -> str:
+    """One cell of labels.csv and pairs.json: the verdict and every change said."""
     if not res.v2_failed:
         return "pass"
     n = res.regions
-    head = f"fail — {n} region{'s' if n != 1 else ''}"
+    head = f"fail — {_changes(n)}"
     more = f"; and {n - len(res.said)} more" if n > len(res.said) else ""
     return f"{head}: " + "; ".join(res.said) + more if res.said else head
 
@@ -194,10 +198,29 @@ def _shift_words(res: PairResult) -> str:
 
 
 def disagreement_line(res: PairResult) -> str:
-    line = f"{res.id} · v2 {v2_says(res)} · {res.renderer} · {playwright_says(res)}"
+    """The head of a pair in the console: what each tool said."""
+    v2 = f"v2 fail — {_changes(res.regions)}" if res.v2_failed else "v2 pass"
+    line = f"{res.id} · {v2} · {playwright_says(res)}"
     if res.shift_flag:
         line += f" · [{_shift_words(res)}]"
     return line
+
+
+def disagreement_lines(res: PairResult) -> list[str]:
+    """The pair in the console: the head, then a change per line, then the renderer
+    — the words of the failure message, none longer than `words.WIDTH` but a path."""
+    from ..library import words
+
+    out = words.wrap(disagreement_line(res), "  ", "      ")
+    for said in res.said:
+        out += words.wrap(said, "    ", "      ")
+    if res.regions > len(res.said):
+        out.append(f"    ... and {res.regions - len(res.said)} more in report.html")
+    out += words.wrap(res.renderer, "    ", "      ")
+    scale = words.scale_for(res.said)
+    if scale:
+        out += words.wrap(f"({scale})", "    ", "      ")
+    return out
 
 
 def summary(found: layouts.Found, results: list[PairResult], pw, out: Path,
@@ -238,14 +261,16 @@ def summary(found: layouts.Found, results: list[PairResult], pw, out: Path,
     flagged = [r for r in results if r.shift_flag]
     L.append(f"v2 failed where the page's move by a fraction of a pixel is proven: "
              f"{len(flagged)} pair{'s' if len(flagged) != 1 else ''}")
-    L += [f"  {r.id} · {_shift_words(r)} · v2 {v2_says(r)}" for r in flagged]
+    L += [f"  {r.id} · {_shift_words(r)} · v2 fail — {_changes(r.regions)}"
+          for r in flagged]
     shown = [r for r in results if r.disagrees()] if isinstance(pw, _pw.Playwright) \
         else [r for r in results if r.v2_failed]
     if shown:
         L.append("")
         L.append("Disagreements:" if isinstance(pw, _pw.Playwright)
                  else "v2 failed (no Playwright to disagree with):")
-        L += [f"  {disagreement_line(r)}" for r in shown]
+        for r in shown:
+            L += disagreement_lines(r)
     return L
 
 

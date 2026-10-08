@@ -23,7 +23,6 @@ resolves it.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 __all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "VisTestWarning",
@@ -31,111 +30,37 @@ __all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "VisTestWarn
 
 
 
-#: Suppressed regions spelled out in a failure message; the rest are counted.
+#: Changes set aside, spelled out in a failure message; the rest are counted.
 SUPPRESSED_SHOWN = 3
-#: Regions that count, said in words in a failure message; the rest are counted.
+#: Changes that count, said in words in a failure message; the rest are counted.
 CHANGED_SHOWN = 3
 
 
 def description(r) -> str:
-    """The engine's sentence of what it measured on a region, or ''.
+    """What the engine measured on a change (core/v2/describe.py), or ''."""
+    from . import words
 
-    Engine v2 writes one for every region that counts, as an annotation of
-    kind «description» (vistest/core/v2/describe.py); v1 writes none.
-    """
-    notes = r.get("annotations") if isinstance(r, dict) else getattr(r, "annotations", None)
-    for a in notes or ():
-        if isinstance(a, dict) and a.get("kind") == "description":
-            return str(a.get("text") or "")
-    return ""
-
-
-_REDRAWN = re.compile(r"strokes redrawn within (\d+) px; ink (#\w+) → (#\w+), "
-                      r"ΔE00 ([\d.]+) \(below ([\d.]+)\)")
-
-
-def plain(text: str) -> str:
-    """The engine's sentence, with the one that read as a contradiction in words.
-
-    «strokes redrawn within 1 px; ink #889ab3 → #889ab3, ΔE00 0.00 (below 2)»
-    sat in the list of reasons a check failed, and nothing in it said why: the
-    numbers are all «below» something. What it means: the letters moved by
-    less than a pixel and the colour is the same — which on the renderer that
-    took the baseline nobody explains as noise, so it fails.
-    """
-    def words(m):
-        px, a, b, de, limit = m.groups()
-        same = float(de) < 0.5 or a == b
-        colour = (f"the colour is the same ({a})" if same
-                  else f"the colour is within {limit} ΔE00 of the old one ({a} → {b})")
-        return (f"letters moved by less than {px} px, {colour}; on the same renderer "
-                "this is not explained as noise, so it counts")
-
-    return _REDRAWN.sub(words, text)
+    return words.sentence(r)
 
 
 def changed_line(r) -> str:
-    """'97x12 at (219, 522): ink colour: #343649 → #586074, ΔE00 14.2'."""
-    def get(key):
-        return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
+    """'97x12 at (219, 522): recolored: #343649 → #586074, color difference 14.2'."""
+    from . import words
 
-    return f"{get('w')}x{get('h')} at ({get('x')}, {get('y')}): {plain(description(r))}"
+    return words.region(r)
 
 
 def suppressed_line(r) -> str:
-    """'48x12 at (216, 519): antialias: the baseline moved +0.25,+0.00 px ...'.
+    """'3x3 at (176, 101): too small to count (2 px, under 4)'."""
+    from . import words
 
-    The kind is named only when the reason does not start with it:
-    'noise 97x12 at (219, 522): rerender: ... (was text)'.
-    """
-    def get(key):
-        return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
+    return words.suppressed(r)
 
-    kind = get("kind")
-    kind = getattr(kind, "value", kind) or ""
-    why = get("suppressed_by") or "suppressed"
-    where = f"{get('w')}x{get('h')} at ({get('x')}, {get('y')})"
-    #  "antialias 40x12 ...: antialias: ..." says the same word twice.
-    if kind and not why.startswith(f"{kind}:"):
-        where = f"{kind} {where}"
-    return f"{where}: {why}"
 
-def _limits_line(result, limits: dict) -> str:
-    """The numbers the verdict was taken on, the way the engine takes it.
+def _path(label: str, path) -> str:
+    from .words import COLUMN
 
-    v1 fails on severity against its limit, or on the changed area. v2 fails
-    on any region no rule explained — unless a person set a threshold, and
-    then only on those at or above it (or on the share of the frame the ones
-    below cover), so the threshold is named with where it came from.
-    """
-    n = len(result.regions)
-    regions = f"{n} region{'' if n == 1 else 's'}"
-    if limits.get("engine") == "v2":
-        from ..core import engines as _engines
-
-        source = limits.get("threshold_source")
-        area_source = limits.get("area_source") or _engines.AREA_DEFAULT_SOURCE
-        threshold = (f"threshold {limits.get('fail_severity', 0):g} ({source}), "
-                     f"area limit {limits.get('max_changed_area_pct', 0):.2f}% "
-                     f"({area_source})"
-                     if source else "no threshold is set, so any such region fails")
-        said = getattr(result, "threshold", None) or {}
-        if "area_pct" in said:
-            #  Every region was below the threshold, and together they cover
-            #  the share of the frame that fails on its own — said with what
-            #  to do about it.
-            threshold += (f" — all below it, together {said['area_pct']:.2f}% of "
-                          f"the frame, at or over the area limit: "
-                          f"{_engines.AREA_HINT}")
-        return (f"  engine v2: {regions} that no rule of the engine explains away "
-                "(not antialiasing, not a different renderer, not a block that only "
-                f"moved), severity up to {result.max_severity:.1f} on a 0–100 scale "
-                f"(0 — nothing, higher — a bigger change, 100 — the top); {threshold}; "
-                f"changed area {result.changed_area_pct:.2f}% of the frame")
-    return (f"  severity {result.max_severity:.1f}"
-            f" (limit {limits.get('fail_severity', 0):.1f}),"
-            f" changed area {result.changed_area_pct:.2f}%"
-            f" (limit {limits.get('max_changed_area_pct', 0):.2f}%), {regions}")
+    return f"  {label + ':':<{COLUMN - 2}}{path}"
 
 
 class VisTestWarning(UserWarning):
@@ -204,13 +129,13 @@ class BaselineMissing(VisualCheckError):
     @classmethod
     def build(cls, *, name: str, platform: str, baseline: Path,
               actual: Path | None, elsewhere: list[str] | None = None,
-              update_flag: str = "--vistest-update", asked: str = ""):
-        lines = [
-            f"vistest: no baseline for {name!r}" + _where(platform, asked),
-            f"  expected: {baseline}",
-        ]
+              accept: str = "pytest --vistest-update", asked: str = ""):
+        from . import words
+
+        lines = [f"vistest: no baseline for {name!r}" + _where(platform, asked),
+                 _path("expected", baseline)]
         if actual is not None:
-            lines.append(f"  captured: {actual}")
+            lines.append(_path("captured", actual))
         if elsewhere:
             #  The most common and least legible failure this tool produces.
             #  «No baseline» in a repository that visibly has one reads as a
@@ -219,75 +144,82 @@ class BaselineMissing(VisualCheckError):
             #  Both cases are covered — a run on a new platform, and a run that
             #  suddenly has no platform at all because the target is bytes.
             found = ", ".join(p or "the root" for p in elsewhere)
-            lines.append(
-                f"  found for: {found} — baselines are per-platform, and a "
-                "picture taken in one browser or window size is not comparable "
-                "in another")
-        lines += [
-            f"  create it with: pytest {update_flag}",
-            "  then commit the file — in CI the baseline has to come from the "
-            "repository, not from the run.",
-        ]
+            lines += words.labelled(
+                "found for", f"{found} — baselines are per-platform, and a picture taken "
+                "in one browser or window size is not comparable in another")
+        lines += words.command("create it", accept)
+        lines += words.labelled("", "then commit the file — in CI the baseline has to come "
+                                    "from the repository, not from the run")
         return cls("\n".join(lines),
                    artifacts={"baseline": str(baseline),
                               "actual": str(actual) if actual else ""})
 
 
 class ScreenshotMismatch(VisualCheckError):
-    """The screenshot and the baseline differ beyond the thresholds in force."""
+    """The screenshot and the baseline differ beyond the thresholds in force.
+
+    The message, line by line (review v1, 4.3–4.8): the numbers the verdict
+    was taken on; `reason:` — what changed; then what the capture, the second
+    look and the page have to say, one `notes` line each (`capture:`, `second
+    look:`, `hint:`); `renderer:` for a picture of a page; the files; the
+    changes in words with the scale of their color difference; what was set
+    aside; and how to accept it where the check ran (`accept`).
+    """
 
     @classmethod
     def build(cls, *, name: str, platform: str, result, reason: str,
               baseline: Path, actual: Path, diff: Path | None,
               report: Path | None, limits: dict,
-              update_flag: str = "--vistest-update", renderer: str = "",
-              asked: str = ""):
-        head = f"vistest: {name!r} differs from the baseline" + _where(platform, asked)
+              accept: str = "pytest --vistest-update", renderer: str = "",
+              asked: str = "", notes=()):
         from ..core.engines import V1_DEPRECATED
+        from . import words
 
-        lines = [
-            head,
-            _limits_line(result, limits),
-            *([f"  {V1_DEPRECATED}"] if limits.get("engine") == "v1" else []),
-            f"  reason: {reason}",
+        lines = [f"vistest: {name!r} differs from the baseline" + _where(platform, asked),
+                 *words.limits_lines(result, limits)]
+        if limits.get("engine") == "v1":
+            lines += words.wrap(V1_DEPRECATED, "  ", "    ")
+        lines += words.labelled("reason", reason)
+        for label, text in notes:
+            lines += words.labelled(label, text)
+        if renderer:
             #  Whether the browser draws text the way it did for the baseline:
             #  read before the diff, it changes what the diff means.
-            *([f"  {renderer}"] if renderer else []),
-            f"  baseline: {baseline}",
-            f"  actual:   {actual}",
-        ]
+            lines += words.labelled("renderer", renderer.removeprefix("renderer: "))
+        lines += [_path("baseline", baseline), _path("actual", actual)]
         #  What changed, in the engine's words, before what was set aside.
-        said = [r for r in getattr(result, "regions", None) or () if description(r)]
-        for i, r in enumerate(said[:CHANGED_SHOWN]):
-            lines.append(("  changed:  " if i == 0 else "            ") + changed_line(r))
+        said = [r for r in getattr(result, "regions", None) or () if words.sentence(r)]
+        shown = [words.region(r) for r in said[:CHANGED_SHOWN]]
+        for i, text in enumerate(shown):
+            lines += words.labelled("changed" if i == 0 else "", text)
         if len(said) > CHANGED_SHOWN:
-            lines.append(f"            ... and {len(said) - CHANGED_SHOWN} more in the report")
+            lines += words.labelled("", f"... and {len(said) - CHANGED_SHOWN} more in the "
+                                        "report")
         #  What a threshold a person set let through: said, never dropped.
-        from ..core.engines import below_line
-
-        if below := below_line(result):
-            lines.append(f"  {below}")
+        if below := words.below(result):
+            shown.append(below)
+            lines += words.labelled("let through", below)
+        if scale := words.scale_for(shown):
+            lines += words.labelled("", f"({scale})")
         suppressed = list(getattr(result, "suppressed", None) or ())
         if suppressed:
             from ..plugins.runtime import count_suppressed, say_suppressed
 
             #  Said here too: a failure that also hides something is read
-            #  differently from one that does not.
-            lines.append("  also:     "
-                         + "; ".join(say_suppressed(count_suppressed(suppressed))))
-            #  And why, in the engine's own words: a suppression is a claim
-            #  ("the baseline moved 0.25 px reproduces 96% of it") that the
-            #  reader is entitled to check against the diff.
+            #  differently from one that does not. Where each one is, and
+            #  why, in short; the engine's measurements are in the report.
+            lines += words.labelled(
+                "also", "; ".join(say_suppressed(count_suppressed(suppressed))))
             for r in suppressed[:SUPPRESSED_SHOWN]:
-                lines.append(f"            {suppressed_line(r)}")
+                lines += words.labelled("", words.suppressed(r))
             if len(suppressed) > SUPPRESSED_SHOWN:
-                lines.append(f"            ... and {len(suppressed) - SUPPRESSED_SHOWN}"
-                             " more in the report")
+                lines += words.labelled("", f"... and {len(suppressed) - SUPPRESSED_SHOWN}"
+                                            " more in the report")
         if diff is not None:
-            lines.append(f"  diff:     {diff}")
+            lines.append(_path("diff", diff))
         if report is not None:
-            lines.append(f"  report:   {report}")
-        lines.append(f"  accept it with: pytest {update_flag}")
+            lines.append(_path("report", report))
+        lines += words.command("accept it", accept)
         return cls("\n".join(lines), result=result,
                    artifacts={"baseline": str(baseline), "actual": str(actual),
                               "diff": str(diff) if diff else "",

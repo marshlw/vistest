@@ -1899,12 +1899,11 @@ Visual mismatch: checkout.png
 Under engine v2, the default, the policy line reads «Reason for the failure:
 N region(s) no rule explained», each region says in words what changed, and
 a threshold a person set is named with its source; the regions it let
-through follow on a line of their own, «below the threshold 25 (call): …».
-The library's `ScreenshotMismatch` opens with `engine v2: 2 regions that no
-rule of the engine explains away (not antialiasing, not a different renderer,
-not a block that only moved), severity up to 71.4 on a 0–100 scale (0 —
-nothing, higher — a bigger change, 100 — the top); no threshold is set, so
-any such region fails; changed area 0.11% of the frame`.
+through follow on a line of their own, «let through: below the threshold
+25 (set in the call): …». The library's `ScreenshotMismatch` opens with `2
+changes not explained as rendering noise · worst 71/100 · no threshold set,
+so any change fails · 0.11% of the frame`; then `reason:`, and the capture,
+the second look and a hint each on a line of its own.
 
 ### Смотрим артефакты
 
@@ -1955,8 +1954,8 @@ within 2 px, from 4 px up) and takes out only what a named rule explains: a
 scroll bar that appeared, a JPEG re-encode, the page moved by a fraction of a
 pixel, text re-rasterised by a renderer the canaries prove changed. **A
 region no rule explained fails the check.** Each region that counts is said
-in words in the report and the failure message («ink colour: #1f2937 →
-#4d5666, ΔE00 14.8»).
+in words in the report and the failure message («recolored: #1f2937 →
+#4d5666, color difference 14.8»).
 
 Engine v1, the cascade, and the presets that tuned it were removed before
 the first release (0.2.0.dev3). `engine:` and `preset:` in vistest.yaml (also
@@ -1978,7 +1977,7 @@ report, the failure message and the API answer list it apart, in the
 engine's words and with where the threshold came from:
 
 ```
-below the threshold 25 (project override): 2 regions — ink colour: #333333 → #3a3a3a, ΔE00 2.0; …
+below the threshold 25 (a project override): 2 changes — recolored: #333333 → #3a3a3a, color difference 2.0; …
 ```
 
 Overrides saved in the interface before the switch are applied by v2 and
@@ -1989,9 +1988,9 @@ rule explained, so under the default threshold of 0 it adds nothing. Like
 the threshold, a preset does not set it for v2: the number a person set (the
 call, the passport, vistest.yaml, `VISTEST_MAX_CHANGED_AREA_PCT`, an
 override in the interface) or else the default, 0.15 %, named next to it —
-`area limit 0.15% (default)`. The threshold is there to let small things
+`(limit 0.15%, the default)`. The threshold is there to let small things
 through: a counter, a speck. A faint change over a paragraph is more often
-real (the text colour of a whole theme changed), so it still fails, and the
+real (the text color of a whole theme changed), so it still fails, and the
 message says what to do: raise `max_changed_area_pct`, or mask the area —
 for something small on an element's snapshot a mask is the right tool, not
 a threshold.
@@ -2015,13 +2014,13 @@ picture after looking at it.
   moves by exactly the page's move. A chart (lines, areas, sparklines) or an
   SVG icon can be re-rasterised at the new offset rather than moved — its
   strokes come out a little different — and then the region is said in
-  words («ink shape changed», «strokes redrawn within 1 px») and fails.
+  words («shape changed», «edges redrawn within 1 px») and fails.
 - **A native checkbox (and other native form controls) on a page moved by a
   fraction of a pixel.** The browser draws them in its own theme, and the
   page-shift rule does not take them as moved with the page: they are left
   as a change.
 - **`opacity: 0.98` and changes as faint.** By pixels it is the same as a
-  real small edit — a colour moved by about ΔE00 1–2. v2 takes every pixel
+  real small edit — a color moved by about ΔE00 1–2. v2 takes every pixel
   above ΔE00 1, so it fails; it is not meant to tell the two apart. If such
   faintness is expected on a snapshot, a threshold for that snapshot is the
   tool.
@@ -2505,8 +2504,12 @@ disagreements: 22 pairs
 v2 failed where the page's move by a fraction of a pixel is proven: 0 pairs
 
 Disagreements:
-  table/fill/de8 · v2 fail — 1 region: 107x30 at (405, 77): fill: #2563eb → #4d77ff, ΔE00 8.0 · renderer: same as the baseline's · Playwright 0.05/0 fail (2712 px), 0.2/0 pass (0 px)
-  table/render/shift_0.25px · v2 pass · renderer: same as the baseline's · Playwright 0.05/0 fail (5785 px), 0.2/0 fail (5051 px)
+  table/fill/de8 · v2 fail — 1 change · Playwright 0.05/0 fail (2712 px), 0.2/0 pass (0 px)
+    107x30 at (405, 77): fill: #2563eb → #4d77ff, color difference 8.0
+    renderer: same as the baseline's
+    (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
+  table/render/shift_0.25px · v2 pass · Playwright 0.05/0 fail (5785 px), 0.2/0 fail (5051 px)
+    renderer: same as the baseline's
   …
 ```
 

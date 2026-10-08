@@ -48,13 +48,6 @@ __all__ = ["Parts", "build", "describe", "read_parts", "render", "total_suppress
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
 MAX_TOTAL_BYTES = 60 * 1024 * 1024
 
-KIND_WORDS = {
-    "text": "text", "moved": "a shift", "color": "colour",
-    "added": "something appeared", "removed": "something disappeared",
-    "content": "content", "resized": "a size change",
-    "noise": "noise", "antialias": "antialiasing",
-}
-
 
 # --------------------------------------------------------------------------- #
 #  Saying what happened, in words
@@ -62,72 +55,13 @@ KIND_WORDS = {
 def describe(result) -> str:
     """One line naming what changed. The same text the exception carries.
 
-    It is written once and used twice on purpose. The line in the CI log and
-    the line in the report have to agree — when they do not, the first thing a
-    person does is stop trusting both.
+    It is written once and used twice on purpose — `library/words.py` says it
+    for both. The line in the CI log and the line in the report have to agree:
+    when they do not, the first thing a person does is stop trusting both.
     """
-    if getattr(result, "size_changed", False):
-        expected, actual = result.size_expected, result.size_actual
-        return (f"the picture changed size, {expected[0]}x{expected[1]} "
-                f"to {actual[0]}x{actual[1]}")
+    from ..library import words
 
-    regions = list(getattr(result, "regions", ()) or ())
-    if not regions:
-        #  Engine v2 passed with regions a person's threshold let through:
-        #  that is what happened, and it is said in the engine's words.
-        from ..core.engines import below_line
-
-        return below_line(result) or (f"no single region stands out; "
-                                      f"{result.changed_area_pct:.2f}% of the frame differs")
-
-    counts: dict[str, int] = {}
-    for region in regions:
-        kind = getattr(region.kind, "value", str(region.kind))
-        counts[kind] = counts.get(kind, 0) + 1
-    ranked = sorted(counts.items(), key=lambda kv: -kv[1])
-    parts = [f"{KIND_WORDS.get(kind, kind)} in {n}" for kind, n in ranked[:3]]
-    rest = sum(n for _, n in ranked[3:])
-    if rest:
-        #  Never drop kinds silently: the counts have to add up to the total.
-        parts.append(f"other changes in {rest}")
-    total = len(regions)
-    head = (f"{total} region{'s' if total > 1 else ''}: " + ", ".join(parts))
-
-    #  Picked by severity, and named for it. It used to say "largest", which a
-    #  reader checks against the sizes and finds false.
-    top = max(regions, key=lambda r: getattr(r, "severity", 0.0))
-    where = (f"most severe {top.w}x{top.h} at ({top.x}, {top.y})"
-             + (f", {top.selector}" if getattr(top, "selector", None) else ""))
-    return f"{head}; {where}" + _coverage(result)
-
-
-#  Below this share of the changed pixels left outside every region, the
-#  headline area and the regions tell the same story and nothing is added.
-UNASSIGNED_SHARE_TO_MENTION = 0.10
-
-
-def _coverage(result) -> str:
-    """The bridge between `changed area` and the regions, when they disagree.
-
-    `changed_area_pct` is measured on the change mask before segmentation;
-    regions are what survives it. When most of the change is in no region, the
-    reader must be told so in the same line — otherwise the area and the list
-    cannot be reconciled and neither number is believed.
-    """
-    changed = int(getattr(result, "changed_pixels", 0) or 0)
-    unassigned = int(getattr(result, "unassigned_pixels", 0) or 0)
-    if changed <= 0 or unassigned <= UNASSIGNED_SHARE_TO_MENTION * changed:
-        return ""
-    total = max(int(getattr(result, "total_pixels", 0) or 0), 1)
-    in_regions = 100.0 * int(getattr(result, "region_pixels", 0) or 0) / total
-    suppressed = int(getattr(result, "suppressed_pixels", 0) or 0)
-    outside = 100.0 * unassigned / total
-    text = (f"; these regions hold {in_regions:.2f}% of the "
-            f"{result.changed_area_pct:.2f}% changed, {outside:.2f}% is in no "
-            "region (strokes or specks too thin to form one)")
-    if suppressed:
-        text += f", {100.0 * suppressed / total:.2f}% was suppressed as noise"
-    return text
+    return words.reason(result)
 
 
 # --------------------------------------------------------------------------- #
@@ -319,17 +253,11 @@ def _row(entry: dict, budget: list[int]) -> str:
                      + (f" ({limits['area_source']})"
                         if limits.get("area_source") and limits.get("threshold_source")
                         else "")
-                     + (f" ({metrics['region_area_pct']:.2f}% in regions)"
+                     + (f" ({metrics['region_area_pct']:.2f}% in the changes)"
                         if "region_area_pct" in metrics else ""))
-    if "ssim_global" in metrics:
-        facts.append(f"SSIM {metrics['ssim_global']:.4f}")
     if entry.get("duration_ms"):
         facts.append(f"{int(entry['duration_ms'])} ms")
     facts.extend(_capture_facts(entry.get("capture")))
-    canary_ms = (entry.get("capture") or {}).get("canary_ms")
-    if canary_ms is not None:
-        #  The check that needed the canary and was the first to draw it.
-        facts.append(f"canary drawn in {int(canary_ms)} ms")
 
     suppressed = int(entry.get("suppressed_count") or 0)
     if suppressed:
@@ -349,7 +277,8 @@ def _row(entry: dict, budget: list[int]) -> str:
         images = {kind: _data_uri(path, budget)
                   for kind, path in (entry.get("images") or {}).items()}
         body = _viewer(entry, images)
-    body = _regions_table(entry) + _below_list(entry) + _suppressed_list(entry) + body
+    body = (_regions_table(entry) + _below_list(entry) + _suppressed_list(entry)
+            + _details(entry) + body)
 
     return (
         f'<details class="row {_e(verdict)}"{open_attr} data-verdict="{_e(verdict)}">'
@@ -358,7 +287,7 @@ def _row(entry: dict, budget: list[int]) -> str:
         f'<span class="platform">{_e(entry.get("platform") or "no platform")}</span>'
         f'<span class="facts">{_e(" · ".join(facts))}</span></summary>'
         f'<div class="detail">'
-        f'<p class="reason">{_e(entry.get("reason", ""))}</p>'
+        + _reason(entry)
         + (f'<p class="renderer">{_e(entry["renderer"].get("line", ""))}</p>'
            if isinstance(entry.get("renderer"), dict) else "")
         + (f'<p class="renderer">{_e(_v1_line())}</p>'
@@ -366,6 +295,42 @@ def _row(entry: dict, budget: list[int]) -> str:
         + (f'<p class="nodeid">{_e(entry["nodeid"])}</p>'
            if entry.get("nodeid") else "")
         + body + '</div></details>')
+
+
+def _reason(entry: dict) -> str:
+    """The reason as the message says it: one thing per line, under its label
+    (review v1, 4.4); a row written before the lines existed has one string."""
+    lines = [x for x in entry.get("lines") or () if isinstance(x, (list, tuple))
+             and len(x) == 2]
+    if not lines:
+        return f'<p class="reason">{_e(entry.get("reason", ""))}</p>'
+    return "".join(
+        f'<p class="reason"><span class="label">{_e(label)}</span> {_e(text)}</p>'
+        if label != "reason" else f'<p class="reason">{_e(text)}</p>'
+        for label, text in lines)
+
+
+def _details(entry: dict) -> str:
+    """The numbers a person rarely needs, shut by default (review v1, 4.8): SSIM,
+    the mean color difference, how long the renderer's canary took."""
+    metrics = entry.get("metrics") or {}
+    facts = []
+    if "ssim_global" in metrics:
+        facts.append(f"SSIM {float(metrics['ssim_global']):.4f} (structural "
+                     "similarity of the whole frame, 1 — identical)")
+    if "de_mean" in metrics:
+        facts.append(f"mean ΔE00 of the changed pixels {float(metrics['de_mean']):.2f}")
+    if "unassigned_pixels" in metrics:
+        facts.append(f"{int(metrics['unassigned_pixels'])} changed px in no change "
+                     "(too thin to count on their own)")
+    canary_ms = (entry.get("capture") or {}).get("canary_ms")
+    if canary_ms is not None:
+        #  The check that needed the canary and was the first to draw it.
+        facts.append(f"the renderer's canary drawn in {int(canary_ms)} ms")
+    if not facts:
+        return ""
+    return ('<details class="more"><summary>details</summary><ul>'
+            + "".join(f"<li>{_e(f)}</li>" for f in facts) + "</ul></details>")
 
 
 def _v1_line() -> str:
@@ -398,19 +363,18 @@ def _annotations_text(region: dict) -> str:
 
 
 def _regions_table(entry: dict) -> str:
-    """The regions that count — shown only when an extension said something.
+    """The changes that count, in the words of the message, with the counts behind them.
 
-    Without a scorer or an annotator the reason line already names them, and a
-    table of coordinates adds nothing. With one, the score and the remarks are
-    the point, and they need a place.
+    The kind column is the category of the sentence beside it (review v1, 4.5):
+    one row does not say «text» and «fill» about the same corner.
     """
-    from ..library.errors import description, plain
+    from ..library import words
 
     regions = [r for r in entry.get("regions") or [] if isinstance(r, dict)]
     scored = any(r.get("score") is not None for r in regions)
     noted = any(a for r in regions for a in r.get("annotations") or []
                 if isinstance(a, dict) and a.get("kind") != "description")
-    said = any(description(r) for r in regions)
+    said = any(words.sentence(r) for r in regions)
     if not (scored or noted or said):
         return ""
     head = "<tr><th>kind</th><th>severity</th><th>where</th>"
@@ -419,18 +383,23 @@ def _regions_table(entry: dict) -> str:
     head += "<th>notes</th>" if noted else ""
     rows = []
     for r in regions:
-        cells = (f"<td>{_e(r.get('kind', ''))}</td>"
+        cells = (f"<td>{_e(words.category(r))}</td>"
                  f"<td>{float(r.get('severity') or 0):.1f}</td>"
                  f"<td>{_e(_where(r))}</td>")
         if said:
-            cells += f"<td>{_e(plain(description(r)))}</td>"
+            exact = words.detail(r)
+            cells += (f"<td>{_e(words.sentence(r))}"
+                      + (f'<br><span class="muted">{_e(exact)}</span>' if exact else "")
+                      + "</td>")
         if scored:
             score = r.get("score")
             cells += f"<td>{'' if score is None else f'{float(score):.2f}'}</td>"
         if noted:
             cells += f"<td>{_e(_annotations_text(r))}</td>"
         rows.append(f"<tr>{cells}</tr>")
-    return (f'<table class="regions"><thead>{head}</tr></thead>'
+    scale = words.scale_for(words.sentence(r) for r in regions)
+    caption = f'<caption class="muted">{_e(scale)}</caption>' if scale else ""
+    return (f'<table class="regions">{caption}<thead>{head}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table>')
 
 
@@ -443,25 +412,28 @@ def _where(region: dict) -> str:
 
 
 def _below_list(entry: dict) -> str:
-    """What a threshold a person set let through (engine v2). Open by default:
-    it is not noise that a rule explained, and it is shown in passing rows too."""
+    """What a threshold a person set let through. Open by default: it is not
+    noise, and it is shown in passing rows too."""
     line = entry.get("below_line")
     if not line:
         return ""
-    from ..core.engines import region_words
+    from ..library import words
 
-    items = [f"<li>{_e(_where(r))} — {_e(region_words(r))} <span class=\"muted\">"
-             f"(severity {float(r.get('severity') or 0):.1f})</span></li>"
+    items = [f"<li>{_e(_where(r))} — {_e(words.sentence(r) or _where(r))} "
+             f"<span class=\"muted\">({_e(words.category(r))}, severity "
+             f"{float(r.get('severity') or 0):.1f})</span></li>"
              for r in entry.get("below_threshold") or [] if isinstance(r, dict)]
     return (f'<details class="below" open><summary>{_e(line)}</summary>'
             f'<ul>{"".join(items)}</ul></details>')
 
 
 def _suppressed_list(entry: dict) -> str:
-    """What was set aside and why. Present in passing rows too."""
+    """What was set aside and why, with what the engine measured to say so.
+    Present in passing rows too."""
     count = int(entry.get("suppressed_count") or 0)
     if not count:
         return ""
+    from ..library import words
     from ..plugins.runtime import say_suppressed
 
     listed = [r for r in entry.get("suppressed") or [] if isinstance(r, dict)]
@@ -469,8 +441,7 @@ def _suppressed_list(entry: dict) -> str:
     for r in listed:
         extra = _annotations_text(r)
         items.append(
-            f"<li>{_e(r.get('kind', ''))} {_e(_where(r))} — "
-            f"{_e(r.get('suppressed_by') or 'suppressed')}"
+            f"<li>{_e(words.suppressed(r))}"
             + (f" <span class=\"muted\">({_e(extra)})</span>" if extra else "")
             + "</li>")
     more = count - len(listed)
@@ -532,6 +503,8 @@ h1{font-size:20px;margin:0 0 4px}
   font-variant-numeric:tabular-nums}
 .detail{padding:0 14px 16px;border-top:1px solid var(--line)}
 .reason{margin:12px 0 4px}
+.reason + .reason{margin-top:2px}
+.reason .label{display:inline-block;min-width:92px;color:var(--muted);font-size:12px}
 .nodeid{margin:0 0 12px;color:var(--muted);font-size:12px;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .none{color:var(--muted)} .paths{color:var(--muted);font-size:12px;
@@ -584,6 +557,10 @@ footer{color:var(--muted);font-size:12px;margin-top:28px}
 .suppressed summary{cursor:pointer}
 .suppressed ul{margin:4px 0 0;padding-left:20px}
 .muted{color:var(--muted)}
+.regions caption{text-align:left;caption-side:bottom;padding-top:4px}
+.more{margin:8px 0;color:var(--muted);font-size:12px}
+.more summary{cursor:pointer}
+.more ul{margin:4px 0 0;padding-left:20px}
 """
 
 _JS = """

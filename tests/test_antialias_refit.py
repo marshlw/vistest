@@ -394,8 +394,13 @@ def test_the_failure_message_spells_out_what_was_suppressed(tmp_path, raster):
     text = str(err)
     assert "also:" in text
     first = r.suppressed[0]
-    assert suppressed_line(first) in text
-    assert first.suppressed_by in text
+    #  The line may wrap at 120 characters (review v1, step C); what the engine
+    #  measured is in it whole.
+    flat = " ".join(text.split())
+    assert " ".join(suppressed_line(first).split()) in flat
+    from vistest.library import words
+
+    assert words.suppressed_detail(first) and words.suppressed_detail(first) in flat
 
 
 def test_the_line_reads_the_same_from_a_region_and_from_a_report_row():
@@ -407,6 +412,9 @@ def test_the_line_reads_the_same_from_a_region_and_from_a_report_row():
     row = {"kind": "antialias", "x": 3, "y": 4, "w": 10, "h": 6,
            "suppressed_by": region.suppressed_by}
     assert suppressed_line(region) == suppressed_line(row)
-    assert suppressed_line(row).startswith("10x6 at (3, 4): antialias: ")
+    assert suppressed_line(row).startswith("10x6 at (3, 4): antialiasing — the baseline ")
     other = dict(row, kind="noise", suppressed_by="rerender: ... (was text)")
-    assert suppressed_line(other) == "noise 10x6 at (3, 4): rerender: ... (was text)"
+    #  Neither the old classifier's kind nor the engine's file name for the
+    #  reason (review v1, step C, 4.5).
+    assert suppressed_line(other) == ("10x6 at (3, 4): the same text drawn again by "
+                                      "another renderer — ...")

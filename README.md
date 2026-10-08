@@ -20,9 +20,9 @@ failed instead of printing a percentage.
 | **Three shapes of a run** | Run as the tests decide, in one named browser, one run per browser (in parallel — different browsers keep different baseline sets), or all browsers in a single run with a single verdict. For your own tests and for connected suites alike. |
 | **One snapshot, many variants** | A matrix of browsers × window sizes runs in a single run and asks a single question. Each variant keeps its own baseline — a firefox frame at 390 has nothing to compare against in a chromium set at 1440. |
 
-The comparison engine combines **ΔE00** (perceptual colour distance), **SSIM**
+The comparison engine combines **ΔE00** (perceptual color distance), **SSIM**
 (structural similarity), sub-pixel **alignment**, and automatic noise
-suppression. A pixel counts as changed only when both colour *and* structure
+suppression. A pixel counts as changed only when both color *and* structure
 agree that it changed.
 
 ### Browsers and window sizes
@@ -188,45 +188,64 @@ before anyone has looked at the picture is not a check:
 
 ```
 vistest: no baseline for 'home.png' (linux-chromium-1x-1440x900)
-  expected: tests/__vistest__/linux-chromium-1x-1440x900/home.png
-  captured: .vistest/actual/linux-chromium-1x-1440x900/home.png
-  create it with: pytest --vistest-update
+  expected:    tests/__vistest__/linux-chromium-1x-1440x900/home.png
+  captured:    .vistest/actual/linux-chromium-1x-1440x900/home.png
+  create it:   pytest --vistest-update
+               then commit the file — in CI the baseline has to come from the repository, not from the run
 ```
 
 Run `pytest --vistest-update`, look at the PNG, commit it. From then on the
 check compares against it, and when it goes red it says where everything is:
 
 ```
-vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
-  severity 61.2 (limit 25.0), changed area 3.40% (limit 0.15%)
-  reason: text in 2 regions; largest 96x24 at (320, 180), .header .price
-  renderer: same as the baseline's
-  baseline: tests/__vistest__/linux-chromium-1x-1440x900/home.png
-  actual:   .vistest/actual/linux-chromium-1x-1440x900/home.png
-  diff:     .vistest/diff/linux-chromium-1x-1440x900/home.png
-  report:   .vistest/report/index.html
-  accept it with: pytest --vistest-update
+vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
+  33 changes not explained as rendering noise · worst 93/100 · no threshold set, so any change fails
+    · 2.80% of the frame
+  reason:      shape in 31, line in 2; worst 193x33 at (823, 356)
+  second look: the second picture is the same as the first, so the change is real, not motion
+  renderer:    same as the baseline's
+  baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  changed:     193x33 at (823, 356): shape changed: 42% of the old strokes are not where the new ones are
+               103x28 at (551, 355): shape changed: 56% of the old strokes are not where the new ones are
+               110x43 at (223, 406): shape changed: 66% of the new strokes are not where the old ones were
+               ... and 30 more in the report
+  diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
+  report:      .vistest/report/index.html
+  accept it:   pytest --vistest-update
 ```
 
-A result also says, for each region that counts, what was measured on it —
-under `changed:` in this message (three of them, the rest counted) and in a
-column of the report:
+(`examples/test_library.py` with the price's font cut from 34 to 30 px.)
+One thing per line: what the capture, the second look and the page have to
+say go under `capture:`, `second look:` and `hint:` — the mask for something
+that changes by itself is a line of its own. No line is longer than 120
+characters but a path.
+
+Under `changed:` each change that counts is said as the engine measured it —
+three of them, the rest counted — in the same words the report, the reason
+of a check that passed and `vistest bench` use:
 
 ```
-  changed:  153x14 at (202, 242): ink colour: #1f2937 → #4d5666, ΔE00 14.8
-            145x14 at (202, 458): ink colour: #1f2937 → #4d5666, ΔE00 14.8
-            152x14 at (202, 170): ink colour: #1f2937 → #4d5666, ΔE00 14.8
-            ... and 31 more in the report
+  changed:     153x14 at (202, 242): recolored: #1f2937 → #4d5666, color difference 14.8
+               ...
+               (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
 ```
 
-(table/text_color/de15 of the browser corpus: the text of the table drawn
-at ΔE00 15 from its colour. Others read «fill: #2563eb → #4d77ff, ΔE00 8.0»,
-«line added: 41×1 px, #2563eb», «block moved by +1 px along y».)
+(table/text_color/de15 of the browser corpus: the text of the table drawn at
+ΔE00 15 from its color.) The others: «fill: #2563eb → #4d77ff, color
+difference 8.0», «line added: 41×1 px, #2563eb», «block moved by +1 px along
+y», «shape changed: 62% of the new strokes are not where the old ones were»,
+and for a corner rounded 8 → 10 px «edges redrawn within 1 px, same color
+(#c7ced8): the outline changed slightly». The color difference is said once
+per message with its scale; the exact counts behind «shape changed» are in
+the report.
 
 Only what the engine measured: a block moved by whole pixels (both ways), a
-thin line in one frame only, the colour of the region's paper, the ink's
-colour and whether its shapes agree to a pixel. «Ink», not «text»: nothing
-there knows whether the strokes are letters.
+thin line in one frame only, the color of the paper around the change, the
+color of the strokes and whether their shapes agree within a pixel.
+«Strokes», not «text» or «letters»: nothing there knows whether they are
+letters, an icon or a border. The report's `kind` column is the same word:
+moved, line, fill, color, redrawn or shape.
 
 `expect_screenshot` takes a Playwright `Page` or `Locator`, PNG bytes, a
 `PIL.Image`, a numpy array, or a path to a PNG — so it works with a project's
@@ -620,7 +639,7 @@ configuration change you immediately see whether the engine started catching
 noise. Unlabelled real screenshots are useless for this — in a screenshot
 nobody has labelled you do not know the ground truth. Real screenshots with
 mutations are not: take a real render, apply a change whose label is known in
-advance (a recoloured button, a shifted block, a re-encoded frame), and the
+advance (a recolored button, a shifted block, a re-encoded frame), and the
 ground truth is known by construction.
 
 The primary metric is **false-fail rate**: the share of pages that did not

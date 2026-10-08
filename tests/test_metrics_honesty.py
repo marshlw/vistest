@@ -108,8 +108,8 @@ def test_changes_no_region_keeps_are_still_counted_and_named():
     assert r.regions, r.summary()
     assert r.unassigned_pixels > r.region_pixels, r.summary()
     reason = describe(r)
-    assert f"{r.changed_area_pct:.2f}% changed" in reason, reason
-    assert "in no region" in reason, reason
+    assert f"{r.changed_area_pct:.2f}% that differs" in reason, reason
+    assert "is in none of them" in reason, reason
 
 
 def test_the_reason_stays_short_when_the_regions_explain_the_area():
@@ -118,7 +118,7 @@ def test_the_reason_stays_short_when_the_regions_explain_the_area():
     cv2.rectangle(act, (100, 100), (220, 160), (200, 40, 40), -1)
     r = _c(exp, act)
     assert r.unassigned_pixels <= 0.1 * r.changed_pixels, r.summary()
-    assert "in no region" not in describe(r)
+    assert "in none of them" not in describe(r)
 
 
 def test_the_accounting_is_in_the_serialised_metrics():
@@ -142,8 +142,8 @@ def test_the_reason_never_drops_kinds_silently():
     kinds = [ChangeKind.TEXT] * 3 + [ChangeKind.COLOR] * 2 + [
         ChangeKind.ADDED, ChangeKind.REMOVED, ChangeKind.RESIZED]
     reason = describe(_result_with(kinds))
-    assert reason.startswith("8 regions:"), reason
-    assert "other changes in 2" in reason, reason
+    #  3 + 2 + 1 + 2: the counts add up to the eight changes.
+    assert reason.startswith("text in 3, color in 2, added in 1, other in 2;"), reason
 
 
 def test_the_region_named_in_the_reason_is_called_what_it_is():
@@ -151,7 +151,7 @@ def test_the_region_named_in_the_reason_is_called_what_it_is():
     res = _result_with([ChangeKind.TEXT, ChangeKind.COLOR])
     res.regions[0].w, res.regions[0].h = 400, 300        # large, severity 0
     reason = describe(res)
-    assert "most severe 11x5" in reason, reason
+    assert "worst 11x5" in reason, reason
     assert "largest" not in reason
 
 

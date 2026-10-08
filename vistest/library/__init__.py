@@ -53,6 +53,7 @@ from . import context as _context
 from . import fingerprint as _fingerprint
 from . import js as _js
 from . import targets as _targets
+from . import words as _words
 from .errors import (
     BaselineMissing,
     CaptureError,
@@ -296,6 +297,8 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
             if mode is None:
                 record(verdict="new_baseline", action="missing",
                        reason=_with(said, "there is no baseline for this snapshot yet"),
+                       lines=[("reason", "there is no baseline for this snapshot yet"),
+                              *(("capture", n) for n in said)],
                        images={"actual": str(actual_path)},
                        duration_ms=_ms(started), capture=captured)
                 raise BaselineMissing.build(
@@ -311,6 +314,8 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                              meta=_passport_for(store, key, run_canary, shot))
             record(verdict="new_baseline", action="created",
                    reason=_with(said, f"baseline created by --vistest-update={mode}"),
+                   lines=[("reason", f"baseline created by --vistest-update={mode}"),
+                          *(("capture", n) for n in said)],
                    images={"actual": str(actual_path),
                            "baseline": str(baseline_path)},
                    duration_ms=_ms(started), capture=captured)
@@ -396,17 +401,23 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         hint = _scale_hint(shot, result)
         if hint:
             said.append(hint)
+        #  A picture of a page, not one handed in: only a page has a renderer.
+        page = shot.retake is not None or bool(shot.browser)
         result.notes[:0] = said
-
-        from ..report.library import describe
 
         #  What the second look found goes into the message too — a page that
         #  was not ready and got no masking, a later frame that was judged,
         #  something that keeps changing: the person reading the failure needs
-        #  it more than the report does. It is already among the notes.
+        #  it more than the report does. It is already among the notes. Each
+        #  on a line of its own, under its own label (review v1, 4.4): the
+        #  hint with the mask used to be the tail of a 400-character reason.
         hints = _failure_hints(shot, result, live, passport, away, blur) \
             if result.verdict is Verdict.FAIL else []
-        reason = _with([*said, *_look_notes(result), *hints], describe(result))
+        what = _words.reason(result)
+        notes = [*(("capture", n) for n in said),
+                 *(("second look", _words.look(n)) for n in _look_notes(result)),
+                 *(("hint", h) for h in hints)]
+        reason = _with([text for _, text in notes], what)
         limits = _limits(cfg)
         images = {"baseline": str(baseline_path), "actual": str(actual_path)}
 
@@ -434,28 +445,36 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                 run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
             meta = store.put(key, final_png,
                              meta=_passport_for(store, key, run_canary, shot))
+            accepted = result.verdict is Verdict.FAIL
             record(verdict="new_baseline",
                    action="unchanged" if meta.sha256 == _sha_of(baseline)
                    else "updated",
-                   reason=(_with(said, "the baseline already matched")
-                           if result.verdict is not Verdict.FAIL
-                           else f"accepted: {reason}"),
+                   reason=(f"accepted: {reason}" if accepted
+                           else _with(said, "the baseline already matched")),
+                   lines=([("reason", f"accepted: {what}"), *notes] if accepted
+                          else [("reason", "the baseline already matched"),
+                                *(("capture", n) for n in said)]),
                    result=result, limits=limits, images=images,
-                   duration_ms=_ms(started), capture=captured, renderer=rend,
-                   run_canary=run_sha)
+                   duration_ms=_ms(started), capture=captured,
+                   renderer=rend, run_canary=run_sha)
             return _fresh_result(key, meta, Verdict.NEW_BASELINE, notes=said)
 
         record(verdict="fail" if result.verdict is Verdict.FAIL else "pass",
-               action="compared", reason=reason, result=result, limits=limits,
-               images=images, duration_ms=_ms(started), capture=captured,
+               action="compared", reason=reason, lines=[("reason", what), *notes],
+               result=result, limits=limits, images=images,
+               duration_ms=_ms(started), capture=captured,
                renderer=rend, run_canary=run_sha)
 
         if result.verdict is Verdict.FAIL:
+            #  The renderer only for a picture of a page: two files handed in
+            #  have no canary, and «renderer: unknown» on every one of them
+            #  said nothing (review v1, 4.8).
             raise ScreenshotMismatch.build(
                 name=_shown(key), asked=_asked(key), platform=platform, result=result,
-                reason=reason,
+                reason=what, notes=notes,
                 baseline=baseline_path, actual=actual_path, diff=diff_path,
-                report=ctx.report, limits=limits, renderer=rend.line())
+                report=ctx.report, limits=limits,
+                renderer=rend.line() if page else "")
         return result
     except Exception as exc:
         #  `BaselineMissing` and `ScreenshotMismatch` have written their own row
@@ -766,7 +785,7 @@ def _failure_hints(shot, result, live, passport, away: bool, blur: bool) -> list
         x, y, w, h = item.get("box") or (0, 0, 0, 0)
         near = (x - NEAR_PX, y - NEAR_PX, w + 2 * NEAR_PX, h + 2 * NEAR_PX)
         if any(_overlaps(near, (r.x, r.y, r.w, r.h)) for r in regions):
-            out.append(f"the failing region is at {item['sel']}, which {words}: {switch}")
+            out.append(f"the change is at {item['sel']}, which {words}: {switch}")
     #  Only for a page that did change after the picture (the second look says
     #  so, or the frames never held): an unrelated beacon that ended after the
     #  shot of a page that did not move is not the reason for anything.
@@ -971,7 +990,7 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
 def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
             images: dict, duration_ms: int, result=None,
             limits: dict | None = None, capture: dict | None = None,
-            renderer=None, run_canary: str = "") -> None:
+            renderer=None, run_canary: str = "", lines=None) -> None:
     """One row for the report, written as this process's own file.
 
     `run_canary` is the sha256 of the canary this check drew, kept under
@@ -991,6 +1010,11 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         "limits": limits or {},
         "nodeid": ctx_nodeid(),
     }
+    if lines:
+        #  The reason the way the message says it: one thing per line, under
+        #  its label — `reason` above is the same, joined, for whoever reads
+        #  the JSON.
+        entry["lines"] = [[label, text] for label, text in lines]
     if capture:
         entry["capture"] = capture
     if renderer is not None:
@@ -1022,12 +1046,10 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         #  What a threshold a person set let through (engine v2): listed, with
         #  the sentence the failure message and the API carry.
         if result.threshold is not None:
-            from ..core.engines import below_line
-
             entry["threshold"] = dict(result.threshold)
             entry["below_threshold"] = [_region_row(r)
                                         for r in list(result.below_threshold)[:MAX_LISTED]]
-            entry["below_line"] = below_line(result)
+            entry["below_line"] = _words.below(result)
     try:
         write_part(ctx.parts_dir, entry)
     except OSError as e:  # pragma: no cover - a report row is not the verdict
