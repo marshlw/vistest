@@ -304,7 +304,7 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                 raise BaselineMissing.build(
                     name=_shown(key), asked=_asked(key), platform=platform,
                     baseline=baseline_path, actual=actual_path,
-                    elsewhere=platforms_with(store, key))
+                    elsewhere=platforms_with(store, key), accept=ctx.accept_with)
 
             _refuse_too_large(ctx, shot.png, key)
             _warn_unsettled_accept(shot, key)
@@ -313,8 +313,8 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
             meta = store.put(key, shot.png,
                              meta=_passport_for(store, key, run_canary, shot))
             record(verdict="new_baseline", action="created",
-                   reason=_with(said, f"baseline created by --vistest-update={mode}"),
-                   lines=[("reason", f"baseline created by --vistest-update={mode}"),
+                   reason=_with(said, f"baseline created by {ctx.updated_by(mode)}"),
+                   lines=[("reason", f"baseline created by {ctx.updated_by(mode)}"),
                           *(("capture", n) for n in said)],
                    images={"actual": str(actual_path),
                            "baseline": str(baseline_path)},
@@ -411,7 +411,8 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         #  it more than the report does. It is already among the notes. Each
         #  on a line of its own, under its own label (review v1, 4.4): the
         #  hint with the mask used to be the tail of a 400-character reason.
-        hints = _failure_hints(shot, result, live, passport, away, blur) \
+        hints = _failure_hints(shot, result, live, passport, away, blur,
+                               accept=ctx.accept_with) \
             if result.verdict is Verdict.FAIL else []
         what = _words.reason(result)
         notes = [*(("capture", n) for n in said),
@@ -474,7 +475,7 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                 reason=what, notes=notes,
                 baseline=baseline_path, actual=actual_path, diff=diff_path,
                 report=ctx.report, limits=limits,
-                renderer=rend.line() if page else "")
+                renderer=rend.line() if page else "", accept=ctx.accept_with)
         return result
     except Exception as exc:
         #  `BaselineMissing` and `ScreenshotMismatch` have written their own row
@@ -765,7 +766,8 @@ def _late_names(shot) -> list[str]:
         return []
 
 
-def _failure_hints(shot, result, live, passport, away: bool, blur: bool) -> list[str]:
+def _failure_hints(shot, result, live, passport, away: bool, blur: bool,
+                   accept: str = "pytest --vistest-update") -> list[str]:
     """What the page can tell about a failure: the element to blame, what to do."""
     out: list[str] = []
     facts = shot.facts or {}
@@ -829,7 +831,7 @@ def _failure_hints(shot, result, live, passport, away: bool, blur: bool) -> list
     if shot.retake is not None and (passport is None or not passport.capture
                                     or int(passport.capture.get("version", 1))
                                     < CAPTURE_VERSION):
-        out.append(old_way("pytest --vistest-update=changed", CAPTURE_VERSION))
+        out.append(old_way(accept, CAPTURE_VERSION))
     return out
 
 

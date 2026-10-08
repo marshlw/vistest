@@ -166,6 +166,15 @@ come out byte for byte the same. In the engine only the words of
   array — has no renderer line in the message: two files carry no canary.
   `vistest compare` says nothing of a renderer.
 - **color, as in CSS** (4.9), in the messages, the report and the CLI.
+- **How to accept, where the check runs** (4.11): under pytest `pytest
+  --vistest-update`; from a script `set VISTEST_UPDATE_BASELINES=1 and run it
+  again`; from `vistest check` the same command with `--update`. It advised
+  pytest everywhere. The report row of a new baseline says what wrote it the
+  same way.
+- **`vistest check` says a warning as a command does** (8a): one line,
+  `vistest check: warning: byte targets have no platform: baselines go to the
+  root; pass --platform if they vary by machine` — not Python's warning with a
+  path into cli.py and a line of its source, advising `vistest_platform`.
 - **No line of a message is longer than 120 characters but a path**: the
   lines wrap under their label, never inside a bracket or around an arrow; a
   command to copy stays on one line.

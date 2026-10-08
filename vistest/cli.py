@@ -807,21 +807,24 @@ def _check_library(args) -> int:
     from . import expect_screenshot
     from .config import env_text
     from .library import context as _context
-    from .library.errors import BaselineMissing, ScreenshotMismatch
+    from .library.errors import BaselineMissing, ScreenshotMismatch, VisTestWarning
 
     baselines = args.baselines or env_text("VISTEST_BASELINES")
     root = Path.cwd()
     ctx = _context.LibraryContext(
         root=root, baselines=(root / baselines) if baselines else None,
         platform_override=args.platform or env_text("VISTEST_PLATFORM"),
-        update="changed" if args.update else None)
+        update="changed" if args.update else None,
+        origin="cli", command=_check_command(args))
     _context.install(ctx)
     started = time.time()
     try:
-        with warnings.catch_warnings():
-            #  The library says these once per process; here they go to stderr,
-            #  so that --json keeps one object on stdout.
-            warnings.simplefilter("default")
+        with warnings.catch_warnings(record=True) as said:
+            #  The library's warnings, as a command says them (review v1, 8a):
+            #  one line on stderr each, not the Python warning with a path into
+            #  cli.py and a line of its source — and --json keeps one object
+            #  on stdout.
+            warnings.simplefilter("always")
             try:
                 result = expect_screenshot(Path(args.actual), args.name)
             except BaselineMissing as e:
@@ -844,6 +847,12 @@ def _check_library(args) -> int:
                     message = f"vistest: {args.name!r} matches its baseline"
     finally:
         _context.uninstall()
+    for w in said:
+        if not issubclass(w.category, VisTestWarning):
+            warnings.showwarning(w.message, w.category, w.filename, w.lineno)
+            continue
+        text = " ".join(str(w.message).split()).removeprefix("vistest: ")
+        print(f"vistest check: warning: {text}", file=sys.stderr)
 
     out = {"verdict": verdict, "message": message,
            "baseline": files.get("baseline"), "actual": files.get("actual"),
@@ -853,6 +862,19 @@ def _check_library(args) -> int:
     else:
         print(message)
     return code
+
+
+def _check_command(args) -> str:
+    """The command line of this `vistest check`, to repeat with --update."""
+    def arg(value) -> str:
+        value = str(value)
+        return f'"{value}"' if not value or any(c.isspace() for c in value) else value
+
+    parts = ["vistest", "check", arg(args.name), arg(args.actual)]
+    for flag in ("baselines", "platform"):
+        if getattr(args, flag, None):
+            parts += [f"--{flag}", arg(getattr(args, flag))]
+    return " ".join(parts)
 
 
 def _row_images(ctx, since: float) -> dict:

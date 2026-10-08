@@ -57,6 +57,21 @@ UPDATE_MODES = ("missing", "changed", "all")
 #: A bare `--vistest-update`, and `VISTEST_UPDATE_BASELINES=1`.
 DEFAULT_UPDATE_MODE = "changed"
 
+#: Where a check runs, for the words that tell how to accept it (review v1,
+#: 4.11): under the pytest plugin, from `vistest check`, or from a script —
+#: the library alone, the environment variables its only switches.
+ORIGINS = ("pytest", "cli", "script")
+
+
+def _origin(origin: str | None) -> str:
+    """A context built by hand says nothing: under pytest it stands in for the
+    plugin's (a test suite's own fixture), anywhere else it is a script's."""
+    if origin:
+        return origin
+    import os
+
+    return "pytest" if os.environ.get("PYTEST_CURRENT_TEST") else "script"
+
 #: What the library reads of vistest.yaml: the keys its check uses, and the
 #: sections it hands over whole (`plugins:` to the plugin runtime, `ai:` to the
 #: AI pipeline). The engine reads the `diff:` keys listed. Everything else in
@@ -125,6 +140,10 @@ class LibraryContext:
     config_path: str | None = None
     #  `--vistest-fail-on`, folded over `plugins.fail_on` from the config.
     fail_on: str | None = None
+    #  One of ORIGINS, or None: see `_origin`. `command` is the command line
+    #  of `vistest check`.
+    origin: str | None = None
+    command: str = ""
     #  Filled on first use; both are process-wide and neither is cheap.
     _config: Any = None
     _store: Any = None
@@ -145,6 +164,39 @@ class LibraryContext:
     @property
     def update_mode(self) -> str | None:
         return update_mode(self.update)
+
+    @property
+    def accept_with(self) -> str:
+        """How to accept the picture, where this check runs.
+
+        `vistest check` without a baseline used to advise pytest; a script, a
+        flag it does not have.
+        """
+        origin = _origin(self.origin)
+        if origin == "pytest":
+            return "pytest --vistest-update"
+        if origin == "cli":
+            return f"{self.command or 'vistest check NAME ACTUAL'} --update"
+        return f"set {ENV_UPDATE}=1 and run it again"
+
+    def updated_by(self, mode: str) -> str:
+        """What wrote a baseline, for the report: '--vistest-update=changed'."""
+        origin = _origin(self.origin)
+        if origin == "pytest":
+            return f"--vistest-update={mode}"
+        if origin == "cli":
+            return "vistest check --update"
+        return f"{ENV_UPDATE}=1"
+
+    @property
+    def platform_how(self) -> str:
+        """How to name the platform, where this check runs."""
+        origin = _origin(self.origin)
+        if origin == "pytest":
+            return "pass --vistest-platform (or set vistest_platform in pyproject.toml)"
+        if origin == "cli":
+            return "pass --platform"
+        return f"set {ENV_PLATFORM}"
 
     @property
     def config(self) -> VisTestConfig:
@@ -205,7 +257,7 @@ class LibraryContext:
         if self.platform_override:
             return self.platform_override
         if not (shot.browser or shot.viewport):
-            _warn_no_platform()
+            _warn_no_platform(self.platform_how)
             return ""
         from ..config import platform_key
 
@@ -238,6 +290,7 @@ class LibraryContext:
             report=(Path(value) if (value := env_text(ENV_REPORT)) else None),
             platform_override=env_text(ENV_PLATFORM),
             update=env_flag(ENV_UPDATE, default=False),
+            origin="script",
         )
 
 
@@ -266,7 +319,7 @@ def warn_unread_once(config, *, say: bool = True) -> str:
     return text
 
 
-def _warn_no_platform() -> None:
+def _warn_no_platform(how: str = f"set {ENV_PLATFORM}") -> None:
     """Said once per process when the baselines are going to the root.
 
     Not guessing a browser is the right call, but making it in silence is not.
@@ -283,9 +336,8 @@ def _warn_no_platform() -> None:
         return
     _warned_no_platform = True
     warnings.warn(
-        "byte targets have no platform; baselines go to the root — set "
-        "vistest_platform if these images depend on the environment",
-        VisTestWarning, stacklevel=5)
+        f"byte targets have no platform: baselines go to the root; {how} if they vary "
+        "by machine", VisTestWarning, stacklevel=5)
 
 
 def install(context: LibraryContext) -> LibraryContext:
