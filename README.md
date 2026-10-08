@@ -264,6 +264,7 @@ expect_screenshot(
     full_page=False,
     scale="css",                       # or "device"; the key says which
     timeout_ms=10000,                  # the whole check; past it, CaptureError
+                                       # (a hung page: up to 1.5 s more, to say why)
 )
 ```
 
