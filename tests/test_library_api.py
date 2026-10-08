@@ -159,16 +159,17 @@ def test_a_bare_number_is_the_severity_and_it_reaches_the_engine(ctx):
     #  in the call is — and is named with where it came from.
     with pytest.raises(ScreenshotMismatch) as default:
         expect_screenshot(changed, "page.png")
-    assert "no threshold is set, so any such region fails" in str(default.value)
+    assert "no threshold set, so any change fails" in str(default.value)
 
     with pytest.raises(ScreenshotMismatch) as raised:
         expect_screenshot(changed, "page.png", fail_severity=60)
-    assert "threshold 60 (call)" in str(raised.value)
+    assert "threshold 60 (set in the call)" in str(raised.value)
 
     with pytest.raises(ScreenshotMismatch) as both:
         expect_screenshot(changed, "page.png",
                           fail_severity=60, max_changed_area_pct=30)
-    assert "threshold 60 (call), area limit 30.00%" in str(both.value)
+    assert "threshold 60 (set in the call)" in str(both.value)
+    assert "(limit 30.00%, set in the call)" in " ".join(str(both.value).split())
 
 
 
@@ -195,7 +196,7 @@ def test_the_passport_thresholds_reach_the_comparison(ctx):
     changed = frame(box=(10, 10, 60, 30))
     with pytest.raises(ScreenshotMismatch) as before:
         expect_screenshot(changed, "page.png")
-    assert "no threshold is set, so any such region fails" in str(before.value)
+    assert "no threshold set, so any change fails" in str(before.value)
 
     store = FileStore(ctx.baselines)
     key = SnapshotKey("page.png")
@@ -204,7 +205,7 @@ def test_the_passport_thresholds_reach_the_comparison(ctx):
 
     with pytest.raises(ScreenshotMismatch) as after:
         expect_screenshot(changed, "page.png")
-    assert "threshold 70 (snapshot passport)" in str(after.value)
+    assert "threshold 70 (from the baseline's passport)" in str(after.value)
 
 
 def test_the_call_beats_the_passport(ctx):
@@ -220,7 +221,7 @@ def test_the_call_beats_the_passport(ctx):
 
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png", fail_severity=42)
-    assert "threshold 42 (call)" in str(e.value)
+    assert "threshold 42 (set in the call)" in str(e.value)
 
 
 def test_setting_a_passport_threshold_does_not_need_a_new_picture(ctx):

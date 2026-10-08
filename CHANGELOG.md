@@ -103,6 +103,72 @@ was no public release that promised it. Each line is what to write instead.
   `vistest matrix` and the errors of `matrix:` in vistest.yaml were Russian →
   English; for one, `window size '1440*900' is not WIDTHxHEIGHT, for example
   1440x900`
+- **The words of a change are the same everywhere** (review v1, step C, 4.5 to
+  4.9): what reads them should read the new ones.
+  - the `value` of a region's `description` annotation (the report's kind,
+    `POST /api/check`'s regions): `block`, `ink colour`, `ink shape` →
+    `moved`, `color`, `shape` (`line`, `fill`, `redrawn` stay); the exact
+    counts behind a sentence are in its new `detail`
+  - its `text`: «ink colour: A → B, ΔE00 N» → «recolored: A → B, color
+    difference N»; «fill: …, ΔE00 N» → «fill: …, color difference N»;
+    «strokes redrawn within 1 px; ink A → B, ΔE00 0.00 (below 2)» → «edges
+    redrawn within 1 px, same color (A): the outline changed slightly»;
+    «ink shape changed: 36 of 58 px of the new ink and 11 of 35 of the old lie
+    farther than 1 px from the other» → «shape changed: 62% of the new strokes
+    are not where the old ones were»
+  - `vistest compare` printed `CompareResult.summary()` (SSIM, mean ΔE00,
+    the old classifier's kinds, the engine's notes) → the failure message's
+    words; `--json` and `result.json` are unchanged
+  - `vistest bench`: a pair is a head line and a change per line; «N regions»
+    → «N changes» in the console, `labels.csv` and `pairs.json`
+  - `library.errors.plain()` is gone (the engine says it now);
+    `ScreenshotMismatch.build(update_flag=)`, `BaselineMissing.build(update_flag=)`
+    → `accept=`, the whole command
+
+### Review C: what a person reads (after review B)
+
+The words of the messages, the report and `vistest bench` (review v1, step C).
+The verdicts, the numbers and the regions are what they were: the benchmarks
+come out byte for byte the same. In the engine only the words of
+`core/v2/describe.py` changed.
+
+- **The threshold line is short and has no word of the machinery** (4.3):
+  «engine v2: 33 regions that no rule of the engine explains away (not
+  antialiasing, not a different renderer, not a block that only moved),
+  severity up to 92.7 on a 0–100 scale (0 — nothing, …); no threshold is set,
+  so any such region fails; changed area 2.80% of the frame» → «33 changes not
+  explained as rendering noise · worst 93/100 · no threshold set, so any change
+  fails · 2.80% of the frame». With a threshold: «… at or above the threshold
+  25 (set in the call) · worst 61.2/100 · 2.10% of the frame (limit 0.15%, the
+  default)».
+- **One thing per line** (4.4): `reason:` says what changed; the capture's
+  notes, the second look and each hint have a line of their own —
+  `capture:`, `second look:`, `hint:` — instead of the tail of a reason of 400
+  characters. The report shows the same lines (`lines` in the report row; the
+  `reason` string stays, joined). The mask for something that changes by itself
+  is a line of its own.
+- **The report's kind is the sentence's** (4.5): the kind column, the labels on
+  the diff picture and the reason count changes as `moved`, `line`, `fill`,
+  `color`, `redrawn`, `shape` — the corner of a frame was «text» beside «edges
+  redrawn», a fill «added» beside «fill: …».
+- **One function says a change** (4.6, 4.7): the message, the report, the
+  reason of a check that passed below a threshold and `vistest bench` say it in
+  `library/words.py`'s words, which are the engine's (`core/v2/describe.py`).
+  No «letters» or «ink» where there is no text: a corner rounded 8 → 10 px is
+  «edges redrawn within 1 px, same color (#c7ced8): the outline changed
+  slightly», not «letters moved by less than 1 px». A changed shape is said as
+  a share; the counts are in the report.
+- **ΔE once, with its scale** (4.8): each change says «color difference N»,
+  and the message says once, under them, «color difference is ΔE00
+  (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color».
+  SSIM, the mean ΔE00 and the canary's time moved from a report row's summary
+  to its `details`. A picture handed in — `vistest check` on a file, bytes, an
+  array — has no renderer line in the message: two files carry no canary.
+  `vistest compare` says nothing of a renderer.
+- **color, as in CSS** (4.9), in the messages, the report and the CLI.
+- **No line of a message is longer than 120 characters but a path**: the
+  lines wrap under their label, never inside a bracket or around an arrow; a
+  command to copy stays on one line.
 
 ### Review A: reliability and edge cases (after 0.2.0.dev2)
 

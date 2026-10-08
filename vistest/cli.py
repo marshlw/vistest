@@ -716,9 +716,52 @@ def _compare(args) -> int:
     if args.json:
         print(res.to_json())
     else:
-        print(res.summary())
-        print(f"\nArtifacts: {out.resolve()}")
+        print("\n".join(_compare_words(args, res, out)))
     return 1 if res.failed else 0
+
+
+def _compare_words(args, res, out: Path) -> list[str]:
+    """What `vistest compare` says: the failure message's words, for two files.
+
+    No «renderer: unknown» (two files carry no canary, review v1, 4.8), no SSIM
+    or mean ΔE — those are in result.json — and the changes in the words the
+    library's message and report use (library/words.py).
+    """
+    from .library import words
+    from .library.errors import CHANGED_SHOWN, SUPPRESSED_SHOWN
+    from .plugins.runtime import count_suppressed, say_suppressed
+
+    cfg = res.threshold or {}
+    limits = {"engine": "v2", **({"threshold_source": cfg.get("source"),
+                                  "fail_severity": cfg.get("value", 0),
+                                  "max_changed_area_pct": cfg.get("area_limit", 0),
+                                  "area_source": cfg.get("area_source")}
+                                 if cfg.get("source") else {})}
+    if not res.failed:
+        lines = [f"vistest compare: {args.actual} matches {args.expected}"]
+        lines += words.labelled("reason", words.reason(res))
+    else:
+        lines = [f"vistest compare: {args.actual} differs from {args.expected}",
+                 *words.limits_lines(res, limits)]
+        lines += words.labelled("reason", words.reason(res))
+    shown = [words.region(r) for r in res.regions[:CHANGED_SHOWN]]
+    for i, text in enumerate(shown):
+        lines += words.labelled("changed" if i == 0 else "", text)
+    if len(res.regions) > CHANGED_SHOWN:
+        lines += words.labelled("", f"... and {len(res.regions) - CHANGED_SHOWN} more in "
+                                    "result.json")
+    if res.failed and (below := words.below(res)):
+        shown.append(below)
+        lines += words.labelled("let through", below)
+    if scale := words.scale_for(shown):
+        lines += words.labelled("", f"({scale})")
+    if res.suppressed:
+        lines += words.labelled(
+            "also", "; ".join(say_suppressed(count_suppressed(res.suppressed))))
+        for r in res.suppressed[:SUPPRESSED_SHOWN]:
+            lines += words.labelled("", words.suppressed(r))
+    lines.append(f"  {'artifacts:':<{words.COLUMN - 2}}{out.resolve()}")
+    return lines
 
 
 def _check(args) -> int:

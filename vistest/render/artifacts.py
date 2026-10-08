@@ -32,7 +32,7 @@ import numpy as np
 #  `vistest.config` is the module that searches for one.
 from ..core.settings import RenderConfig
 from ..models import ChangeKind, CompareResult
-from .palette import kind_color, severity_band, severity_color
+from .palette import category, region_color, severity_band, severity_color
 
 try:
     import cv2
@@ -142,12 +142,12 @@ def draw_boxes(base_rgb, regions, *, label: bool = True) -> np.ndarray:
     overlay = out.copy()
 
     for r in regions:
-        c = kind_color(r.kind)
+        c = region_color(r)
         cv2.rectangle(overlay, (r.x, r.y), (r.x + r.w, r.y + r.h), c, -1)
     cv2.addWeighted(overlay, 0.18, out, 0.82, 0, out)
 
     for r in regions:
-        c = kind_color(r.kind)
+        c = region_color(r)
         sc = severity_color(r.severity)
         thickness = 2 if r.severity < 50 else 3
         cv2.rectangle(out, (r.x, r.y), (r.x + r.w, r.y + r.h), c, thickness)
@@ -158,8 +158,9 @@ def draw_boxes(base_rgb, regions, *, label: bool = True) -> np.ndarray:
 
         if not label:
             continue
-        text = f"{r.kind.value.upper()} {r.severity:.0f}"
-        if r.kind is ChangeKind.MOVED:
+        said = category(r)
+        text = f"{(said or r.kind.value).upper()} {r.severity:.0f}"
+        if not said and r.kind is ChangeKind.MOVED:
             text += f" ({r.moved_dx:+d},{r.moved_dy:+d})"
         _label(out, text, r.x, r.y, sc)
 

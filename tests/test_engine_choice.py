@@ -369,8 +369,9 @@ def test_the_library_compares_with_v2_and_says_so(ctx):
     _accept(ctx, _png(a))
     with pytest.raises(ScreenshotMismatch) as v2:
         expect_screenshot(_png(b), "page.png")
-    assert "engine v2: 2 regions that no rule of the engine explains away" in str(v2.value)
-    assert "no threshold is set, so any such region fails" in str(v2.value)
+    #  The words of review v1, step C (4.3): no «engine v2», «rule», «region».
+    assert "2 changes not explained as rendering noise" in str(v2.value)
+    assert "no threshold set, so any change fails" in str(v2.value)
     assert engines.V1_DEPRECATED not in str(v2.value)
 
 
@@ -384,8 +385,9 @@ def test_below_the_threshold_in_the_message_and_the_report(ctx):
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(_png(b), "page.png", fail_severity=25)
     text = str(e.value)
-    assert "threshold 25 (call), area limit 0.15% (default)" in text
-    assert "  below the threshold 25 (call): 1 region — " in text
+    assert "threshold 25 (set in the call)" in text
+    assert "(limit 0.15%, the default)" in " ".join(text.split())
+    assert "  let through: below the threshold 25 (set in the call): 1 change — " in text
 
     c = a.copy()
     c[100:104, 200:210] = (244, 244, 244)
@@ -394,11 +396,12 @@ def test_below_the_threshold_in_the_message_and_the_report(ctx):
 
     rows = [r for r in read_parts(ctx.parts_dir).entries if r.get("action") == "compared"]
     assert rows[-1]["verdict"] == "pass"
-    assert rows[-1]["reason"].startswith("below the threshold 25 (call): 1 region — ")
+    assert rows[-1]["reason"].startswith(
+        "below the threshold 25 (set in the call): 1 change — ")
     assert rows[-1]["limits"]["threshold_source"] == "call"
     assert len(rows[-1]["below_threshold"]) == 1
     html = render(read_parts(ctx.parts_dir))
-    assert 'class="below" open' in html and "below the threshold 25 (call)" in html
+    assert 'class="below" open' in html and "below the threshold 25 (set in the call)" in html
     assert "threshold 25 (call)" in html
 
 
@@ -413,12 +416,13 @@ def test_the_area_limit_in_the_message_says_where_from_and_what_to_do(ctx):
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(_png(b), "page.png",
                           fail_severity=99, max_changed_area_pct=1)
-    assert "threshold 99 (call), area limit 1.00% (call) — all below it" in str(e.value)
+    said = " ".join(str(e.value).split())
+    assert "2 changes, all below the threshold 99 (set in the call)" in said
+    assert "at or over the limit (1.00%, set in the call)" in said
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(_png(b), "page.png", fail_severity=99)
-    assert ("threshold 99 (call), area limit 0.15% (default) — all below it, "
-            "together 1.40% of the frame, at or over the area limit: raise "
-            "max_changed_area_pct or mask the area") in str(e.value)
+    assert ("together 1.40% of the frame, at or over the limit (0.15%, the default) · "
+            "raise max_changed_area_pct or mask the area") in " ".join(str(e.value).split())
     passed = expect_screenshot(_png(b), "other.png",
                                fail_severity=99, max_changed_area_pct=5)
     assert passed.verdict is Verdict.PASS

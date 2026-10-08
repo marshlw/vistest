@@ -6,7 +6,7 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 12429 lines in 215 files.
+# 12428 lines in 215 files.
 
 52	.github/workflows/ci.yml
 57	.gitlab-ci.example.yml
@@ -209,7 +209,7 @@
 2	vistest/record/overlay.py
 55	vistest/record/pom.py
 6	vistest/record/snap.py
-9	vistest/render/palette.py
+8	vistest/render/palette.py
 1	vistest/report/__init__.py
 39	vistest/report/comment.py
 45	vistest/report/junit.py

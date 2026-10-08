@@ -23,8 +23,8 @@ import pytest
 import vistest.library as lib
 from vistest.capture import inflight
 from vistest.capture.ready import LIBRARY_CAPTURE_VERSION, old_way
-from vistest.library import targets
-from vistest.library.errors import plain
+from vistest.core import compare
+from vistest.library import targets, words
 from vistest.storage.file import default_root
 
 
@@ -186,22 +186,34 @@ def test_the_baseline_folder_does_not_make_a_tests_folder(tmp_path):
 
 
 # --- the words -------------------------------------------------------------- #
+#  The sentence for strokes redrawn within a pixel used to be rewritten for the
+#  message only («letters moved by less than 1 px»); the engine says it in the
+#  words every reader uses now (core/v2/describe.py, review v1 step C, 4.6).
+def _said(a, b) -> set[str]:
+    return {words.sentence(x) for x in compare(a, b, engine="v2").regions}
+
+
 def test_a_redrawn_text_with_the_same_colour_is_explained():
-    text = plain("strokes redrawn within 1 px; ink #889ab3 → #889ab3, ΔE00 0.00 (below 2)")
-    assert "letters moved by less than 1 px" in text
-    assert "the colour is the same (#889ab3)" in text
-    assert "not explained as noise" in text
-    assert "ΔE00 0.00" not in text
+    from .test_engine_v2_describe import _page, _words
+
+    (text,) = _said(_words(_page()), _words(_page(), heavy=range(8)))
+    assert text == ("edges redrawn within 1 px, same color (#333333): the outline "
+                    "changed slightly")
+    assert "letters" not in text and "ink" not in text and "ΔE00" not in text
 
 
 def test_a_redrawn_text_with_a_close_colour_keeps_the_numbers():
-    text = plain("strokes redrawn within 1 px; ink #889ab3 → #8a9bb3, ΔE00 0.90 (below 2)")
-    assert "within 2 ΔE00" in text and "#889ab3 → #8a9bb3" in text
+    from .test_engine_v2_describe import _page, _words
+
+    (text,) = _said(_words(_page()), _words(_page(), ink=(56, 56, 56), heavy=range(8)))
+    assert "#333333 → #383838, color difference 1.59" in text
 
 
 def test_other_sentences_are_left_alone():
-    s = "ink colour: #343649 → #586074, ΔE00 14.2"
-    assert plain(s) == s
+    s = "recolored: #343649 → #586074, color difference 14.2"
+    r = {"x": 219, "y": 522, "w": 97, "h": 12,
+         "annotations": [{"kind": "description", "text": s}]}
+    assert words.region(r) == f"97x12 at (219, 522): {s}"
 
 
 def test_the_old_way_line_names_the_library_changes():

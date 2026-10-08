@@ -64,7 +64,7 @@ def test_fail_severity_is_a_number_of_the_call_and_is_named_so(ctx):
     accept(ctx, frame())
     with pytest.raises(ScreenshotMismatch) as raised:
         expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png", fail_severity=60)
-    assert "threshold 60 (call)" in str(raised.value)
+    assert "threshold 60 (set in the call)" in str(raised.value)
 
 
 def test_both_numbers_of_the_call_reach_the_comparison(ctx):
@@ -72,7 +72,8 @@ def test_both_numbers_of_the_call_reach_the_comparison(ctx):
     with pytest.raises(ScreenshotMismatch) as both:
         expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png",
                           fail_severity=60, max_changed_area_pct=30)
-    assert "threshold 60 (call), area limit 30.00%" in str(both.value)
+    assert "threshold 60 (set in the call)" in str(both.value)
+    assert "(limit 30.00%, set in the call)" in " ".join(str(both.value).split())
 
 
 def test_a_high_enough_fail_severity_passes_the_same_change(ctx):
@@ -119,8 +120,8 @@ def test_the_same_two_names_are_read_from_vistest_yaml(tmp_path, monkeypatch):
             expect_screenshot(frame(box=(10, 10, 60, 30)), "page.png")
     finally:
         _context.uninstall()
-    assert "threshold 60 (vistest.yaml), area limit 30.00% (vistest.yaml)" \
-        in str(both.value)
+    assert "threshold 60 (from vistest.yaml)" in str(both.value)
+    assert "(limit 30.00%, from vistest.yaml)" in " ".join(str(both.value).split())
 
 
 # --- R8, 1.1: keep_pointer, blur_focus and one timeout_ms ------------------ #

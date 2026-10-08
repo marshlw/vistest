@@ -281,7 +281,7 @@ def test_a_failure_against_a_baseline_with_a_canary_draws_this_runs(ctx):
     row = rows(ctx)[-1]
     assert row["renderer"]["line"] == "renderer: same as the baseline's"
     assert row["capture"]["canary_ms"] >= 0
-    assert "\n  renderer: same as the baseline's\n" in str(e.value)
+    assert "\n  renderer:    same as the baseline's\n" in str(e.value)
 
 
 def test_a_failure_against_a_baseline_without_a_canary_draws_nothing(ctx):
@@ -299,7 +299,7 @@ def test_another_renderer_is_named_with_its_pixels_in_the_failure(ctx):
     other = FakePage(frame(90), FakeContext(canary_png(dots=7)))
     with pytest.raises(ScreenshotMismatch) as e:
         expect_screenshot(other, "home.png")
-    assert "\n  renderer: different from the baseline's (canary: 7 px)\n" in str(e.value)
+    assert "\n  renderer:    different from the baseline's (canary: 7 px)\n" in str(e.value)
     assert rows(ctx)[-1]["renderer"]["line"] == \
         "renderer: different from the baseline's (canary: 7 px)"
 
@@ -329,7 +329,9 @@ def test_bytes_have_no_renderer_and_the_report_says_so(ctx):
     line = rows(ctx)[-1]["renderer"]["line"]
     assert line == ("renderer: unknown — the baseline names no canary — accepted "
                     "before the canary existed, or not from a page")
-    assert f"\n  {line}\n" in str(e.value)
+    #  The report keeps the line; the message has none for a picture handed
+    #  in — it can have no renderer (review v1, step C, 4.8).
+    assert "\n  renderer:" not in str(e.value)
 
 
 def test_an_accept_that_changes_nothing_does_not_touch_the_passport(ctx):
@@ -484,7 +486,7 @@ def test_a_real_browser_draws_its_canary_once_in_a_tab_of_its_own(ctx, playwrigh
         row = rows(ctx)[-1]
         assert "canary_ms" not in row["capture"]           # not drawn again for this browser
         assert row["renderer"]["line"] == "renderer: same as the baseline's"
-        assert "renderer: same as the baseline's" in str(e.value)
+        assert "renderer:    same as the baseline's" in str(e.value)
         second.close()
         context.close()
     finally:
@@ -585,7 +587,7 @@ def test_a_browser_started_otherwise_is_another_renderer(ctx, playwright):
         page2.set_content(PAGE.replace("Hamburgefonstiv 0123", "Quite another line of text"))
         with pytest.raises(ScreenshotMismatch) as e:
             expect_screenshot(page2, "hinting.png")
-        assert "renderer: different from the baseline's (canary: " in str(e.value)
+        assert "renderer:    different from the baseline's (canary: " in str(e.value)
         row = rows(ctx)[-1]
         assert row["renderer"]["status"] == "changed" and row["renderer"]["pixels"] > 0
     finally:

@@ -91,20 +91,20 @@ def test_a_fill_is_said_with_both_colours():
     a[40:80, 40:160] = (52, 120, 246)               # a button
     b = _page()
     b[40:80, 40:160] = (154, 160, 170)
-    assert _one(a, b) == "fill: #3478f6 → #9aa0aa, ΔE00 22.9"
+    assert _one(a, b) == "fill: #3478f6 → #9aa0aa, color difference 22.9"
 
 
 def test_a_new_ink_on_the_same_shapes_is_said_with_both_inks():
     a = _words(_page())
     b = _words(_page(), ink=(122, 31, 31))           # #7a1f1f
-    assert _one(a, b) == "ink colour: #333333 → #7a1f1f, ΔE00 24.4"
+    assert _one(a, b) == "recolored: #333333 → #7a1f1f, color difference 24.4"
 
 
 def test_the_same_ink_drawn_a_little_otherwise_is_said_as_that():
     a = _words(_page())
     b = _words(_page(), heavy=range(8))             # every stem a shade heavier
-    assert _one(a, b) == ("strokes redrawn within 1 px; ink #333333 → #333333, "
-                          "ΔE00 0.00 (below 2)")
+    assert _one(a, b) == ("edges redrawn within 1 px, same color (#333333): the outline "
+                          "changed slightly")
 
 
 def test_other_shapes_are_counted():
@@ -113,8 +113,7 @@ def test_other_shapes_are_counted():
     b[30:42, 44:48] = INK                           # a stem became a bar
     b[36:38, 40:52] = INK
     text = _one(a, b)
-    assert text.startswith("ink shape changed: ")
-    assert text.endswith("lie farther than 1 px from the other")
+    assert text == "shape changed: 23% of the new strokes are not where the old ones were"
 
 
 def test_the_sentence_is_the_first_annotation_of_every_region_that_counts():
@@ -123,7 +122,7 @@ def test_the_sentence_is_the_first_annotation_of_every_region_that_counts():
     b[60:61, 30:150] = (209, 213, 219)
     r = compare(a, b, engine="v2")
     assert len(r.regions) == 9                      # eight stems and the line
-    assert {g.annotations[0]["value"] for g in r.regions} == {"ink colour", "line"}
+    assert {g.annotations[0]["value"] for g in r.regions} == {"color", "line"}
     for g in r.regions:
         note = g.annotations[0]
         assert note["kind"] == ds.KIND and note["source"] == "engine v2"
@@ -147,9 +146,9 @@ def test_the_failure_message_says_what_changed(tmp_path):
     b = _words(_page(), ink=(122, 31, 31))
     r = compare(a, b, engine="v2")
     text = _mismatch(r, tmp_path)
-    assert "  changed:  " + changed_line(r.regions[0]) in text
+    assert "  changed:     " + changed_line(r.regions[0]) in text
     assert changed_line(r.regions[0]).endswith(
-        ": ink colour: #333333 → #7a1f1f, ΔE00 24.4")
+        ": recolored: #333333 → #7a1f1f, color difference 24.4")
 
 
 def test_the_failure_message_counts_what_it_does_not_spell_out(tmp_path):
@@ -161,7 +160,7 @@ def test_the_failure_message_counts_what_it_does_not_spell_out(tmp_path):
     assert len(r.regions) == 5
     text = _mismatch(r, tmp_path)
     assert text.count("line added: 120×1 px, #d1d5db") == 3
-    assert "            ... and 2 more in the report" in text
+    assert "               ... and 2 more in the report" in text
 
 
 def test_v1_says_what_it_said_before(tmp_path):
@@ -175,13 +174,15 @@ def test_v1_says_what_it_said_before(tmp_path):
 
 
 def test_the_report_has_a_column_for_it():
-    rows = [{"kind": "color", "severity": 40.0, "x": 1, "y": 2, "w": 3, "h": 4,
-             "annotations": [{"kind": "description", "text": "ink colour: #333333 → "
-                              "#7a1f1f, ΔE00 29.3"},
+    rows = [{"kind": "text", "severity": 40.0, "x": 1, "y": 2, "w": 3, "h": 4,
+             "annotations": [{"kind": "description", "value": "color",
+                              "text": "recolored: #333333 → #7a1f1f, color difference 29.3"},
                              {"kind": "page-shift", "text": "not the page's move"}]}]
     html = _regions_table({"regions": rows})
     assert "<th>what changed</th>" in html
-    assert "<td>ink colour: #333333 → #7a1f1f, ΔE00 29.3</td>" in html
+    assert "<td>recolored: #333333 → #7a1f1f, color difference 29.3</td>" in html
+    #  The kind is the sentence's, not the old classifier's (review v1, 4.5).
+    assert "<td>color</td>" in html and "<td>text</td>" not in html
     assert "<td>not the page&#x27;s move</td>" in html or \
         "<td>not the page's move</td>" in html
     assert _regions_table({"regions": [dict(rows[0], annotations=[])]}) == ""
@@ -209,12 +210,12 @@ def corpus():
 
 
 @pytest.mark.parametrize("name, sentence", [
-    ("table/text_color/de15", "ink colour: #1f2937 → #4d5666, ΔE00 14.8"),
-    ("form/text_color/de15", "ink colour: #111827 → #404758, ΔE00 15.0"),
-    ("table/link_color/de15", "ink colour: #2563eb → #6c8dff, ΔE00 15.0"),
-    ("table/icon_color/de15", "ink colour: #6b7280 → #949baa, ΔE00 15.0"),
-    ("table/fill/de8", "fill: #2563eb → #4d77ff, ΔE00 8.0"),
-    ("cards/fill/de8", "fill: #ea580c → #d04200, ΔE00 7.9"),
+    ("table/text_color/de15", "recolored: #1f2937 → #4d5666, color difference 14.8"),
+    ("form/text_color/de15", "recolored: #111827 → #404758, color difference 15.0"),
+    ("table/link_color/de15", "recolored: #2563eb → #6c8dff, color difference 15.0"),
+    ("table/icon_color/de15", "recolored: #6b7280 → #949baa, color difference 15.0"),
+    ("table/fill/de8", "fill: #2563eb → #4d77ff, color difference 8.0"),
+    ("cards/fill/de8", "fill: #ea580c → #d04200, color difference 7.9"),
     ("table/underline/on", "line added: 57×1 px, #2563eb"),
     ("table/offset/plus1px", "block moved by +1 px along y"),
 ])
