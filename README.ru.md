@@ -1,12 +1,251 @@
 # VisTest
 
-**Визуальное регрессионное тестирование, которое разворачивается внутри вашего
-контура.** Работает без облака, заводится без написания кода и объясняет,
-*почему* проверка упала, а не показывает проценты.
+**Визуальное регресс-тестирование для pytest и Playwright, которое объясняет,
+почему проверка упала.** Одна функция, `expect_screenshot`, эталоны лежат в
+вашем репозитории, и больше ничего нигде не запущено. Упавшая проверка
+называет, что изменилось — «recolored: #1f2937 → #4d5666», «block moved by
++1 px along y», — а не печатает процент. Сервер для команд необязателен и
+описан [ниже](#сервер-необязательно-vistestserver).
 
 *Read in English: [README.md](README.md)*
 
 ---
+
+## Установка
+
+```bash
+pip install "vistest[browser]"
+playwright install chromium
+```
+
+`[browser]` приносит Playwright и `pytest-playwright` — он и даёт тестам
+фикстуру `page`; вторая строка скачивает браузер. Нужен Python 3.10 или новее.
+Без `[browser]` пакет сравнивает картинки, которые ему передали, и браузер не
+открывает.
+
+## Первый тест
+
+```python
+from pathlib import Path
+
+import pytest
+
+from vistest import expect_screenshot
+
+DEMO = (Path(__file__).parent / "demo_page.html").resolve().as_uri()
+
+#  The line with a counter that ticks every 200 ms and a spinner that never
+#  stops: masked, because a moving number is not a regression. A selector is
+#  painted over in the picture, the way Playwright's own `mask=` does it.
+LIVE = ["p.lead"]
+
+
+@pytest.fixture
+def demo(page):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(DEMO)
+    return page
+
+
+def test_landing_page(demo):
+    """The whole window."""
+    expect_screenshot(demo, "landing.png", mask=LIVE)
+
+
+def test_pricing_cards(demo):
+    """One element: a Locator is photographed alone, smaller and steadier."""
+    expect_screenshot(demo.locator("#pricing"), "pricing.png")
+```
+
+Это [`examples/test_library.py`](examples/test_library.py) из репозитория без
+третьего теста и строки, которая пропускает файл, когда Playwright не
+установлен; страница, которую он открывает, `demo_page.html`, лежит рядом.
+Попробовать как есть:
+
+```bash
+mkdir -p tests
+curl -fsSo tests/test_library.py https://raw.githubusercontent.com/marshlw/vistest/main/examples/test_library.py
+curl -fsSo tests/demo_page.html https://raw.githubusercontent.com/marshlw/vistest/main/examples/demo_page.html
+```
+
+В своём проекте открывайте `page.goto` свой адрес. `expect_screenshot`
+принимает `Page` или `Locator` Playwright, PNG-байты, `PIL.Image`, массив numpy
+или путь к PNG.
+
+## Первый прогон и эталоны
+
+```bash
+pytest tests/test_library.py
+```
+
+Первый прогон красный: эталона ещё нет, а проверка, которая проходит до того,
+как картинку кто-то увидел, — не проверка:
+
+```
+vistest: no baseline for 'landing.png' (linux-chromium-1x-1280x800)
+  expected:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  captured:    .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  create it:   pytest --vistest-update
+               then commit the file — in CI the baseline has to come from the repository, not from the run
+```
+
+(Пути укорочены до корня проекта; в сообщении они полные.) Примите картинки,
+посмотрите на них и закоммитьте:
+
+```bash
+pytest tests/test_library.py --vistest-update
+git add tests/__vistest__
+git commit -m "visual baselines"
+pytest tests/test_library.py                     # зелёный
+```
+
+В `.vistest/` лежат картинки последнего прогона и отчёт; в git им не место:
+
+```gitignore
+# VisTest artifacts. Baselines live in tests/__vistest__/ and MUST be committed.
+.vistest/
+```
+
+PNG быстро раздувают репозиторий, поэтому эталонам обычно лучше в LFS:
+`git lfs track "tests/__vistest__/**/*.png"`.
+
+## Когда проверка падает
+
+Измените страницу — здесь шрифт цены уменьшен с 34 до 30 px, — и проверка
+скажет, что изменилось и где что лежит. Образец сообщения и разбор каждой его
+строки — в английском README, раздел
+[«When a check fails»](README.md#when-a-check-fails): сообщения VisTest только
+на английском.
+
+Если изменение и было задумано, примите его `pytest --vistest-update` и
+закоммитьте новый эталон. Отчёт, `.vistest/report/index.html`, — один файл,
+картинки внутри, ничего не скачивает: открывается без сети и прикладывается к
+тикету.
+
+## В CI
+
+CI сравнивает с эталонами из репозитория и никогда их не пишет. Текст в
+Windows, macOS и Linux рисуется по-разному, поэтому у каждой платформы свой
+каталог эталонов (ниже), и CI нужен набор, снятый там, где он работает. Проще
+всего гонять проверки в контейнере с закреплённым Playwright — и в CI, и когда
+снимаете эталоны. Пример для GitHub Actions — в английском README, раздел
+[«In CI»](README.md#in-ci); для GitLab —
+[`.gitlab-ci.example.yml`](.gitlab-ci.example.yml). Тег образа и версия
+`playwright` — одна пара: новый Playwright в старом образе ищет браузер,
+которого там нет.
+
+`pytest -n auto` поддерживается: каждая запись идёт через временный файл и
+атомарное переименование, а отчёт собирается один раз в конце.
+
+## Настройки
+
+Пять флагов pytest:
+
+| Флаг | `pyproject.toml` | Что делает |
+| --- | --- | --- |
+| `--vistest-update[=MODE]` | — | принять снимки как эталоны: `missing` — только отсутствующие; `changed` (по умолчанию и для голого флага) — отсутствующие и упавшие; `all` — всё, что отличается хоть на байт |
+| `--vistest-baselines=PATH` | `vistest_baselines` | где лежат эталоны (по умолчанию `tests/__vistest__`) |
+| `--vistest-platform=NAME` | `vistest_platform` | каталог платформы, например `linux-chromium-1x-1440x900`; не задан — берётся со страницы |
+| `--vistest-report=PATH` | `vistest_report` | куда писать HTML-отчёт |
+| `--vistest-config=PATH` | — | какой vistest.yaml читать, если не тот, что найден от рабочего каталога вверх |
+
+Голый `--vistest-update` считает следующий аргумент режимом, поэтому пути
+пишите первыми — `pytest tests/ --vistest-update` — или назовите режим явно:
+`pytest --vistest-update=changed tests/`.
+
+Порядок один для всех настроек: **вызов или командная строка, потом
+окружение, потом файл — `vistest.yaml`, а для флагов `pyproject.toml`, —
+потом умолчание.** У порога есть ещё слой между вызовом и окружением: паспорт
+самого снимка (`.json` рядом с эталоном). Таблица всех настроек — в английском
+README, раздел [«Settings»](README.md#settings).
+
+`VISTEST_UPDATE_BASELINES` — единственное исключение, и намеренное: под pytest
+эталоны в репозиторий пишет только командная строка — переменная, которую
+выставил CI, не должна принимать картинки прогона.
+
+Сам вызов:
+
+```python
+expect_screenshot(
+    page, "checkout.png",
+    fail_severity=40,                  # 0–100; и max_changed_area_pct=, в %
+    mask=["#promo", (0, 0, 320, 64)],  # селекторы закрашиваются, прямоугольники исключаются
+    full_page=False,
+    scale="css",                       # или "device"; ключ платформы скажет какой
+    timeout_ms=10000,                  # вся проверка; дольше — CaptureError
+                                       # (зависшая страница: до 1,5 с сверху, чтобы сказать почему)
+)
+```
+
+`vistest.yaml` необязателен; в [`examples/vistest.yaml`](examples/vistest.yaml)
+перечислены все ключи, которые читает библиотека, и что каждый делает. Ключ,
+который библиотека не читает, называется в одном предупреждении за прогон, а не
+молча ничего не меняет. Все параметры, ключи и шаги — в
+[гайде](docs/GUIDE.md) (на английском).
+
+## Где что лежит
+
+```
+tests/__vistest__/                 <- коммитится, смотрится на ревью
+  linux-chromium-1x-1440x900/      по каталогу на платформу
+    home.png                       эталон
+    home.json                      его паспорт: размер, пороги, как снят
+    shop/checkout.png
+  .renderers/<sha256>.png          канарейки рендера, которыми сняты эталоны
+
+.vistest/                          <- в .gitignore
+  actual/…  diff/…  report/index.html
+```
+
+Если в проекте нет папки `tests/`, эталоны ложатся в `__vistest__/` в корне.
+
+**Платформа** — это имя каталога: операционная система, браузер, масштаб
+картинки и размер окна — `linux-chromium-1x-1440x900`. Эталон, снятый в
+Windows, никогда не сравнивается со снятым в Linux: шрифты там рисуются
+по-разному. `platform=` и `--vistest-platform` задают имя сами; оставляйте в
+нём систему (`linux-chromium-1x-1440x900`) — или знайте, что без неё
+(`chromium-1440x900`) у всех машин один набор, и macOS разработчика с Linux в
+CI сравниваются с одним и тем же файлом. У цели, которая не живая страница, —
+байты, файл, массив — нет ни браузера, ни размера окна: её эталоны ложатся в
+корень каталога эталонов, и об этом один раз за прогон говорит
+предупреждение.
+
+## Не Python: `vistest check`
+
+Та же проверка для картинки, снятой чем угодно — тестом на Node, набором на
+JVM, скриптом:
+
+```bash
+vistest check checkout.png shots/checkout.png --platform linux-chromium-1x-1440x900
+echo $?          # 0 совпало, 1 отличается, 2 эталона ещё нет (--update его запишет)
+vistest check checkout.png shots/checkout.png --json
+```
+
+`--json` печатает один объект: `verdict` (`pass`, `fail`, `missing` или
+`new_baseline`), `message` и пути `baseline`, `actual` и `diff`. Раскладка и
+сообщения — библиотечные. Ещё в библиотеке:
+
+- `vistest compare expected.png actual.png -o diff/` — два PNG, без эталонов;
+- `vistest doctor https://your-app.example` — грузит неизменённую страницу
+  несколько раз и считает, сколько раз проверка упала бы: шум вашего стенда
+  до того, как доверять инструменту;
+- `vistest bench test-results` — движок на ваших собственных падениях против
+  компаратора самого Playwright; расхождения собраны для человека.
+
+## Дальше
+
+- [docs/GUIDE.md](docs/GUIDE.md) — библиотека целиком, на английском: все
+  параметры, ожидание готовности и второй взгляд, маски, движок и то, чего он
+  не различает.
+- [CHANGELOG.md](CHANGELOG.md) — что изменилось и что поменять в своих тестах.
+
+---
+
+# Сервер (необязательно, vistest[server])
+
+Всё, что ниже, — сервис, который разворачивается у вас: интерфейс ревью,
+история прогонов, подключённые наборы тестов, пользователи и роли. Ему нужен
+`pip install "vistest[server]"`; библиотеке выше — нет.
 
 ## Что это
 
@@ -16,10 +255,11 @@
 | **Ноль кода на входе** | Рекордер мышью, `--suite pages.yaml`, pytest-фикстура или `POST /api/check` из чужого стека — четыре входа. |
 | **Понятно, почему упало** | Не «не совпало на 3.2%», а `button[data-testid=submit] сдвинулась на 14px вниз, severity 82, порог 50`. Движок открыт и объясним. |
 
-Движок сравнения совмещает **ΔE00** (перцептивное цветовое расстояние),
-**SSIM** (структурное сходство), субпиксельное **выравнивание** и
-автоматическое подавление шума. Пиксель считается изменившимся, только если
-на это указывают И цвет, И структура.
+Сервер сравнивает тем же движком, что и библиотека: считается всякое
+различие, видимое человеку (ΔE00 больше 1), а убирается только то, что
+объяснило названное правило, — полоса прокрутки, пересжатие JPEG, сдвиг
+страницы на долю пикселя, текст, перерисованный другим рендером, что доказали
+канарейки. Что не объяснило ни одно правило, падает и описывается словами.
 
 ---
 
@@ -177,7 +417,7 @@ python run.py matrix        # во что это раскроется — до �
 ## Быстрый старт
 
 ```bash
-git clone <адрес-репозитория> && cd visual-testing
+git clone https://github.com/marshlw/vistest && cd vistest
 
 # Windows
 .\run.ps1 setup          # venv + зависимости + браузеры
@@ -243,7 +483,7 @@ python run.py snap https://your-app.example.com/checkout
 
 Фикстура `visual` — серверного режима и ставится с `pip install
 "vistest[server]"` (примеры в `docs/server/examples/`). Проект без сервера
-вызывает `expect_screenshot` — «Режим библиотеки» ниже.
+вызывает `expect_screenshot` — начало этой страницы.
 
 ```python
 def test_checkout(page, visual):
@@ -273,161 +513,7 @@ vistest compare expected.png actual.png -o diff/
 
 ---
 
-## Режим библиотеки: без сервера и без интерфейса
-
-VisTest можно подключить так же, как встроенный скриншот-тест Playwright —
-библиотекой внутри вашего прогона, с эталонами в вашем репозитории и без
-единого запущенного процесса на стороне.
-
-```bash
-pip install vistest            # numpy, opencv, pillow, pyyaml. Без веб-сервера.
-```
-
-```python
-from vistest import expect_screenshot
-
-
-def test_home(page):
-    page.goto("https://example.com")
-    expect_screenshot(page, "home.png")
-```
-
-Первый прогон падает: эталона ещё нет, а проверка, которая проходит до того,
-как картинку кто-то увидел, — это не проверка:
-
-```
-vistest: no baseline for 'home.png' (linux-chromium-1x-1440x900)
-  expected: tests/__vistest__/linux-chromium-1x-1440x900/home.png
-  captured: .vistest/actual/linux-chromium-1x-1440x900/home.png
-  create it with: pytest --vistest-update
-```
-
-Запускаете `pytest --vistest-update`, смотрите на PNG, коммитите. Дальше
-проверка сравнивает с ним, и когда краснеет — говорит, где что лежит:
-
-```
-vistest: 'home.png' differs from the baseline (linux-chromium-1x-1440x900)
-  severity 61.2 (limit 25.0), changed area 3.40% (limit 0.15%)
-  reason: text in 2 regions; largest 96x24 at (320, 180), .header .price
-  baseline: tests/__vistest__/linux-chromium-1x-1440x900/home.png
-  actual:   .vistest/actual/linux-chromium-1x-1440x900/home.png
-  diff:     .vistest/diff/linux-chromium-1x-1440x900/home.png
-  report:   .vistest/report/index.html
-  accept it with: pytest --vistest-update
-```
-
-`expect_screenshot` принимает `Page` или `Locator` из Playwright, байты PNG,
-`PIL.Image`, массив numpy и путь к файлу — то есть работает и с вашей
-собственной обёрткой над страницей, и вообще без браузера. Playwright при этом
-не импортируется ни разу.
-
-```python
-expect_screenshot(
-    page, "checkout.png",
-    platform="chromium-1440x900",      # в каком каталоге лежит эталон
-    fail_severity=40,                  # 0–100; и max_changed_area_pct=, в %
-    mask=["#promo", (0, 0, 320, 64)],  # селекторы закрашиваются, боксы игнорируются
-    full_page=False,
-    scale="css",                       # или "device"; ключ платформы это учитывает
-    timeout_ms=10000,                  # вся проверка; дольше — CaptureError
-)
-```
-
-Живая страница снимается так же, как её снимает `toHaveScreenshot()` в
-Playwright: анимации остановлены, каретка скрыта, веб-шрифты дождались,
-один пиксель картинки на CSS-пиксель, и кадры снимаются, пока два подряд не
-совпадут побайтово, — не дольше пяти секунд (`capture.stable_timeout_ms` в
-`vistest.yaml`; `timeout_ms` в вызове урезает до срока проверки). Страница, которая за это время не
-успокоилась, сравнивается по последнему кадру, и об этом сказано в причине и в
-отчёте. Число кадров и время до стабильности пишутся в каждую строку отчёта.
-
-### Где что лежит
-
-```
-tests/__vistest__/                 <- коммитится, ревьюится в пул-реквестах
-  linux-chromium-1x-1440x900/
-    home.png                       эталон
-    home.json                      паспорт: версия, размер, пороги (необязателен)
-    shop/checkout.png
-
-.vistest/                          <- игнорируется
-  actual/…  diff/…  report/index.html
-```
-
-Одна строка в ваш `.gitignore`:
-
-```gitignore
-# VisTest artifacts. Baselines live in tests/__vistest__/ and MUST be committed.
-.vistest/
-```
-
-PNG быстро раздувают репозиторий, поэтому эталоны обычно лучше держать в LFS:
-
-```bash
-git lfs install
-git lfs track "tests/__vistest__/**/*.png"
-```
-
-### Флаги
-
-| Флаг | `pyproject.toml` | Что делает |
-| --- | --- | --- |
-| `--vistest-update[=MODE]` | — | принять снимки как эталоны: `missing` — только отсутствующие; `changed` (по умолчанию, и голый флаг) — отсутствующие и упавшие; `all` — всё, что разошлось байтами |
-| `--vistest-baselines=PATH` | `vistest_baselines` | где лежат эталоны (по умолчанию `tests/__vistest__`) |
-| `--vistest-platform=NAME` | `vistest_platform` | каталог платформы; без него берётся со страницы |
-| `--vistest-report=PATH` | `vistest_report` | куда положить HTML-отчёт |
-| `--vistest-config=PATH` | — | какой vistest.yaml читать, если не тот, что нашёлся от рабочего каталога вверх |
-
-Голый `--vistest-update` берёт следующий аргумент как режим, поэтому пути пишутся
-первыми — `pytest tests/ --vistest-update`, — или режим пишется явно:
-`pytest --vistest-update=changed tests/`. Путь на месте режима отвергается с
-этим советом, а не угадывается.
-
-Откуда берётся каждая настройка — в таблице ниже. Цель, которая не является живой страницей — байты, файл,
-массив, — не несёт ни браузера, ни размера окна, поэтому такие эталоны ложатся
-прямо в корень каталога эталонов, и об этом один раз за прогон говорит
-предупреждение: задайте `vistest_platform` сами, если картинки зависят от
-машины, снявшей их, иначе macOS разработчика и linux-CI сравнятся с одним
-файлом.
-
-Отчёт — один самодостаточный HTML: картинки внутри, ни CDN,
-ни шрифтов, ни одного запроса наружу. Открывается на машине без сети и
-прикладывается к задаче.
-
-`pytest -n auto` поддержан: любая запись идёт через временный файл и атомарное
-переименование, общего индекса и блокировок нет, а отчёт собирается один раз в
-конце из строк, которые оставил каждый воркер.
-
-### Откуда берётся настройка
-
-Один порядок для любой настройки: **вызов или командная строка, затем
-переменная окружения, затем файл — vistest.yaml, а для флагов
-`pyproject.toml`, — затем умолчание.** У порога есть ещё один слой между
-вызовом и окружением: паспорт самого снимка (`meta.json` рядом с эталоном).
-Ключ vistest.yaml, который библиотека не читает, — `capture.full_page`,
-`matrix:`, `render:`, `service:`, v1-настройки `diff:` — называется в одном
-предупреждении за прогон, а не молча ничего не меняет.
-
-| Настройка | Вызов / командная строка | Окружение | vistest.yaml / pyproject.toml | Умолчание |
-| --- | --- | --- | --- | --- |
-| severity, на котором проверка падает | `fail_severity=` | `VISTEST_FAIL_SEVERITY` | `diff.fail_severity` | нет: падает всё, что не объяснило ни одно правило |
-| изменённая площадь, на которой падает | `max_changed_area_pct=` | `VISTEST_MAX_CHANGED_AREA_PCT` | `diff.max_changed_area_pct` | 0,15 % |
-| время на проверку | `timeout_ms=` | — | `capture.ready_timeout_ms`, `capture.stable_timeout_ms` | по 5 с; проверка — 2 × ready + 3 × stable + 15 с |
-| указатель остаётся, где его оставил тест | `keep_pointer=` | — | `capture.keep_pointer` | уводится со страницы |
-| фокус снимается | `blur_focus=` | — | `capture.blur_focus` | не трогается |
-| самая большая картинка | — | `VISTEST_ENGINE_MAX_PIXELS` | `diff.max_pixels` | 80 000 000 пикселей |
-| артефакты (`actual/`, `diff/`) | — | `VISTEST_ROOT` | `paths.root` | `.vistest` |
-| отчёт | `--vistest-report` | `VISTEST_REPORT` | `vistest_report` | `.vistest/report/index.html` |
-| каталог эталонов | `--vistest-baselines` | `VISTEST_BASELINES` | `vistest_baselines` | `tests/__vistest__` |
-| каталог платформы | `platform=`, `--vistest-platform` | `VISTEST_PLATFORM` | `vistest_platform` | берётся со страницы |
-| что делает оценка плагина | — | `VISTEST_FAIL_ON` | `plugins.fail_on` | `likely-real` |
-| запись эталонов | `--vistest-update` | `VISTEST_UPDATE_BASELINES`, только без плагина pytest | — | выключена |
-
-`VISTEST_UPDATE_BASELINES` — единственное исключение, и намеренное: под pytest
-эталоны в репозиторий пишет только командная строка — переменная, которую CI
-выставил для сервера, не должна принимать картинки библиотечного прогона.
-
-### Когда станет тесно
+## Когда библиотеки станет мало
 
 Раскладка, которую пишет библиотека, и архив `vistest baselines export` — один
 формат, поэтому набор переезжает в полную инсталляцию без переутверждения:
@@ -653,7 +739,7 @@ VISTEST_BASE_IMAGE=<зеркало>/playwright/python:v1.47.0-jammy \
 vistest.yaml и `VISTEST_ENGINE` отклоняются строкой, которая это говорит
 (docs/GUIDE.md, «The engine»).
 
-Порядок настроек — таблица в «Откуда берётся настройка» выше. На сервере
+Порядок настроек — раздел «Настройки» в начале этой страницы. На сервере
 пороги глобально и на проект настраиваются также через API и хранятся в базе,
 где имеют приоритет над файлом.
 
@@ -708,6 +794,9 @@ python tests/benchmark.py --compare --native docs/benchmark_native.json \
 **opencv-python-headless 4.14.0.94 и 5.0.0.93** (вердикты под обеими одни и
 те же, таблица сравнения совпадает побайтово), numpy 2.5.3, Python 3.13,
 Linux x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
+
+Это цифры движка v1, снятые до того, как его заменил движок v2; ни
+библиотека, ни сервер v1 больше не запускают.
 
 | Инструмент | Верно | Ложные падения | Пропущенные регрессы |
 |---|---|---|---|
@@ -1005,75 +1094,11 @@ VISTEST_DOCS=on
 
 ## Лицензирование
 
-Словом «лицензия» здесь называются две разные вещи, и путать их дорого,
-поэтому они разведены намеренно:
-
-- **Лицензия на исходный код — AGPL-3.0-or-later.** Она про код: читайте,
-  меняйте, запускайте; если запускаете изменённую версию как сетевой сервис —
-  публикуйте изменения. Ничто ниже этого не отменяет.
-- **Коммерческий ключ** — то, что получает заказчик. В нём написано, кому он
-  выдан, до какого числа и на сколько проектов и пользователей.
-
-### Редакции
-
-| | Бесплатный режим | С ключом |
-|---|---|---|
-| Движок, интерфейс, интеграция с CI, клиенты | всё | всё |
-| Подключённых проектов | 2 | сколько куплено |
-| Активных пользователей | 5 | сколько куплено |
-| Поддержка и обновления | сообщество | по договору |
-
-Бесплатный режим — не урезанное демо: движок, разбор и все интеграции те же
-самые. Вся разница в лимитах.
-
-### Установка ключа
-
-Три места, проверяются в этом порядке — переменная сильнее, чтобы контейнер
-настраивался так, как настраивают контейнеры:
-
-```bash
-VISTEST_LICENSE="eyJlZGl0aW9uIjoicHJvIiw…"   # переменная окружения
-.vistest/license.key                          # том данных
-```
-
-…либо вставьте ключ в **Settings → Licence** в интерфейсе: он проверяется на
-месте и сохраняется на том данных.
-
-Проверка полностью оффлайновая: в ключе подпись RSA, открытая половина зашита
-в VisTest, и для проверки не нужны ни сеть, ни дополнительные пакеты.
-Инсталляции в закрытом контуре никуда ходить не приходится.
-
-### Что происходит, когда срок кончился
-
-У заказчика ничего не забирают. Эталоны читаются, история читается, разбор
-работает — это ваши данные и ваши решения.
-
-Тридцать дней после даты окончания инсталляция работает как обычно и говорит
-об этом на каждом экране. После этого — и только тогда — **новые прогоны не
-принимаются**: ответ 402 с объяснением. Установка действующего ключа
-возвращает всё сразу.
-
-### Выпуск ключей (для владельца продукта)
-
-```bash
-python scripts/issue_license.py --new-key ~/.vistest-signing/private.pem
-python scripts/issue_license.py --key ~/.vistest-signing/private.pem \
-    --customer "ACME GmbH" --expires 2027-09-01 --projects 10 --users 25
-```
-
-Закрытая половина не попадает ни в репозиторий, ни в бэкап, уезжающий с вашей
-машины, ни в тикет поддержки.
-
-### Честно про принуждение
-
-Исходники открыты, значит проверку можно удалить и пересобрать. Это свойство
-AGPL, а не дыра, которую надо заткнуть, и никакая обфускация этого не изменит.
-Ключ нужен для другого: чтобы условия были названы и проверяемы — чтобы честный
-заказчик знал, что он купил, а продление было разговором, а не ревизией.
+Коммерческий лицензионный ключ и редакции сервера: [docs/server/LICENSING.ru.md](docs/server/LICENSING.ru.md).
 
 ---
 
-## Лицензия
+# Лицензия
 
 AGPL-3.0-or-later. См. [LICENSE](LICENSE) и [NOTICE](NOTICE).
 

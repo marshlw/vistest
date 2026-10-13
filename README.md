@@ -1,12 +1,321 @@
 # VisTest
 
-**Self-hosted visual regression testing.** Runs entirely inside your own
-network, records baselines without writing code, and explains *why* a check
-failed instead of printing a percentage.
+**Visual regression testing for pytest and Playwright that says why a check
+failed.** One function, `expect_screenshot`, with the baselines in your
+repository and nothing running anywhere else. A check that fails names what
+changed — «recolored: #1f2937 → #4d5666», «block moved by +1 px along y» —
+instead of printing a percentage. A self-hosted server for teams is optional
+and described [below](#server-optional-vistestserver).
 
 *Читать по-русски: [README.ru.md](https://github.com/marshlw/vistest/blob/main/README.ru.md)*
 
 ---
+
+## Install
+
+```bash
+pip install "vistest[browser]"
+playwright install chromium
+```
+
+`[browser]` brings Playwright and `pytest-playwright`, which gives your tests
+the `page` fixture; the second line downloads the browser. Python 3.10 or newer.
+Without `[browser]` the package compares pictures you hand it and opens no
+browser.
+
+## A first test
+
+```python
+from pathlib import Path
+
+import pytest
+
+from vistest import expect_screenshot
+
+DEMO = (Path(__file__).parent / "demo_page.html").resolve().as_uri()
+
+#  The line with a counter that ticks every 200 ms and a spinner that never
+#  stops: masked, because a moving number is not a regression. A selector is
+#  painted over in the picture, the way Playwright's own `mask=` does it.
+LIVE = ["p.lead"]
+
+
+@pytest.fixture
+def demo(page):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(DEMO)
+    return page
+
+
+def test_landing_page(demo):
+    """The whole window."""
+    expect_screenshot(demo, "landing.png", mask=LIVE)
+
+
+def test_pricing_cards(demo):
+    """One element: a Locator is photographed alone, smaller and steadier."""
+    expect_screenshot(demo.locator("#pricing"), "pricing.png")
+```
+
+This is [`examples/test_library.py`](https://github.com/marshlw/vistest/blob/main/examples/test_library.py)
+of this repository, without its third test and the line that skips it when
+Playwright is not installed; the page it opens, `demo_page.html`, sits next to
+it. To try it as is:
+
+```bash
+mkdir -p tests
+curl -fsSo tests/test_library.py https://raw.githubusercontent.com/marshlw/vistest/main/examples/test_library.py
+curl -fsSo tests/demo_page.html https://raw.githubusercontent.com/marshlw/vistest/main/examples/demo_page.html
+```
+
+In your own project, `page.goto` your own address. `expect_screenshot` takes a
+Playwright `Page` or `Locator`, PNG bytes, a `PIL.Image`, a numpy array or a
+path to a PNG.
+
+## The first run, and the baselines
+
+```bash
+pytest tests/test_library.py
+```
+
+The first run is red, because there is no baseline yet and a check that passes
+before anyone has looked at the picture is not a check:
+
+```
+vistest: no baseline for 'landing.png' (linux-chromium-1x-1280x800)
+  expected:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  captured:    .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  create it:   pytest --vistest-update
+               then commit the file — in CI the baseline has to come from the repository, not from the run
+```
+
+(Paths are shortened to the project's root; the message prints them in full.)
+Accept the pictures, look at them, commit them:
+
+```bash
+pytest tests/test_library.py --vistest-update
+git add tests/__vistest__
+git commit -m "visual baselines"
+pytest tests/test_library.py                     # green
+```
+
+`.vistest/` holds the pictures of the last run and the report; it does not
+belong in git:
+
+```gitignore
+# VisTest artifacts. Baselines live in tests/__vistest__/ and MUST be committed.
+.vistest/
+```
+
+PNGs grow a repository quickly, so baselines are usually better off in LFS:
+`git lfs track "tests/__vistest__/**/*.png"`.
+
+## When a check fails
+
+Change the page — here the price's font cut from 34 to 30 px — and the check
+says what changed and where everything is:
+
+```
+vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
+  33 changes not explained as rendering noise · worst 93/100 · no threshold set, so any change fails
+    · 2.80% of the frame
+  reason:      shape in 31, line in 2; worst 193x33 at (823, 356)
+  second look: the second picture is the same as the first, so the change is real, not motion
+  renderer:    same as the baseline's
+  baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  changed:     193x33 at (823, 356): shape changed: 42% of the old strokes are not where the new ones are
+               103x28 at (551, 355): shape changed: 56% of the old strokes are not where the new ones are
+               110x43 at (223, 406): shape changed: 66% of the new strokes are not where the old ones were
+               ... and 30 more in the report
+  diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
+  report:      .vistest/report/index.html
+  accept it:   pytest --vistest-update
+```
+
+One thing per line. `reason:` sums the changes up; `second look:` says whether
+more frames showed the change holding still; `renderer:` says whether this
+browser draws text the way the one that took the baseline did. Each change
+that counts is said as the engine measured it — three of them, the rest
+counted in the report:
+
+```
+  changed:     153x14 at (202, 242): recolored: #1f2937 → #4d5666, color difference 14.8
+               ...
+               (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
+```
+
+The other words: «fill: #2563eb → #4d77ff», «line added: 41×1 px», «block moved
+by +1 px along y», «shape changed», and for a corner rounded 8 → 10 px «edges
+redrawn within 1 px, same color (#c7ced8): the outline changed slightly». The
+report's `kind` column uses the same words: moved, line, fill, color, redrawn,
+shape.
+
+The report, `.vistest/report/index.html`, is one self-contained file —
+pictures inlined, nothing fetched — so it opens on a machine with no network
+and can be attached to a ticket. If the change is what you wanted, accept it
+with `pytest --vistest-update` and commit the new baseline.
+
+## In CI
+
+CI compares against the baselines in the repository and never writes them.
+Text is drawn differently on Windows, macOS and Linux, so the baselines live in
+one directory per platform (below), and CI needs the set taken where it runs.
+The simplest way to get it is to run the checks in a container with a pinned
+Playwright, both in CI and when you take the baselines:
+
+```yaml
+# .github/workflows/visual.yml
+name: visual
+on: [push, pull_request]
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    steps:
+      - uses: actions/checkout@v5
+        with: { lfs: true }
+      - run: pip install "vistest[browser]" "playwright==1.56.0"
+      - run: pytest
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: vistest, path: .vistest/ }
+```
+
+The image's tag and the `playwright` pin are one pair: a newer Playwright
+installed into an older image looks for a browser the image does not have.
+When a check fails in CI, the uploaded `.vistest/` has the report and the
+pictures it took. For GitLab, [`.gitlab-ci.example.yml`](https://github.com/marshlw/vistest/blob/main/.gitlab-ci.example.yml)
+is the same with a manual job that takes new baselines for a person to look
+at.
+
+`pytest -n auto` works: every write goes through a temporary file and an
+atomic rename, and the report is assembled once at the end.
+
+## Settings
+
+Five pytest flags:
+
+| Flag | `pyproject.toml` | What it does |
+| --- | --- | --- |
+| `--vistest-update[=MODE]` | — | accept screenshots as baselines: `missing` — only absent ones; `changed` (default, also the bare flag) — absent and failed; `all` — everything that differs by a byte |
+| `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
+| `--vistest-platform=NAME` | `vistest_platform` | the platform directory, e.g. `linux-chromium-1x-1440x900`; taken from the page when not set |
+| `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
+| `--vistest-config=PATH` | — | the vistest.yaml to read, when it is not the one found from the working directory up |
+
+A bare `--vistest-update` takes the next argument as its mode, so write paths
+first — `pytest tests/ --vistest-update` — or spell the mode out:
+`pytest --vistest-update=changed tests/`.
+
+One order for every setting: **the call or the command line, then the
+environment, then the file — `vistest.yaml`, or `pyproject.toml` for the
+flags —, then the default.** A threshold has one more layer, between the call
+and the environment: the snapshot's own passport (the `.json` next to its
+baseline).
+
+| Setting | Call / command line | Environment | vistest.yaml / pyproject.toml | Default |
+| --- | --- | --- | --- | --- |
+| the severity that fails a check | `fail_severity=` | `VISTEST_FAIL_SEVERITY` | `diff.fail_severity` | none: whatever no rule explains fails |
+| the changed area that fails it | `max_changed_area_pct=` | `VISTEST_MAX_CHANGED_AREA_PCT` | `diff.max_changed_area_pct` | 0.15 % |
+| the time the check may take | `timeout_ms=` | — | `capture.ready_timeout_ms`, `capture.stable_timeout_ms` | 5 s each; the check 2 × ready + 3 × stable + 15 s |
+| the pointer kept where the test left it | `keep_pointer=` | — | `capture.keep_pointer` | moved off the page |
+| the focus taken off | `blur_focus=` | — | `capture.blur_focus` | left alone |
+| the largest picture | — | `VISTEST_ENGINE_MAX_PIXELS` | `diff.max_pixels` | 80 000 000 pixels |
+| artifacts (`actual/`, `diff/`) | — | `VISTEST_ROOT` | `paths.root` | `.vistest` |
+| the report | `--vistest-report` | `VISTEST_REPORT` | `vistest_report` | `.vistest/report/index.html` |
+| the baseline directory | `--vistest-baselines` | `VISTEST_BASELINES` | `vistest_baselines` | `tests/__vistest__` |
+| the platform directory | `platform=`, `--vistest-platform` | `VISTEST_PLATFORM` | `vistest_platform` | taken from the page |
+| what a plugin's score does | — | `VISTEST_FAIL_ON` | `plugins.fail_on` | `likely-real` |
+| writing baselines | `--vistest-update` | `VISTEST_UPDATE_BASELINES`, without the pytest plugin only | — | off |
+
+`VISTEST_UPDATE_BASELINES` is the one exception, on purpose: under pytest only
+the command line writes baselines into the repository — a variable a CI sets
+must not accept a run's pictures.
+
+The call itself:
+
+```python
+expect_screenshot(
+    page, "checkout.png",
+    fail_severity=40,                  # 0–100; and max_changed_area_pct=, in %
+    mask=["#promo", (0, 0, 320, 64)],  # selectors are painted, boxes are ignored
+    full_page=False,
+    scale="css",                       # or "device"; the platform key says which
+    timeout_ms=10000,                  # the whole check; past it, CaptureError
+                                       # (a hung page: up to 1.5 s more, to say why)
+)
+```
+
+A `vistest.yaml` is optional; [`examples/vistest.yaml`](https://github.com/marshlw/vistest/blob/main/examples/vistest.yaml)
+lists every key the library reads, with what it does. A key the library does
+not read is named in one warning per run instead of changing nothing in
+silence. Every parameter, key and step is in the
+[guide](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md).
+
+## Where the files go
+
+```
+tests/__vistest__/                 <- committed, reviewed in pull requests
+  linux-chromium-1x-1440x900/      one directory per platform
+    home.png                       the baseline
+    home.json                      its passport: size, thresholds, how it was taken
+    shop/checkout.png
+  .renderers/<sha256>.png          the renderer canaries the baselines were taken with
+
+.vistest/                          <- ignored
+  actual/…  diff/…  report/index.html
+```
+
+When the project has no `tests/` folder, the baselines go to `__vistest__/`
+at its root.
+
+**The platform** is the directory name: the operating system, the browser,
+the picture's scale and the window size — `linux-chromium-1x-1440x900`. A
+baseline taken on Windows is never compared with one taken on Linux, because
+fonts are drawn differently there. `platform=` and `--vistest-platform` name
+it yourself; keep the system in the name (`linux-chromium-1x-1440x900`), or
+know that without it (`chromium-1440x900`) every machine shares one set, and a
+developer's macOS and a Linux CI compare against the same file. A target that
+is not a live page — bytes, a file, an array — carries no browser and no
+window size: its baselines go to the root of the baseline directory, and a
+warning says so once per run.
+
+## Not Python: `vistest check`
+
+The same check for a picture taken by anything else — a Node test, a JVM
+suite, a shell script:
+
+```bash
+vistest check checkout.png shots/checkout.png --platform linux-chromium-1x-1440x900
+echo $?          # 0 matches, 1 differs, 2 no baseline yet (--update writes it)
+vistest check checkout.png shots/checkout.png --json
+```
+
+`--json` prints one object: `verdict` (`pass`, `fail`, `missing` or
+`new_baseline`), `message`, and the paths of `baseline`, `actual` and `diff`.
+The layout and the messages are the library's. Also in the library:
+
+- `vistest compare expected.png actual.png -o diff/` — two PNGs, no baselines;
+- `vistest doctor https://your-app.example` — loads an unchanged page several
+  times and counts how often it would fail: the noise of your stand before
+  you trust the tool;
+- `vistest bench test-results` — the engine on your own failures, against
+  Playwright's own comparator, the disagreements collected for a person.
+
+## More
+
+- [docs/GUIDE.md](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md) — the library in full: every parameter, the readiness wait
+  and the second look, masks, the engine and what it does not tell apart.
+- [CHANGELOG.md](https://github.com/marshlw/vistest/blob/main/CHANGELOG.md) — what changed, and what to change in your tests.
+
+---
+
+# Server (optional, vistest[server])
+
+Everything below is the self-hosted service: a review interface, the history
+of runs, connected test suites, users and roles. It needs
+`pip install "vistest[server]"`; the library above does not.
 
 ## What it does
 
@@ -20,10 +329,11 @@ failed instead of printing a percentage.
 | **Three shapes of a run** | Run as the tests decide, in one named browser, one run per browser (in parallel — different browsers keep different baseline sets), or all browsers in a single run with a single verdict. For your own tests and for connected suites alike. |
 | **One snapshot, many variants** | A matrix of browsers × window sizes runs in a single run and asks a single question. Each variant keeps its own baseline — a firefox frame at 390 has nothing to compare against in a chromium set at 1440. |
 
-The comparison engine combines **ΔE00** (perceptual color distance), **SSIM**
-(structural similarity), sub-pixel **alignment**, and automatic noise
-suppression. A pixel counts as changed only when both color *and* structure
-agree that it changed.
+The server compares with the same engine as the library: every difference a
+person can see counts (ΔE00 above 1), and only what a named rule explains —
+a scroll bar, a JPEG re-encode, the page moved by a fraction of a pixel, text
+redrawn by a renderer the canaries prove changed — is taken out. What no rule
+explains fails, and is said in words.
 
 ### Browsers and window sizes
 
@@ -51,7 +361,6 @@ matrix is a statement about the whole set. Snapshots whose pinned size differs
 from the base one are named out loud in the run log rather than silently
 re-captured.
 
----
 
 ## Requirements
 
@@ -67,7 +376,7 @@ The comparison core itself needs only `numpy`, `opencv-python-headless` and
 ## Quick start
 
 ```bash
-git clone <repo-url> && cd visual-testing
+git clone https://github.com/marshlw/vistest && cd vistest
 
 # Windows
 .\run.ps1 setup          # venv + dependencies + browsers
@@ -134,7 +443,7 @@ python run.py snap https://your-app.example.com/checkout
 
 The `visual` fixture is the server mode's, and comes with `pip install
 "vistest[server]"` (examples in `docs/server/examples/`). A project without a
-server calls `expect_screenshot` — «Library mode» below.
+server calls `expect_screenshot` — the top of this page.
 
 ```python
 def test_checkout(page, visual):
@@ -164,213 +473,7 @@ vistest compare expected.png actual.png -o diff/
 
 ---
 
-## Library mode: no server, no interface
-
-VisTest can be used the way Playwright's own screenshot assertion is used — as
-a library inside your test run, with the baselines living in your repository
-and nothing else running anywhere.
-
-```bash
-pip install vistest            # numpy, opencv, pillow, pyyaml. No web server.
-```
-
-```python
-from vistest import expect_screenshot
-
-
-def test_home(page):
-    page.goto("https://example.com")
-    expect_screenshot(page, "home.png")
-```
-
-The first run fails, because there is no baseline yet and a check that passes
-before anyone has looked at the picture is not a check:
-
-```
-vistest: no baseline for 'home.png' (linux-chromium-1x-1440x900)
-  expected:    tests/__vistest__/linux-chromium-1x-1440x900/home.png
-  captured:    .vistest/actual/linux-chromium-1x-1440x900/home.png
-  create it:   pytest --vistest-update
-               then commit the file — in CI the baseline has to come from the repository, not from the run
-```
-
-From a script (no pytest) the line reads `set VISTEST_UPDATE_BASELINES=1 and
-run it again`; from `vistest check`, the same command with `--update`.
-
-Run `pytest --vistest-update`, look at the PNG, commit it. From then on the
-check compares against it, and when it goes red it says where everything is:
-
-```
-vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
-  33 changes not explained as rendering noise · worst 93/100 · no threshold set, so any change fails
-    · 2.80% of the frame
-  reason:      shape in 31, line in 2; worst 193x33 at (823, 356)
-  second look: the second picture is the same as the first, so the change is real, not motion
-  renderer:    same as the baseline's
-  baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
-  actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
-  changed:     193x33 at (823, 356): shape changed: 42% of the old strokes are not where the new ones are
-               103x28 at (551, 355): shape changed: 56% of the old strokes are not where the new ones are
-               110x43 at (223, 406): shape changed: 66% of the new strokes are not where the old ones were
-               ... and 30 more in the report
-  diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
-  report:      .vistest/report/index.html
-  accept it:   pytest --vistest-update
-```
-
-(`examples/test_library.py` with the price's font cut from 34 to 30 px.)
-One thing per line: what the capture, the second look and the page have to
-say go under `capture:`, `second look:` and `hint:` — the mask for something
-that changes by itself is a line of its own. No line is longer than 120
-characters but a path.
-
-Under `changed:` each change that counts is said as the engine measured it —
-three of them, the rest counted — in the same words the report, the reason
-of a check that passed and `vistest bench` use:
-
-```
-  changed:     153x14 at (202, 242): recolored: #1f2937 → #4d5666, color difference 14.8
-               ...
-               (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
-```
-
-(table/text_color/de15 of the browser corpus: the text of the table drawn at
-ΔE00 15 from its color.) The others: «fill: #2563eb → #4d77ff, color
-difference 8.0», «line added: 41×1 px, #2563eb», «block moved by +1 px along
-y», «shape changed: 62% of the new strokes are not where the old ones were»,
-and for a corner rounded 8 → 10 px «edges redrawn within 1 px, same color
-(#c7ced8): the outline changed slightly». The color difference is said once
-per message with its scale; the exact counts behind «shape changed» are in
-the report.
-
-Only what the engine measured: a block moved by whole pixels (both ways), a
-thin line in one frame only, the color of the paper around the change, the
-color of the strokes and whether their shapes agree within a pixel.
-«Strokes», not «text» or «letters»: nothing there knows whether they are
-letters, an icon or a border. The report's `kind` column is the same word:
-moved, line, fill, color, redrawn or shape.
-
-`expect_screenshot` takes a Playwright `Page` or `Locator`, PNG bytes, a
-`PIL.Image`, a numpy array, or a path to a PNG — so it works with a project's
-own page wrapper, and works with no browser at all. Playwright is never
-imported to find out which.
-
-```python
-expect_screenshot(
-    page, "checkout.png",
-    platform="chromium-1440x900",      # which directory the baseline is in
-    fail_severity=40,                  # 0–100; and max_changed_area_pct=, in %
-    mask=["#promo", (0, 0, 320, 64)],  # selectors are painted, boxes are ignored
-    full_page=False,
-    scale="css",                       # or "device"; the key says which
-    timeout_ms=10000,                  # the whole check; past it, CaptureError
-                                       # (a hung page: up to 1.5 s more, to say why)
-)
-```
-
-A live page is photographed the way Playwright's `toHaveScreenshot()` does
-it: animations stopped, the text caret hidden, web fonts waited for, one
-picture pixel per CSS pixel, and frames taken until two in a row are identical
-— for at most five seconds (`capture.stable_timeout_ms` in `vistest.yaml`; a
-`timeout_ms` in the call cuts it to the check's). A page that does not settle in time is compared on its
-last frame, and the reason and the report say that it did not settle. The
-number of frames and the time to stability are in every report row.
-
-When a baseline is written, and when a check fails against a baseline that
-has one, VisTest draws the renderer's canary — a small fixed page of text, in
-a tab of its own, taken the same way, once per browser and scale — and the
-check says whether this browser draws text as the one the baseline was taken
-with did: `renderer: same as the baseline's`, `different from the baseline's
-(canary: N px)`, or `unknown` with the reason. A check that passes draws
-nothing and says `renderer: not checked (the check passed)`.
-
-### Where the files go
-
-```
-tests/__vistest__/                 <- committed, reviewed in pull requests
-  linux-chromium-1x-1440x900/
-    home.png                       the baseline
-    home.json                      its passport: version, size, thresholds, renderer (optional)
-    shop/checkout.png
-  .renderers/<sha256>.png          the canaries the baselines were taken with, once each
-
-.vistest/                          <- ignored
-  actual/…  diff/…  report/index.html
-```
-
-Add one line to your `.gitignore`:
-
-```gitignore
-# VisTest artifacts. Baselines live in tests/__vistest__/ and MUST be committed.
-.vistest/
-```
-
-PNGs grow a repository quickly, so baselines are usually better off in LFS:
-
-```bash
-git lfs install
-git lfs track "tests/__vistest__/**/*.png"
-```
-
-### Flags
-
-| Flag | `pyproject.toml` | What it does |
-| --- | --- | --- |
-| `--vistest-update[=MODE]` | — | accept screenshots as baselines: `missing` — only absent ones; `changed` (default, also the bare flag) — absent and failed; `all` — everything that differs by a byte |
-| `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
-| `--vistest-platform=NAME` | `vistest_platform` | the platform directory; taken from the page when not set |
-| `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
-| `--vistest-config=PATH` | — | the vistest.yaml to read, when it is not the one found from the working directory up |
-
-A bare `--vistest-update` takes the next argument as its mode, so write paths
-first — `pytest tests/ --vistest-update` — or spell the mode out:
-`pytest --vistest-update=changed tests/`. A path in the mode's place is
-refused with that advice rather than guessed at.
-
-Where each setting comes from is the table below. A target that is not a live page — `bytes`, a file, an array —
-carries no browser and no window size, so those baselines go straight to the
-root of the baseline directory and a warning says so once per run: set
-`vistest_platform` yourself if the pictures depend on the machine that took
-them, or a developer's macOS and a Linux CI will compare against one file.
-
-The report is one self-contained HTML file — pictures inlined, no
-CDN, no fonts, nothing fetched — so it opens on a machine with no network and
-can be attached to a ticket.
-
-`pytest -n auto` is supported: every write goes through a temporary file and an
-atomic rename, there is no shared index and no lock, and the report is
-assembled once at the end from the rows each worker left behind.
-
-### Where a setting comes from
-
-One order for every setting: **the call or the command line, then the
-environment, then the file — vistest.yaml, or `pyproject.toml` for the
-flags —, then the default.** A threshold has one more layer, between the call
-and the environment: the snapshot's own passport (`meta.json` next to its
-baseline). A key of vistest.yaml the library does not read — `capture.full_page`,
-`matrix:`, `render:`, `service:`, the v1 tuning of `diff:` — is named in one
-warning per run instead of changing nothing in silence.
-
-| Setting | Call / command line | Environment | vistest.yaml / pyproject.toml | Default |
-| --- | --- | --- | --- | --- |
-| the severity that fails a check | `fail_severity=` | `VISTEST_FAIL_SEVERITY` | `diff.fail_severity` | none: whatever no rule explains fails |
-| the changed area that fails it | `max_changed_area_pct=` | `VISTEST_MAX_CHANGED_AREA_PCT` | `diff.max_changed_area_pct` | 0.15 % |
-| the time the check may take | `timeout_ms=` | — | `capture.ready_timeout_ms`, `capture.stable_timeout_ms` | 5 s each; the check 2 × ready + 3 × stable + 15 s |
-| the pointer kept where the test left it | `keep_pointer=` | — | `capture.keep_pointer` | moved off the page |
-| the focus taken off | `blur_focus=` | — | `capture.blur_focus` | left alone |
-| the largest picture | — | `VISTEST_ENGINE_MAX_PIXELS` | `diff.max_pixels` | 80 000 000 pixels |
-| artifacts (`actual/`, `diff/`) | — | `VISTEST_ROOT` | `paths.root` | `.vistest` |
-| the report | `--vistest-report` | `VISTEST_REPORT` | `vistest_report` | `.vistest/report/index.html` |
-| the baseline directory | `--vistest-baselines` | `VISTEST_BASELINES` | `vistest_baselines` | `tests/__vistest__` |
-| the platform directory | `platform=`, `--vistest-platform` | `VISTEST_PLATFORM` | `vistest_platform` | taken from the page |
-| what a plugin's score does | — | `VISTEST_FAIL_ON` | `plugins.fail_on` | `likely-real` |
-| writing baselines | `--vistest-update` | `VISTEST_UPDATE_BASELINES`, without the pytest plugin only | — | off |
-
-`VISTEST_UPDATE_BASELINES` is the one exception, on purpose: under pytest only
-the command line writes baselines into the repository — a variable a CI sets
-for the server must not accept a library run's pictures.
-
-### Growing out of it
+## Growing out of the library
 
 The layout the library writes and the archive `vistest baselines export` makes
 are the same format, so a set can be moved into a full installation later
@@ -600,7 +703,7 @@ and the presets were removed before the first release; `engine:` or `preset:`
 in vistest.yaml and `VISTEST_ENGINE` are refused with a line that says so
 (docs/GUIDE.md, «The engine»).
 
-The order of the settings is the table in «Where a setting comes from» above.
+The order of the settings is the table in «Settings» at the top of this page.
 On a server, per-project and global thresholds can also be set through the API
 and are stored in the database, where they take precedence over the file.
 
@@ -656,6 +759,9 @@ code** on the same PNG files, not a re-implementation. Taken on 2026-09-17
 with **opencv-python-headless 4.14.0.94 and 5.0.0.93** (identical verdicts and
 an identical comparison table under both), numpy 2.5.3, Python 3.13, Linux
 x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
+
+These figures are engine v1's, measured before engine v2 replaced it; the
+library and the server no longer run v1.
 
 | Tool | Correct | False failures | Missed regressions |
 |---|---|---|---|
@@ -953,75 +1059,11 @@ unpacked and 50 000 entries.
 
 ## Licensing
 
-Two things share the word «licence» here, and mixing them up causes trouble, so
-they are separated on purpose:
-
-- **The source licence is AGPL-3.0-or-later.** That is what governs the code:
-  read it, modify it, run it, and if you run a modified version as a network
-  service, publish your changes. Nothing below takes that away.
-- **A commercial licence key** is what a paying customer receives. It states
-  who bought it, until when, and how many projects and users it covers.
-
-### Editions
-
-| | Free tier | With a key |
-|---|---|---|
-| Engine, UI, CI integration, clients | everything | everything |
-| Connected projects | 2 | as bought |
-| Active users | 5 | as bought |
-| Support and updates | community | as agreed |
-
-The free tier is not a crippled demo: the engine, the review flow and every
-integration are the same. The limits are the whole difference.
-
-### Installing a key
-
-Three places, checked in this order — the environment wins so that a container
-is configured the way containers are configured:
-
-```bash
-VISTEST_LICENSE="eyJlZGl0aW9uIjoicHJvIiw…"   # environment
-.vistest/license.key                          # the data volume
-```
-
-…or paste it into **Settings → Licence** in the interface. It is verified on
-the spot and saved to the data volume.
-
-Verification is entirely offline: the key carries an RSA signature, the public
-half is compiled into VisTest, and checking it needs no network and no extra
-package. An installation inside a closed perimeter never has to reach anything.
-
-### When a term ends
-
-Nothing is taken away from the customer. Baselines stay readable, history stays
-readable, review keeps working — those are your data and your decisions.
-
-For thirty days after the end date the installation works normally and says so
-on every screen. After that, and only then, **new runs are refused** with a 402
-and an explanation. Installing a current key restores everything immediately.
-
-### Issuing keys (for the vendor)
-
-```bash
-python scripts/issue_license.py --new-key ~/.vistest-signing/private.pem
-python scripts/issue_license.py --key ~/.vistest-signing/private.pem \
-    --customer "ACME GmbH" --expires 2027-09-01 --projects 10 --users 25
-```
-
-The private half never goes into the repository, a backup that leaves your
-machine, or a support ticket.
-
-### An honest note about enforcement
-
-The source is open, so anyone can delete the check and rebuild. That is a
-property of the AGPL, not a hole to be plugged, and no amount of obfuscation
-would change it. What the key does is make the terms explicit and checkable —
-so that an honest customer knows what they bought, and a renewal is a
-conversation rather than an audit.
+The commercial licence key and the server's editions: [docs/server/LICENSING.md](https://github.com/marshlw/vistest/blob/main/docs/server/LICENSING.md).
 
 ---
 
-## License
+# License
 
 AGPL-3.0-or-later. See [LICENSE](https://github.com/marshlw/vistest/blob/main/LICENSE) and [NOTICE](https://github.com/marshlw/vistest/blob/main/NOTICE).
 
