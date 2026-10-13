@@ -16,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version on TestPyPI (for the testpypi job), e.g. 0.2.0.dev2"
+        description: "Version on TestPyPI (for the testpypi job), e.g. 0.2.0.dev3"
         required: false
-        default: "0.2.0.dev2"
+        default: "0.2.0.dev3"
       what:
         description: "What to run: wheel (built from the branch), testpypi or both"
         required: true
