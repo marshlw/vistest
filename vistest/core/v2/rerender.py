@@ -55,6 +55,7 @@ each side; it is reported, not used.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
 import numpy as np
 
@@ -115,11 +116,14 @@ class Crop:
     changed: np.ndarray      # the region's changed pixels (candidates of this group)
     inner: np.ndarray        # the region's box grown by one pixel
 
-    @property
+    #  Cached: each property of the rule reads the papers, and finding the
+    #  most frequent colour of a crop is a sort of all its pixels (plan, v8).
+    #  The crop's pixels never change after it is made.
+    @cached_property
     def paper_a(self) -> np.ndarray:
         return paper(self.a)
 
-    @property
+    @cached_property
     def paper_b(self) -> np.ndarray:
         return paper(self.b)
 
@@ -440,6 +444,8 @@ def page_text_change(exp: np.ndarray, act: np.ndarray, cand: np.ndarray) -> Text
 # --------------------------------------------------------------------------- #
 #: How far a block is looked for, in whole pixels along each axis.
 SHIFT_REACH_PX = 4
+#: Moves whose ΔE00 is computed in one call (see `block_shift`).
+_BATCH = 16
 
 
 def _moved(dx: int, dy: int) -> str:
@@ -521,30 +527,68 @@ def block_shift(exp: np.ndarray, act: np.ndarray, lab_exp: np.ndarray,
     moves = sorted(((dx, dy) for dy in range(-reach_px, reach_px + 1)
                     for dx in range(-reach_px, reach_px + 1) if dx or dy),
                    key=lambda m: (abs(m[0]) + abs(m[1]), abs(m[1]), m[1], m[0]))
-    for dx, dy in moves:
+    #  Two passes (plan, v8). The first gives every move a lower bound of
+    #  what it leaves: the pixels it moves off the frame, and those lightness
+    #  alone proves apart (`_surely_apart`: above `jnd` whatever their ΔE00
+    #  is). The second computes ΔE00 for the rest, move by move in the order
+    #  of that bound, and stops as soon as no move left can beat the best.
+    #  The answer is the one the plain search over `moves` gives — the
+    #  fewest pixels left, and of equals the first in `moves` — with ΔE00
+    #  computed for a few moves instead of all of them.
+    l_act = lab_act[ys, xs, 0]
+    bounds = []
+    for i, (dx, dy) in enumerate(moves):
         sy, sx = ys - dy, xs - dx
         inside = (sy >= 0) & (sy < H) & (sx >= 0) & (sx < W)
-        left = int((~inside).sum())
-        if left >= best[2] or left > allowed:
+        off = int(n - inside.sum())
+        if off > allowed:
             continue
-        py, px, qy, qx = ys[inside], xs[inside], sy[inside], sx[inside]
-        if pure_only:
-            #  What lightness alone proves apart first; ΔE00 for the rest only
-            #  while the move can still stay under the limit.
-            sure = _surely_apart(lab_act[py, px, 0], lab_exp[qy, qx, 0], jnd)
-            left += int(sure.sum())
-            if left > allowed or left >= best[2]:
-                continue
-            py, px, qy, qx = py[~sure], px[~sure], qy[~sure], qx[~sure]
-        differ = np.any(act[py, px] != exp[qy, qx], axis=1)
-        if differ.any():
-            de = _color.delta_e_ciede2000(lab_act[py[differ], px[differ]][None],
-                                          lab_exp[qy[differ], qx[differ]][None])[0]
-            left += int((de > jnd).sum())
-        if left < best[2] and left <= allowed:
-            best = (dx, dy, left)
-            if not left:
+        qy, qx = sy[inside], sx[inside]
+        sure = _surely_apart(l_act[inside], lab_exp[qy, qx, 0], jnd)
+        bound = off + int(sure.sum())
+        if bound <= allowed:
+            bounds.append((bound, i, inside, sure))
+    bounds.sort(key=lambda b: (b[0], b[1]))
+    best_left, best_i = n + 1, len(moves)
+    pos = 0
+    while pos < len(bounds):
+        #  ΔE00 for a batch of moves in one call: per call it is a fixed cost
+        #  of a few dozen array operations, and a region's pixels are few. A
+        #  move in the batch that the best found meanwhile rules out is
+        #  simply not counted; the decisions are taken one move at a time,
+        #  in the order of the bound, as without the batch.
+        batch, counts = [], []
+        while pos < len(bounds) and len(batch) < _BATCH:
+            bound, i = bounds[pos][0], bounds[pos][1]
+            if bound > best_left:
+                pos = len(bounds)
                 break
+            if (bound, i) < (best_left, best_i):
+                batch.append(bounds[pos])
+            pos += 1
+        if not batch:
+            break
+        pa, pb = [], []
+        for _bound, i, inside, sure in batch:
+            dx, dy = moves[i]
+            keep = np.flatnonzero(inside)[~sure]
+            py, px = ys[keep], xs[keep]
+            qy, qx = py - dy, px - dx
+            differ = np.any(act[py, px] != exp[qy, qx], axis=1)
+            pa.append(lab_act[py[differ], px[differ]])
+            pb.append(lab_exp[qy[differ], qx[differ]])
+            counts.append(int(differ.sum()))
+        de = (_color.delta_e_ciede2000(np.concatenate(pa)[None], np.concatenate(pb)[None])[0]
+              if sum(counts) else np.empty(0, np.float32))
+        over = np.split(de > jnd, np.cumsum(counts)[:-1])
+        for (bound, i, _, _), apart in zip(batch, over, strict=True):
+            if bound > best_left:
+                break
+            left = bound + int(apart.sum())
+            if left <= allowed and (left, i) < (best_left, best_i):
+                best_left, best_i = left, i
+    if best_i < len(moves):
+        best = (*moves[best_i], best_left)
     dx, dy, left = best
     if best[2] > n:
         return BlockShift(dx=0, dy=0, left=n, changed=n, limit=limit)

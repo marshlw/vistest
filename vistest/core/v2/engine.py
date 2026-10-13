@@ -385,9 +385,12 @@ def _explain_rerender(regions, groups, labels, exp, act, lab_exp, lab_act, cand,
     for r, g in live:
         box = (g.x, g.y, g.w, g.h)
         c = _rerender.crop(exp, act, labels, g.label, box, v2.group_px)
-        where = np.zeros(cand.shape, bool)
-        where[g.y:g.y + g.h, g.x:g.x + g.w] = labels[g.y:g.y + g.h, g.x:g.x + g.w] == g.label
-        block = _rerender.block_shift(exp, act, lab_exp, lab_act, where & cand,
+        #  The region's candidate pixels as (ys, xs), found inside its box:
+        #  a full-frame mask per region cost a frame-sized allocation and
+        #  scan each (plan, v8). The same pixels, in the same order.
+        ys, xs = np.nonzero((labels[g.y:g.y + g.h, g.x:g.x + g.w] == g.label)
+                            & cand[g.y:g.y + g.h, g.x:g.x + g.w])
+        block = _rerender.block_shift(exp, act, lab_exp, lab_act, (ys + g.y, xs + g.x),
                                       jnd=v2.jnd_delta_e, limit=v2.shift_residual)
         a = _rerender.assess(c, text, block, ink_limit=v2.ink_delta_e,
                              share_limit=v2.min_text_share, jnd=v2.jnd_delta_e,
