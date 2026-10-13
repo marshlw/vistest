@@ -84,7 +84,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="where the baselines are (tests/__vistest__ by default, "
                          "__vistest__ without a tests/ folder)")
     ch.add_argument("--platform", help="the platform directory of the baseline, e.g. "
-                                       "chromium-1440x900; none by default")
+                                       "linux-chromium-1x-1440x900 (without the "
+                                       "system every machine shares one set); "
+                                       "none by default")
     ch.add_argument("--update", action="store_true",
                     help="accept the picture as the baseline when it is missing or differs")
     ch.add_argument("--json", action="store_true",

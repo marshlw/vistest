@@ -136,8 +136,11 @@ def expect_screenshot(
     and OpenCV's `imread` gives BGR: `a[..., ::-1]`). Playwright's async API
     is refused by name: the check drives the sync one.
 
-    `platform` names the directory the baseline lives in — browser and window
-    size, `chromium-1440x900`. Left out, it is taken from the page itself, and
+    `platform` names the directory the baseline lives in — the system, the
+    browser, the scale and the window size, `linux-chromium-1x-1440x900`, as
+    the page itself gives it. A name without the system (`chromium-1440x900`)
+    is one set for every machine that runs the suite, and text is drawn
+    differently on each. Left out, it is taken from the page itself, and
     for a target that is not a live page there is no platform at all and the
     baselines sit flat under the root. Guessing one would write a browser name
     into somebody's repository on no evidence.
