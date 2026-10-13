@@ -1,6 +1,6 @@
 # Licensing: the server's key and editions
 
-*Читать по-русски: [LICENSING.ru.md](LICENSING.ru.md)*
+*In Russian: [LICENSING.ru.md](LICENSING.ru.md)*
 
 Two things share the word «licence» here, and mixing them up causes trouble, so
 they are separated on purpose:
