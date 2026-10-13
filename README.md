@@ -756,55 +756,11 @@ ground truth is known by construction.
 The primary metric is **false-fail rate**: the share of pages that did not
 meaningfully change but produced a red test.
 
-### Current figures
+### Figures
 
-Frozen corpus, the commands above. pixelmatch and Playwright are **their own
-code** on the same PNG files, not a re-implementation. Taken on 2026-09-17
-with **opencv-python-headless 4.14.0.94 and 5.0.0.93** (identical verdicts and
-an identical comparison table under both), numpy 2.5.3, Python 3.13, Linux
-x86_64; Node.js 22.22.2, pixelmatch 7.2.0, @playwright/test 1.63.0:
-
-These figures are engine v1's, measured before engine v2 replaced it; the
-library and the server no longer run v1.
-
-| Tool | Correct | False failures | Missed regressions |
-|---|---|---|---|
-| VisTest (balanced) | **54/54** (27/27 per raster) | 0/32 | 0/22 |
-| absdiff | 24/54 | 30/32 | 0/22 |
-| pixelmatch 7.2.0 | 34/54 | 18/32 | 2/22 |
-| Playwright 1.63.0 `toHaveScreenshot()` | 38/54 | 14/32 | 2/22 |
-
-The corpus is synthetic: every page in it is drawn by OpenCV, not rendered by
-a browser. A first probe on real Chromium renders did not confirm the
-advantage in either direction — neither for VisTest nor against it — and a
-corpus captured from a browser is in progress. Read the table as a measurement
-on synthetic pages, not as a claim about real ones.
-
-Every tool runs with its defaults, nothing set:
-
-- **VisTest** — preset `balanced` (the default), `DiffConfig()` as shipped,
-  AI layer as `CheckService` builds it (trained gate off by default).
-- **pixelmatch** — its CLI, `pixelmatch expected.png actual.png`:
-  `threshold` 0.1, `includeAA` false; red on any differing pixel (exit 66) or
-  a size change (exit 65).
-- **Playwright** — `getComparator('image/png')` from playwright-core, the
-  function `toHaveScreenshot()` calls, with the options it passes when nothing
-  is configured: `threshold` 0.2, `maxDiffPixels` 0, `includeAA` false; the page
-  capture itself is not part of this table, the corpus is already captured.
-- **absdiff** — the whole algorithm of a hand-written script: any differing
-  pixel fails.
-
-Every value, the versions and the per-case table: `docs/benchmark.md`.
-
-54 pairs = the same 27 cases on two text rasters, OpenCV 4.x and OpenCV 5
-(`, thin glyphs`). The VisTest row was re-measured on 2026-09-25 (numpy 2.4.6,
-Python 3.11) after the large-flat-recolour rule: `header color`, missed on
-both rasters before it, is found on both. The corpus lives in
-`tests/benchmark_corpus/` and is not redrawn at run time. Figures published
-before the freeze depended on the installed OpenCV and are not comparable with
-these (see CHANGELOG). The engine is not fully version-independent: on the
-same files the verdicts match, but a few region metrics in the detailed table
-differ in the last digits between 4.14 and 5.0.
+The comparison with other tools on real browser renders is published with the
+first release on PyPI, with the conditions of the run written down before it.
+Until then this page carries no figures.
 
 Statistics from real runs accumulate on their own:
 
