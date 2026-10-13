@@ -6,7 +6,7 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 10675 lines in 213 files.
+# 10659 lines in 212 files.
 
 52	.github/workflows/ci.yml
 7	.vistest/secrets.env.example
@@ -32,7 +32,6 @@
 4	docker/prometheus.yml
 154	docs/benchmark.md
 321	docs/dev/journal.md
-16	examples/demo_page.html
 105	frontend/README.md
 65	frontend/index.html
 76	frontend/js/auth.js
