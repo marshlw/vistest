@@ -9,7 +9,7 @@
 """Baselines as plain files in the user's own repository.
 
     tests/__vistest__/
-      chromium-1440x900/
+      linux-chromium-1x-1440x900/
         login.png           the baseline
         login.json          its passport, optional
         checkout/summary.png

@@ -2,8 +2,9 @@
 #
 # Put it at the project's root, next to pyproject.toml. Every key is optional:
 # what is left out is the default, and the values below ARE the defaults, so
-# delete what you do not mean to change. These are all the keys the library
-# reads; any other key is named in one warning per run.
+# delete what you do not mean to change. These are the keys the library reads
+# (of plugins: and ai:, the ones a project may need); any key the library does
+# not read is named in one warning per run.
 #
 # There is no threshold here on purpose: without one, any change the engine
 # cannot explain as rendering noise fails the check. Set one only after you
@@ -59,10 +60,12 @@ paths:
   root: .vistest
 
 # What an installed scoring plugin may do to a check: any, likely-real or
-# confirmed. Without a plugin it changes nothing.
+# confirmed; and the plugins not to load. Without a plugin it changes nothing.
 # plugins:
 #   fail_on: likely-real
+#   disabled: []
 
 # The optional AI layer after the engine; off by default.
 # ai:
 #   gate_enabled: false
+#   perceptual_enabled: false

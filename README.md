@@ -161,8 +161,7 @@ with `pytest --vistest-update` and commit the new baseline.
 CI compares against the baselines in the repository and never writes them.
 Text is drawn differently on Windows, macOS and Linux, so the baselines live in
 one directory per platform (below), and CI needs the set taken where it runs.
-The simplest way to get it is to run the checks in a container with a pinned
-Playwright, both in CI and when you take the baselines:
+Pin both halves of that — the runner's system and Playwright:
 
 ```yaml
 # .github/workflows/visual.yml
@@ -170,24 +169,29 @@ name: visual
 on: [push, pull_request]
 jobs:
   visual:
-    runs-on: ubuntu-latest
-    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with: { lfs: true }
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
       - run: pip install "vistest[browser]" "playwright==1.56.0"
+      - run: playwright install --with-deps chromium
       - run: pytest
       - uses: actions/upload-artifact@v4
         if: failure()
         with: { name: vistest, path: .vistest/ }
 ```
 
-The image's tag and the `playwright` pin are one pair: a newer Playwright
-installed into an older image looks for a browser the image does not have.
 When a check fails in CI, the uploaded `.vistest/` has the report and the
-pictures it took. For GitLab, [`.gitlab-ci.example.yml`](https://github.com/marshlw/vistest/blob/main/.gitlab-ci.example.yml)
-is the same with a manual job that takes new baselines for a person to look
-at.
+pictures it took. That is also how the CI's own set is taken the first time:
+the run fails with «no baseline», you download `.vistest/actual/`, look at
+the pictures, put them under `tests/__vistest__/` and commit them. A new
+Playwright brings a new Chromium, which draws some pixels differently, so
+change the pin on purpose, and take the baselines again when you do. For
+GitLab, [`.gitlab-ci.example.yml`](https://github.com/marshlw/vistest/blob/main/.gitlab-ci.example.yml)
+runs in the Playwright image of the pinned version, with a manual job that
+takes new baselines for a person to look at.
 
 `pytest -n auto` works: every write goes through a temporary file and an
 atomic rename, and the report is assembled once at the end.

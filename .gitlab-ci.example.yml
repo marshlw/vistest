@@ -16,6 +16,11 @@ variables:
   # it looks for a browser the image does not have. Change both together.
   PLAYWRIGHT_IMAGE: "mcr.microsoft.com/playwright/python:v1.56.0-noble"
   PLAYWRIGHT_VERSION: "1.56.0"
+  # The image's Python may be marked as managed by the system (PEP 668), and
+  # then pip refuses to install into it. A CI job's container is thrown away
+  # after the job, so installing there is what is wanted; a pip too old to know
+  # the variable ignores it.
+  PIP_BREAK_SYSTEM_PACKAGES: "1"
   GIT_DEPTH: "0"
 
 .visual:
