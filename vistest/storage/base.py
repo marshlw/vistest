@@ -84,8 +84,9 @@ class SnapshotKey:
     """Everything that decides which file a check is compared against.
 
     Three parts, and the middle one is the one people get wrong. `platform` is
-    the browser together with the window size — `chromium-1440x900` — because
-    a baseline is only comparable against a screenshot taken the same way.
+    the system, the browser, the scale and the window size together —
+    `linux-chromium-1x-1440x900` — because a baseline is only comparable
+    against a screenshot taken the same way.
     It is NOT a `NamingProfile`: that word is taken in this package, and it
     means the rules for reading somebody else's file names.
 

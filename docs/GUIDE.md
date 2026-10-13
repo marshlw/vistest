@@ -35,9 +35,10 @@ the second line downloads Chromium. Python 3.10–3.14. The package alone —
 arrays) and needs no browser.
 
 Pin Playwright where the pictures must not move: a new Playwright brings a new
-Chromium, and a new Chromium draws some pixels differently. In CI the pin and
-the container image are one pair (`mcr.microsoft.com/playwright/python:v1.56.0-noble`
-with `playwright==1.56.0`).
+Chromium, and a new Chromium draws some pixels differently. In CI pin it
+together with the runner's system — `ubuntu-24.04` with `playwright==1.56.0`,
+or a container image of exactly that Playwright
+(`mcr.microsoft.com/playwright/python:v1.56.0-noble` with `playwright==1.56.0`).
 
 ## A first check
 
@@ -122,13 +123,17 @@ regions, the changed area and the timings.
 Both `AssertionError`s name every file involved: the baseline, the picture
 taken, the diff, the report. `VisTestWarning` is the category of the library's
 warnings — a key it does not read, a target with no platform — so a project
-can filter or escalate them (`pytest -W error::vistest.VisTestWarning`).
+can filter them by it (`filterwarnings = ["ignore::vistest.VisTestWarning"]`
+under `[tool.pytest.ini_options]`). Do not turn them into errors: the warning
+about unread keys is given while pytest starts, and an error there stops the
+run with a traceback instead of a line.
 
 `vistest.compare(expected, actual)` compares two RGB arrays (uint8, H×W×3)
 with the same engine and returns a `CompareResult` (`.verdict` is a `Verdict`:
-`pass`, `fail`, `new_baseline`, `error`); `cfg=` takes a
-`vistest.core.settings.DiffConfig`, and `ignore_mask=` a boolean array of
-what not to look at. No baselines, no files, no browser.
+`pass`, `fail`, `new_baseline`, `error`); `ignore_mask=` takes a boolean
+array of what not to look at. No baselines, no files, no browser, and no
+threshold: every change no rule explains fails. A threshold is
+`expect_screenshot`'s (or `vistest check` with vistest.yaml).
 
 ## pytest: flags and fixtures
 
@@ -224,7 +229,7 @@ VisTestWarning: vistest: vistest.yaml: the library does not read service.api_url
 One order for every setting: **the call or the command line, then the
 environment, then the file — vistest.yaml, or `pyproject.toml` for the
 flags —, then the default.** A threshold has one more layer, between the call
-and the environment: the snapshot's own passport (`meta.json` next to its
+and the environment: the snapshot's own passport (`<name>.json` next to its
 baseline). A key of vistest.yaml the library does not read — `capture.full_page`,
 `matrix:`, `render:`, `service:`, the v1 tuning of `diff:` — is named in one
 warning per run instead of changing nothing in silence.
@@ -591,9 +596,10 @@ below the threshold 25 (a project override): 2 changes — recolored: #333333 �
 
 Overrides saved in the interface before the switch are applied by v2 and
 named that way, so an old number that now lets something through is seen.
-`max_changed_area_pct` is the share of the frame that fails on its own, whatever the severity — counted over the regions no
-rule explained, so under the default threshold of 0 it adds nothing. Like
-the threshold, it is the number a person set (the
+`max_changed_area_pct` is the share of the frame that fails on its own,
+whatever the severity — counted over the regions no rule explained, so under
+the default threshold of 0 it adds nothing. Like the threshold, it is the
+number a person set (the
 call, the passport, vistest.yaml, `VISTEST_MAX_CHANGED_AREA_PCT`, an
 override in the interface) or else the default, 0.15 %, named next to it —
 `(limit 0.15%, the default)`. The threshold is there to let small things
@@ -700,7 +706,6 @@ diff pictures and `result.json`.
 
 ```bash
 vistest doctor https://your-app.example/ --runs 5
-vistest doctor --name checkout.png        # the address from a baseline's passport
 ```
 
 Loads the page several times, each in a clean browser context, with nothing
