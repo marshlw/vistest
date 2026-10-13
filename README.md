@@ -117,17 +117,17 @@ says what changed and where everything is:
 
 ```
 vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
-  33 changes not explained as rendering noise · worst 93/100 · no threshold set, so any change fails
-    · 2.80% of the frame
-  reason:      shape in 31, line in 2; worst 193x33 at (823, 356)
+  32 changes not explained as rendering noise · worst 93/100 · no threshold set, so any change fails
+    · 2.53% of the frame
+  reason:      shape in 30, line in 2; worst 178x27 at (823, 308)
   second look: the second picture is the same as the first, so the change is real, not motion
   renderer:    same as the baseline's
   baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
   actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
-  changed:     193x33 at (823, 356): shape changed: 42% of the old strokes are not where the new ones are
-               103x28 at (551, 355): shape changed: 56% of the old strokes are not where the new ones are
-               110x43 at (223, 406): shape changed: 66% of the new strokes are not where the old ones were
-               ... and 30 more in the report
+  changed:     178x27 at (823, 308): shape changed: 48% of the old strokes are not where the new ones are
+               110x43 at (589, 358): shape changed: 70% of the new strokes are not where the old ones were
+               65x33 at (523, 305): shape changed: 42% of the old strokes are not where the new ones are
+               ... and 29 more in the report
   diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
   report:      .vistest/report/index.html
   accept it:   pytest --vistest-update

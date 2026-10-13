@@ -9,7 +9,7 @@
   remove those obligations.
 -->
 
-<html lang="ru" data-theme="light">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <title>VisTest demo</title>
@@ -35,8 +35,8 @@
   .price{font-size:34px;font-weight:700;margin:10px 0}
   .cta{display:inline-block;background:var(--accent);color:#fff;padding:11px 26px;
        border-radius:10px;text-decoration:none;font-weight:600;margin-top:14px}
-  /* Живые элементы — именно их должна поймать stability-маска, */
-  /* без единого mask_selector в тесте. */
+  /* The live elements: a counter that ticks and a spinner that never stops. */
+  /* The example test masks the line they are in. */
   #live-counter{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
   .spinner{width:22px;height:22px;border:3px solid var(--line);
            border-top-color:var(--accent);border-radius:50%;
@@ -48,34 +48,34 @@
 <body>
 <header>
   <b>ACME</b>
-  <nav><span>Продукт</span><span>Цены</span><span>Документация</span><span>Блог</span></nav>
-  <button id="theme-toggle">Тема</button>
+  <nav><span>Product</span><span>Pricing</span><span>Docs</span><span>Blog</span></nav>
+  <button id="theme-toggle">Theme</button>
 </header>
 
 <main>
-  <h1>Визуальные регрессии, которым можно верить</h1>
+  <h1>Visual regressions you can trust</h1>
   <p class="lead">
-    Онлайн уже <span id="live-counter">0</span> человек <span class="spinner"></span>
+    <span id="live-counter">0</span> people online right now <span class="spinner"></span>
   </p>
 
   <div class="cards" id="pricing">
     <div class="card">
-      <h3>Старт</h3>
-      <div class="price">0 ₽</div>
-      <p>До 100 снимков в месяц, один браузер.</p>
-      <a class="cta" href="#" data-testid="cta-free">Попробовать</a>
+      <h3>Starter</h3>
+      <div class="price">$0</div>
+      <p>Up to 100 snapshots a month, one browser.</p>
+      <a class="cta" href="#" data-testid="cta-free">Try it</a>
     </div>
     <div class="card">
-      <h3>Команда</h3>
-      <div class="price">4 900 ₽</div>
-      <p>Безлимит снимков, три браузера, история эталонов.</p>
-      <a class="cta" href="#" data-testid="cta-team">Выбрать</a>
+      <h3>Team</h3>
+      <div class="price">$49</div>
+      <p>Unlimited snapshots, three browsers, baseline history.</p>
+      <a class="cta" href="#" data-testid="cta-team">Choose</a>
     </div>
     <div class="card">
       <h3>Enterprise</h3>
-      <div class="price">По запросу</div>
-      <p>On-premise, SSO, выделенные раннеры.</p>
-      <a class="cta" href="#" data-testid="cta-ent">Связаться</a>
+      <div class="price">Contact us</div>
+      <p>On-premise, SSO, dedicated runners.</p>
+      <a class="cta" href="#" data-testid="cta-ent">Get in touch</a>
     </div>
   </div>
 </main>
@@ -83,7 +83,7 @@
 <footer>© 2026 ACME · <span data-vistest="ignore">build 8f2a91c</span></footer>
 
 <script>
-  // Счётчик тикает каждые 200 мс — идеальный источник ложных диффов.
+  // The counter ticks every 200 ms: the perfect source of false failures.
   let n = 0;
   setInterval(() => { document.getElementById('live-counter').textContent = ++n; }, 200);
   document.getElementById('theme-toggle').onclick = () => {
