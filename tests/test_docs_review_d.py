@@ -135,13 +135,49 @@ def test_every_yaml_key_named_exists(doc):
                          f"{sorted(missing)}")
 
 
+@pytest.mark.parametrize("doc", DOCS[:3])
+def test_every_key_in_a_yaml_block_exists(doc):
+    """A key written the way a user copies it: nested, in a ```yaml block."""
+    known = _config_keys() | REFUSED_KEYS
+    sections = {k.split(".", 1)[0] for k in known}
+    missing, parsed = set(), 0
+    for block in re.findall(r"^```ya?ml\n(.*?)^```", _read(doc), re.M | re.S):
+        try:
+            data = yaml.safe_load(block)
+        except yaml.YAMLError:
+            continue                        # a fragment cut out of a larger file
+        if not isinstance(data, dict):
+            continue
+        parsed += 1
+        for section, body in data.items():
+            if section in sections and isinstance(body, dict):
+                missing |= {f"{section}.{key}" for key in body} - known
+    assert parsed, f"{doc}: no yaml block was read — the test would prove nothing"
+    assert not missing, (f"{doc}: yaml blocks set keys the config does not know: "
+                         f"{sorted(missing)}")
+
+
+def _uncommented(text: str) -> str:
+    """The example with its commented-out keys switched on: they are copied too."""
+    return re.sub(r"^(\s*)# ?(\s*[a-z_]+:(?: .*)?)$", r"\1\2", text, flags=re.M)
+
+
 def test_every_key_of_the_example_config_is_read_by_the_library():
     from vistest.library.context import LIBRARY_READS
 
+    reads = set(LIBRARY_READS)
     data = yaml.safe_load(_read("examples/vistest.yaml"))
     keys = {f"{s}.{k}" for s, v in data.items() for k in (v or {})}
     assert keys, "examples/vistest.yaml sets nothing"
-    assert keys <= set(LIBRARY_READS), sorted(keys - set(LIBRARY_READS))
+    assert keys <= reads, sorted(keys - reads)
+    #  The commented-out keys: a whole section the library reads (`plugins`,
+    #  `ai`) takes any key the config knows in it.
+    every = yaml.safe_load(_uncommented(_read("examples/vistest.yaml")))
+    named = {f"{s}.{k}" for s, v in every.items() for k in (v or {})}
+    assert {"diff.fail_severity", "plugins.fail_on", "ai.gate_enabled"} <= named
+    wrong = {k for k in named
+             if k not in reads and not (k.split(".")[0] in reads and k in _config_keys())}
+    assert not wrong, f"examples/vistest.yaml names keys the library does not read: {wrong}"
     #  No threshold set: the comment says why, and the key is there, commented out.
     assert "fail_severity" not in data.get("diff", {})
     assert "max_changed_area_pct" not in data.get("diff", {})
@@ -169,7 +205,9 @@ def test_every_key_the_library_reads_is_in_the_guide():
     from vistest.library.context import LIBRARY_READS
 
     guide = _read("docs/GUIDE.md")
-    missing = [k for k in sorted(LIBRARY_READS) if f"`{k}`" not in guide]
+    missing = [k for k in sorted(LIBRARY_READS)
+               if (f"`{k}`" not in guide if "." in k
+                   else not re.search(rf"`{k}\.[a-z_]+`", guide))]
     assert not missing, f"docs/GUIDE.md does not describe: {missing}"
 
 
@@ -206,10 +244,10 @@ def test_the_ci_examples_pin_playwright_to_their_image():
     pin = re.search(r'PLAYWRIGHT_VERSION: "([\d.]+)"', gitlab).group(1)
     assert image == pin
     assert '"playwright==$PLAYWRIGHT_VERSION"' in gitlab
+    assert 'PIP_BREAK_SYSTEM_PACKAGES: "1"' in gitlab
     readme = _read("README.md")
-    image = re.search(r"container: mcr\.microsoft\.com/playwright/python:v([\d.]+)-",
-                      readme).group(1)
-    assert f'"playwright=={image}"' in readme
+    assert re.search(r"runs-on: ubuntu-\d\d\.\d\d\n", readme), "the runner's system is pinned"
+    assert re.search(r'pip install "vistest\[browser\]" "playwright==\d+\.\d+\.\d+"', readme)
 
 
 def test_the_root_config_says_it_is_not_a_template():
