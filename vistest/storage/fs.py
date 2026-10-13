@@ -39,8 +39,10 @@ from pathlib import Path
 
 import numpy as np
 
-from ..capture.playwright_capture import _write_png, read_png
+from ..capture.playwright_capture import read_png
 from ..core import noise as _noise
+from ..core import pngio as _pngio
+from . import atomic as _atomic
 from .base import BaselineRecord, BaselineStore
 
 #  Re-exported, not just used: `MAX_DEPTH`, `split_project` and `_safe` were
@@ -115,16 +117,17 @@ def _dir_lock(directory: Path, timeout: float = LOCK_TIMEOUT_S):
             pass
 
 
+#  Both go through `storage.atomic`, the library's writer: a temporary name
+#  with the pid and a random suffix (one process may write one path twice at
+#  once), the replace retried on Windows while somebody holds the target, and
+#  the temporary removed whatever happens. These two had a pid-only name, a
+#  bare `os.replace` and left the temporary behind on failure (plan, v5).
 def _write_atomic_text(path: Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    _atomic.write_text(path, text, mkdir=False)
 
 
 def _write_atomic_png(path: Path, image: np.ndarray) -> None:
-    tmp = path.with_suffix(f".tmp{os.getpid()}.png")
-    _write_png(tmp, image)
-    os.replace(tmp, path)
+    _atomic.write_bytes(path, _pngio.encode(image), mkdir=False)
 
 
 #  Name sanitising lives in `.paths` now: the library-mode store has to map a
