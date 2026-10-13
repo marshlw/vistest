@@ -1,0 +1,68 @@
+# vistest.yaml for a project that uses VisTest as a library (expect_screenshot).
+#
+# Put it at the project's root, next to pyproject.toml. Every key is optional:
+# what is left out is the default, and the values below ARE the defaults, so
+# delete what you do not mean to change. These are all the keys the library
+# reads; any other key is named in one warning per run.
+#
+# There is no threshold here on purpose: without one, any change the engine
+# cannot explain as rendering noise fails the check. Set one only after you
+# have looked at what it would let through.
+
+capture:
+  # Frames are taken until two in a row are identical, for at most this long.
+  # 0: one frame.
+  stable_timeout_ms: 5000
+  # Before the frames: loaded, fonts in, no request in flight, no loader in the
+  # area, its images decoded, nothing changing for quiet_ms. Each step waits at
+  # most this long; 0 does not wait.
+  ready_timeout_ms: 5000
+  quiet_ms: 40
+  # Count the page's requests from the moment the browser context is created
+  # (the pytest plugin does it), so the wait knows what is still in flight.
+  track_requests: true
+  # Requests the wait never waits for: glob patterns against the URL without
+  # its query — a long poll, an analytics beacon.
+  ignore_requests: []
+  # A check that failed gets more frames: a change that held still is real, one
+  # that keeps changing is named with the mask that would hide it.
+  retry_on_fail: true
+  # The pointer is moved off the page before the picture; true leaves it where
+  # the test put it (a hover captured on purpose).
+  keep_pointer: false
+  # true takes the focus off whatever has it before the picture.
+  blur_focus: false
+  # A picture of the window is taken at the scroll its baseline had.
+  match_baseline_scroll: true
+  # The scale for the platform key when the page's own cannot be read.
+  device_scale_factor: 1.0
+
+diff:
+  # The severity (0-100) at or above which an unexplained change fails; below
+  # it, the change is listed and does not fail. Not set: any such change fails.
+  # fail_severity: 40
+  # The share of the picture, in %, that fails the check whatever the severity.
+  # max_changed_area_pct: 0.15
+  # The largest picture the engine agrees to hold in memory.
+  max_pixels: 80000000
+  # A size change beyond this many pixels fails the check on its own.
+  size_tolerance_px: 0
+  fail_on_size_change: true
+  # Kinds of change that never fail; they are listed as suppressed.
+  ignore_kinds: [noise, antialias]
+  # Where the first screen ends, and how much more a change there weighs.
+  above_fold_px: 900
+  above_fold_weight: 1.5
+
+paths:
+  # Where the pictures of the run, the diffs and the report go.
+  root: .vistest
+
+# What an installed scoring plugin may do to a check: any, likely-real or
+# confirmed. Without a plugin it changes nothing.
+# plugins:
+#   fail_on: likely-real
+
+# The optional AI layer after the engine; off by default.
+# ai:
+#   gate_enabled: false
