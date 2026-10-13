@@ -1,6 +1,8 @@
-# VisTest — руководство по запуску и работе
+# VisTest — руководство по серверу
 
-Пошагово: от установки до разбора первого упавшего теста.
+Сервер: установка, интерфейс, подключённые наборы, CI. Библиотека —
+`expect_screenshot`, её флаги, ключи и команды — описана в английском
+[гайде библиотеки](../GUIDE.md).
 
 - [1. Требования](#1-требования)
 - [2. Установка](#2-установка)
@@ -15,7 +17,7 @@
 - [5.4. Что изменил этот мерж](#54-что-изменил-этот-мерж)
 - [6. Тест упал — что делать](#6-тест-упал--что-делать)
 - [7. Настройка порогов](#7-настройка-порогов)
-- [7.1. Readiness before the frames, and a second look after a failure](#71-readiness-before-the-frames-and-a-second-look-after-a-failure)
+- [7.1. Готовность страницы и второй взгляд](#71-готовность-страницы-и-второй-взгляд)
 - [8. Борьба с нестабильностью](#8-борьба-с-нестабильностью)
 - [9. Сервис, UI и метрики](#9-сервис-ui-и-метрики)
 - [9.1. Decisions: очередь решений](#91-decisions-очередь-решений)
@@ -149,7 +151,7 @@ python tests/benchmark.py --compare
 ```
 
 Методика, оговорки и то, чего эта таблица не доказывает —
-в [`BENCHMARK.md`](BENCHMARK.md).
+в [`docs/benchmark.md`](../benchmark.md).
 
 ### Шаг 2. Прогнать реальные тесты на демо-странице
 
@@ -480,7 +482,7 @@ curl -sf -X POST http://localhost:8420/api/check \
 
 Ответ — вердикт, метрики, список изменившихся регионов с селекторами и ссылки
 на артефакты. Полный контракт, готовые клиенты и примеры для Playwright JS,
-Cypress, Java и C# — в [`clients/README.md`](../clients/README.md).
+Cypress, Java и C# — в [`clients/README.md`](../../clients/README.md).
 
 Для Node есть клиент без зависимостей:
 
@@ -802,8 +804,7 @@ vistest project baselines my-tests --reset       # удалить свои и с
 **Насколько это важно — измерено.** Один и тот же набор из одиннадцати тестов,
 один стенд, один движок, одни пороги. На эталонах, снятых VisTest, — 35
 сравнений и ноль падений. На эталонах проекта — 18 сравнений и 13 падений.
-Отличается только то, чей конвейер снимал эталон. Подробно с оговорками про
-размер выборки — [`CASE-STUDY.md`](CASE-STUDY.md).
+Отличается только то, чей конвейер снимал эталон.
 
 Отсюда практическое следствие: если первый прогон на эталонах проекта дал
 красное почти везде, это скорее всего не поломки в приложении. Посмотрите
@@ -1946,90 +1947,10 @@ allure serve allure-results
 
 ### The engine
 
-Every check — the library's `expect_screenshot`, the pytest fixture, the
-service and `POST /api/check`, `vistest check`, `vistest compare`,
-`vistest doctor` — runs **engine v2**, and there is nothing to choose. v2
-catches every difference a person can see (ΔE00 above 1 per pixel, grouped
-within 2 px, from 4 px up) and takes out only what a named rule explains: a
-scroll bar that appeared, a JPEG re-encode, the page moved by a fraction of a
-pixel, text re-rasterised by a renderer the canaries prove changed. **A
-region no rule explained fails the check.** Each region that counts is said
-in words in the report and the failure message («recolored: #1f2937 →
-#4d5666, color difference 14.8»).
+См. гайд библиотеки, на английском: [docs/GUIDE.md, «The engine»](../GUIDE.md#the-engine).
 
-Engine v1, the cascade, and the presets that tuned it were removed before
-the first release (0.2.0.dev3). `engine:` and `preset:` in vistest.yaml (also
-under `diff:`) and `VISTEST_ENGINE` are refused in one line —
-`v1 and presets were removed before the first release; v2 is the only engine`
-—, and `engine=` of the call, `--engine` and `--preset` of the CLI and
-`--vistest-preset` of pytest are gone. v1 stays inside: the benchmark and the
-bench corpus run it in code, and the server keeps `{"engine": "v1"}` in the
-`options` of `POST /api/check` and its presets until phase 6. A v1 result
-carries one line in its notes saying it is deprecated.
-
-**The threshold under v2.** A preset's `fail_severity` is v1's and is not
-applied: under v2 the threshold is 0 — whatever no rule explains fails. When
-a person sets one — `fail_severity=` in the call, the snapshot's passport,
-`diff.fail_severity` in vistest.yaml, `VISTEST_FAIL_SEVERITY`, an override
-in the interface — a region no rule explained whose severity is below it
-does not fail the check, and it is not dropped either: the result, the
-report, the failure message and the API answer list it apart, in the
-engine's words and with where the threshold came from:
-
-```
-below the threshold 25 (a project override): 2 changes — recolored: #333333 → #3a3a3a, color difference 2.0; …
-```
-
-Overrides saved in the interface before the switch are applied by v2 and
-named that way, so an old number that now lets something through is seen.
-`max_changed_area_pct` means what it means in v1: the share of the frame
-that fails on its own, whatever the severity — counted over the regions no
-rule explained, so under the default threshold of 0 it adds nothing. Like
-the threshold, a preset does not set it for v2: the number a person set (the
-call, the passport, vistest.yaml, `VISTEST_MAX_CHANGED_AREA_PCT`, an
-override in the interface) or else the default, 0.15 %, named next to it —
-`(limit 0.15%, the default)`. The threshold is there to let small things
-through: a counter, a speck. A faint change over a paragraph is more often
-real (the text color of a whole theme changed), so it still fails, and the
-message says what to do: raise `max_changed_area_pct`, or mask the area —
-for something small on an element's snapshot a mask is the right tool, not
-a threshold.
-
-**Presets under v2.** `strict`, `balanced` and `loose` tune v1's cascade
-(ΔE00 and SSIM thresholds, morphology). v2 has one rule — unexplained
-fails — and your threshold, so a preset does not act on it; a preset other
-than `balanced` adds one line to a v2 result saying so. The table below is
-v1's.
-
-### What engine v2 does not tell apart
-
-What v2 cannot explain fails; these are the known places where that is a
-false failure, not a change. None of them has a rule of its own yet: for
-each, mask the element, set a threshold for the snapshot, or accept the new
-picture after looking at it.
-
-- **A page moved by a fraction of a pixel, on charts and SVG icons.** v2
-  explains a fractional move of the page when each region's drawing moved
-  with it: text, boxes and plain icons keep their shape and their coverage
-  moves by exactly the page's move. A chart (lines, areas, sparklines) or an
-  SVG icon can be re-rasterised at the new offset rather than moved — its
-  strokes come out a little different — and then the region is said in
-  words («shape changed», «edges redrawn within 1 px») and fails.
-- **A native checkbox (and other native form controls) on a page moved by a
-  fraction of a pixel.** The browser draws them in its own theme, and the
-  page-shift rule does not take them as moved with the page: they are left
-  as a change.
-- **`opacity: 0.98` and changes as faint.** By pixels it is the same as a
-  real small edit — a color moved by about ΔE00 1–2. v2 takes every pixel
-  above ΔE00 1, so it fails; it is not meant to tell the two apart. If such
-  faintness is expected on a snapshot, a threshold for that snapshot is the
-  tool.
-- **Another renderer.** When the canaries say the renderer changed (another
-  machine, OS, Chromium build or font hinting), v2 says so and explains the
-  text it re-rasterised — but what else the other renderer drew otherwise
-  (antialiasing of shapes, icons, form controls) still fails. The check
-  gives a diagnosis, not a pass: accept the baselines again on the renderer
-  the checks run on.
+Там же — «What engine v2 does not tell apart»: известные места, где движок v2
+падает ложно.
 
 ### Presets
 
@@ -2126,35 +2047,10 @@ python tests/benchmark.py --preset balanced
 
 ### Where a setting comes from
 
-One order for every setting: **the call or the command line, then the
-environment, then the file — vistest.yaml, or `pyproject.toml` for the
-flags —, then the default.** A threshold has one more layer, between the call
-and the environment: the snapshot's own passport (`meta.json` next to its
-baseline). A key of vistest.yaml the library does not read — `capture.full_page`,
-`matrix:`, `render:`, `service:`, the v1 tuning of `diff:` — is named in one
-warning per run instead of changing nothing in silence.
+См. гайд библиотеки, на английском: [docs/GUIDE.md, «Where a setting comes from»](../GUIDE.md#where-a-setting-comes-from).
 
-| Setting | Call / command line | Environment | vistest.yaml / pyproject.toml | Default |
-| --- | --- | --- | --- | --- |
-| the severity that fails a check | `fail_severity=` | `VISTEST_FAIL_SEVERITY` | `diff.fail_severity` | none: whatever no rule explains fails |
-| the changed area that fails it | `max_changed_area_pct=` | `VISTEST_MAX_CHANGED_AREA_PCT` | `diff.max_changed_area_pct` | 0.15 % |
-| the time the check may take | `timeout_ms=` | — | `capture.ready_timeout_ms`, `capture.stable_timeout_ms` | 5 s each; the check 2 × ready + 3 × stable + 15 s |
-| the pointer kept where the test left it | `keep_pointer=` | — | `capture.keep_pointer` | moved off the page |
-| the focus taken off | `blur_focus=` | — | `capture.blur_focus` | left alone |
-| the largest picture | — | `VISTEST_ENGINE_MAX_PIXELS` | `diff.max_pixels` | 80 000 000 pixels |
-| artifacts (`actual/`, `diff/`) | — | `VISTEST_ROOT` | `paths.root` | `.vistest` |
-| the report | `--vistest-report` | `VISTEST_REPORT` | `vistest_report` | `.vistest/report/index.html` |
-| the baseline directory | `--vistest-baselines` | `VISTEST_BASELINES` | `vistest_baselines` | `tests/__vistest__` |
-| the platform directory | `platform=`, `--vistest-platform` | `VISTEST_PLATFORM` | `vistest_platform` | taken from the page |
-| what a plugin's score does | — | `VISTEST_FAIL_ON` | `plugins.fail_on` | `likely-real` |
-| writing baselines | `--vistest-update` | `VISTEST_UPDATE_BASELINES`, without the pytest plugin only | — | off |
-
-`VISTEST_UPDATE_BASELINES` is the one exception, on purpose: under pytest only
-the command line writes baselines into the repository — a variable a CI sets
-for the server must not accept a library run's pictures.
-
-The server's `assert_screenshot` follows the same order, with the overrides
-saved in the interface between the environment and the snapshot's passport.
+Серверный `assert_screenshot` следует тому же порядку; переопределения из интерфейса
+стоят между окружением и паспортом снимка.
 
 Переменные окружения:
 
@@ -2170,199 +2066,12 @@ VISTEST_IN_DOCKER=1
 
 ---
 
-## 7.1. Readiness before the frames, and a second look after a failure
+## 7.1. Готовность страницы и второй взгляд
 
-Visual tests die less of missing integrations than of a red that nobody
-believes a month later. Most of that red is born at capture: the picture was
-taken before the page was done. Stopping animations makes it worse, not
-better — a frozen spinner over data that is still on its way is two identical
-frames, and «two identical frames» is what screenshot tools wait for. The
-capture-hazard stand (`tests/capture_hazards/`) measured exactly that.
+Как библиотека и сервис ждут, пока страница будет готова, и что делает второй
+взгляд после падения, — одним кодом для обоих.
 
-**Readiness.** Before its frames, every capture — `expect_screenshot` and the
-service alike, one piece of code (`vistest/capture/ready.py`) — asks the
-page, step by step:
-
-| step | holds when |
-|---|---|
-| load | `document.readyState` is `complete` |
-| fonts | `document.fonts.status` is `loaded` |
-| network | no request of this page is in flight — only when they are counted, see below |
-| loaders | nothing in the photographed area says it is loading: `aria-busy="true"`, `role="progressbar"`, an indeterminate `<progress>`, or an endless animation that is a loader rather than a decoration |
-| images | every image in the area has loaded and been decoded (a lazy one outside the viewport is not waited for) |
-| quiet | nothing in the area changed for `capture.quiet_ms`: no DOM mutation outside `<head>` and the masks, no layout shift, no finished response |
-
-All of them must hold at the same moment. Each waits at most
-`capture.ready_timeout_ms` (5 s, cut to `expect_screenshot(..., timeout_ms=)`
-when the call gives one; 0 turns the wait off); a step that gives up is named in the
-reason — `the page was not ready within the limits: 1 request (GET /api/poll)
-still in flight after 5000 ms (a request the page never waits for, like a long
-poll, goes into capture.ignore_requests) — it was photographed as it was` —
-and the picture is taken anyway. A request is named by its method and path,
-never by its query string: tokens live there.
-
-**Requests in flight.** From inside a check, a request the page started
-before the check cannot be seen. So the count has to run from the moment the
-browser context is created: the pytest plugin of the library does that for
-every context Playwright creates in the test process
-(`capture.track_requests: true`, the default), and the service does it for
-the contexts it opens. Images, media, fonts and streams are not counted: the
-images step and the quiet window cover what of them is in the picture, and a
-lazy image below the fold would hold the wait for nothing.
-
-A request the page never waits for — a long poll, an analytics beacon — would
-hold every check to its limit. List it in `vistest.yaml`:
-
-```yaml
-capture:
-  ignore_requests: ["*/api/poll*", "https://stats.example/*"]
-```
-
-Glob patterns, matched against the URL without its query string.
-
-**Without the plugin** — `expect_screenshot` called from a plain script or
-from `unittest` — the network step is not asked. Misses stay at zero on this path
-too: the second look masks nothing, so late data is never hidden. But a page
-that loads data with no sign of it (no spinner, no skeleton, no `aria-busy`)
-can be photographed early, and that is a **false failure**. Mark such loading
-with `aria-busy="true"` and the wait sees it. The stand measures this path
-separately and prints its false failures and time; they are not held to the
-plugin path's numbers.
-
-**Playwright's async API** is not supported: `expect_screenshot` drives the
-sync API, and an async page is refused with a sentence that says so. With an
-async page, take the picture yourself and pass the bytes —
-`expect_screenshot(await page.screenshot(), "home.png")` — knowing that a
-picture handed in gets none of the waiting and frames a page gets.
-
-**A page that stops answering** — a script stuck in a loop, a crashed tab, a
-page closed before the check — fails the check with `CaptureError` and the
-reason, in seconds: every question to the page has a deadline, at most
-`max(5 s, capture.ready_timeout_ms)` each and never past
-`2 × ready_timeout_ms + 3 × stable_timeout_ms + 15 s` for the whole check —
-or past `timeout_ms` when the call gives one: then the check spends at most
-that much on the page and raises `CaptureError` with what it was waiting for.
-A page that stopped answering takes up to 1.5 s more than that, to say why —
-whether it answers at all and whether its tab crashed is asked after the
-deadline: `timeout_ms=2000` on a page stuck in a loop raises in about 3.5 s.
-
-**Loader or decoration.** An endless animation in the area counts as a
-loader when its element (or one of two ancestors) is named like one — class,
-id, aria-label or the animation's name containing `spin`, `load`,
-`skeleton`, `shimmer`, `placeholder`, `progress`, `busy`, `pending` — or when
-it turns the element by a quarter turn or more (a spinner) or moves a
-background across it (a shimmer). Pulsing, glowing, floating is decoration
-and is not waited for. With the requests counted, the exact signal beats this
-guess: when nothing is in flight and the area is quiet, an animation that only
-looks like a loader — a rotating logo — does not hold the picture.
-`aria-busy` and `role="progressbar"`, what the page says itself, always do.
-Wrong without the count: a decoration that turns — the wait runs to its limit
-and says so; a loader that is neither named nor turning (Tailwind's
-`animate-pulse` skeleton) — not seen. Wrong with it: a spinner whose data
-comes over a WebSocket or an EventSource, which are not counted — not waited
-for. Each is a false failure at worst, never a hidden change.
-
-Images in the area are repainted once after they decode (an invisible
-outline, for two animation frames) before the picture: without it Chromium
-sometimes photographed the anti-aliased rounded corners of a freshly decoded
-image differently from one load to the next.
-
-**The second look.** A check that fails gets more frames, until two in a row
-are identical (and at least 300 ms have passed). Then:
-
-- the page changed after it looked ready and held still — the data replaced
-  a spinner after all: the **later frame** is compared, and the result says
-  the snapshot was taken before the page was done. A later frame can turn a
-  failure into a pass only when the later frames held still (two identical in
-  a row) and nothing in them kept changing; otherwise a later frame that
-  happens to match the baseline is luck, and the check fails, naming what
-  changes;
-- something keeps changing — a counter, an animation that does not stop: it
-  is named, **not masked**, and the check fails until it is masked on purpose
-  (`mask=["#counter"]`). Masking it quietly made checks pass by luck;
-- nothing changed: `Confirmed on a second capture: the frames of this run are identical, so the difference from the baseline is real, not motion`.
-
-Nothing the second look sees is masked, and nothing is remembered as a mask:
-a change in data that arrived after `load` cannot be hidden this way. On a
-page that was not ready — a step gave up, or the frames never held still —
-there is no second look at all, and the note says why. The picture a person
-opens, `actual.png`, is the frame the verdict is from.
-
-The cost is one or a few extra frames, and only for what has already failed.
-`capture.retry_on_fail: false` in `vistest.yaml` switches it off.
-
-**What a failure names.** The picture's pixels say what differs; the live
-page can say what it is. When a check fails:
-
-- *the element under the pointer or in focus* — only when you asked to keep
-  it there. By default the pointer is moved off the page before the picture,
-  so that no element is under it and a hover left by the previous step is not
-  photographed; the focus is left alone. `keep_pointer=True`
-  (`capture.keep_pointer: true`) keeps the pointer where the test put it — for
-  a hover captured on purpose —, `blur_focus=True` (`capture.blur_focus:
-  true`) takes the focus off whatever has it; `keep_pointer=False,
-  blur_focus=True` is both (`capture.reset_hover_focus` is the service's and
-  the library does not read it). With the pointer or the focus
-  kept, a failure whose region is that element names it — a concrete element
-  only: never `html`, `body`, `#root` or a container as large as the window,
-  which is under every pointer;
-- *an element that changes by itself* — a counter, a clock, a canvas a
-  script redraws — is named by a selector of the place that moves (its id,
-  its `data-testid`, otherwise a short path) with one action:
-  `mask=["#counter"]`, or `data-vistest="ignore"` on the element (the library
-  paints it out like a mask, as the service does). When the request or the
-  picture that changed it was still on its way after the picture, the message
-  names that instead (`GET /api/orders`, `image /img/1.png`) and says to wait
-  for it in the test: a mask would hide it. For a `<canvas>` the
-  message adds that `animations="disabled"` does not stop it: that freezes CSS
-  animations, and a script draws on a canvas;
-- *the launch* — the passport keeps whether the baseline was taken headless
-  or in a browser with a window, and the width of the scroll bars; when the
-  check runs in a different one, the reason says so in one line;
-- *the device scale factor* — the passport keeps it too
-  (`device_scale_factor`); a check at a different one says so in one line.
-  The platform name (`chromium-1440x900`) is unchanged and does not carry it.
-
-**Where an element was.** For a Locator, the passport keeps where its element
-was in the window and how far the page was scrolled. Before the picture the
-page is scrolled so that the element is in the same place again, in whole
-pixels — a `position: fixed` background or a sticky header behind the element
-then looks the same. A baseline without that record is photographed as
-before.
-
-**Where the window was.** For a picture of the window (a Page, not
-`full_page`) the passport keeps how far the window was scrolled. Before the
-picture it is set to that scroll instantly, and after the picture put back
-where the test left it; one line in the message says where it was and where it
-was set. `capture.match_baseline_scroll: false` (`restore_scroll` until
-0.2.0.dev3) switches it off. A page too short to scroll that far stays where it can, the difference
-remains, and the line says so.
-
-**What a picture of an element leaves behind.** The scrolling: after the
-picture — a failed check's further frames included — the window and every
-scrollable box around the element are scrolled where the test left them.
-The side effects that remain: the pointer is moved off the page (unless
-`keep_pointer` is on), and, with `blur_focus`, the focus
-is taken off its element; neither is put back.
-
-**How the baseline was taken.** The passport records the capture's version
-(`capture.version`). A change in how pictures are taken that changes pixels
-of baselines already accepted comes with a new version, and a check against a
-baseline of an older one (or of none: a passport written before the record
-existed) says, when it fails: `the baseline was taken the old way (before the
-pointer moved off the page before the picture, the window scroll put back, and
-the other changes of capture version 3); if that is the
-difference, accept it again: pytest --vistest-update=changed`. The service
-keeps the same number as `capture_version` in a baseline's meta when its own
-capture (the runner, the adapter) took the picture, and says the same on a
-failure against an older one; a picture uploaded from elsewhere is not judged
-by it.
-
-**Where the baselines go.** `<rootdir>/tests/__vistest__/<platform>/<name>.png`
-— or, when the project has no `tests/` folder, `<rootdir>/__vistest__/`: a
-folder is not made for it just to hold baselines. `--vistest-baselines` (or
-`vistest_baselines` in the pytest ini) says another place, and the line after
-an update run, `baselines written to …`, names the one that was used.
+См. гайд библиотеки, на английском: [docs/GUIDE.md, «Readiness before the frames, and a second look after a failure»](../GUIDE.md#readiness-before-the-frames-and-a-second-look-after-a-failure).
 
 ## 8. Борьба с нестабильностью
 
@@ -2444,123 +2153,11 @@ git, число эталонов по платформам и то, откуда
 
 ### The engine on your own failures: `vistest bench`
 
-Our benchmark corpus was written by us — simple templates, one browser. This
-command runs the engine on yours: the pairs your own checks failed on, from
-whatever made them.
-
-```bash
-vistest bench test-results                     # Playwright's test-results
-vistest bench .                                # a project with a VisTest run (.vistest/)
-vistest bench --expected baselines --actual screenshots   # two folders, same file names
-```
-
-**The input** is told apart by what is on disk:
-
-- Playwright's `test-results/`: a failed `toHaveScreenshot` leaves
-  `<test>/<name>-expected.png` next to `<name>-actual.png`;
-- a VisTest run: `.vistest/actual/<platform>/<name>.png` against
-  `tests/__vistest__/<platform>/<name>.png` (`--baselines` for another
-  root; the report rows say where each baseline was);
-- two folders with the same file names, `--expected` and `--actual`.
-
-Anything the layout does not account for — a picture with no other half, a
-file that is not a picture — is one line in the output, never dropped in
-silence. Two pictures of different sizes are compared as they are, and said.
-
-**Each pair** goes through:
-
-- **engine v2**, with its defaults (no threshold, no preset) and the AI layer
-  as the benchmark runs it: its verdict, the first three regions in words, and
-  the renderer — with the canaries of both sides when the pair has them (the
-  baseline's passport and the canary the library kept for the run under
-  `.vistest/renderers/`; in two folders, `<name>.canary.png` next to a
-  picture), «unknown» otherwise;
-- **Playwright's own comparator** at threshold 0.05 and 0.2 (its default),
-  maxDiffPixels 0 — `getComparator('image/png')`, the function
-  `toHaveScreenshot()` calls, not a port. It needs Node and an installed
-  Playwright: `--playwright <folder>`, else the input folder and the folders
-  above it, the current folder and above, a VisTest checkout's `scripts/bench`,
-  and only then a global install. Without them those columns are empty and
-  the output says how to fill them.
-
-A pair v2 fails while the page's move by a fraction of a pixel is proven is
-flagged — that is where «What engine v2 does not tell apart» shows in your
-pictures, and how often.
-
-**There are no labels, so there is no score.** What comes out is where the
-tools disagree, for a person to look at:
-
-```
-vistest bench — --expected tmp/expected --actual tmp/actual
-Nothing was sent anywhere: the pictures were read where they are, and what this wrote is in tmp/out/.
-layout: two folders; 77 pairs
-v2: its defaults (no threshold, no preset), as the benchmark runs it
-Playwright: Playwright 1.63.0 toHaveScreenshot() (@playwright/test 1.63.0, …), threshold 0.05 and 0.2, maxDiffPixels 0 — getComparator('image/png'), as toHaveScreenshot()
-
-pairs: 77 — v2 failed 74, passed 3
-all three agree (v2, Playwright 0.05/0, Playwright 0.2/0): 55
-disagreements: 22 pairs
-  v2 failed, Playwright 0.05/0 passed: 7
-  v2 passed, Playwright 0.05/0 failed: 2
-  v2 failed, Playwright 0.2/0 passed: 20
-  v2 passed, Playwright 0.2/0 failed: 2
-v2 failed where the page's move by a fraction of a pixel is proven: 0 pairs
-
-Disagreements:
-  table/fill/de8 · v2 fail — 1 change · Playwright 0.05/0 fail (2712 px), 0.2/0 pass (0 px)
-    107x30 at (405, 77): fill: #2563eb → #4d77ff, color difference 8.0
-    renderer: same as the baseline's
-    (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
-  table/render/shift_0.25px · v2 pass · Playwright 0.05/0 fail (5785 px), 0.2/0 fail (5051 px)
-    renderer: same as the baseline's
-  …
-```
-
-(The table template of our corpus, as two folders with the canaries next to
-the pictures.) In `--out` (`./vistest-bench-out/` by default, ignored by git):
-
-- `report.html` — the library report's page: the disagreements first and
-  open, baseline / actual / diff side by side, a slider, the regions in words;
-  the pairs all three tools agree on stay shut, their pictures left on disk;
-- `labels.csv` — one row per disagreement, with what each tool said and an
-  empty `label` column;
-- `summary.txt` (the text above), `pairs.json`, `diff/`.
-
-**Labelling.** Fill the `label` column with `SIGNAL` (a real change),
-`NOISE` (nothing changed that matters) or `unsure`, and run again with
-`--labels labels.csv`: each tool's false failures (NOISE it failed) and
-misses (SIGNAL it passed) on the labelled pairs, counted as the benchmark
-counts — `unsure` is printed and not counted. A label already given is kept
-when the command runs again.
-
-```
-labelled pairs: 22 — SIGNAL 17, NOISE 2, unsure 3 (printed, not counted)
-tool                  false (NOISE failed)   misses (SIGNAL passed)  unsure failed
-v2                                     0/2                     0/17            3/3
-Playwright 0.05/0                      2/2                     4/17            0/3
-Playwright 0.2/0                       2/2                    17/17            0/3
-```
-
-**Nothing leaves the machine.** The command opens no network connection,
-copies nothing into a repository, and writes only to `--out`; the first lines
-of the output and of the report say so. The output without time in it is
-the same for the same input, to the byte.
+См. гайд библиотеки, на английском: [docs/GUIDE.md, «The engine on your own failures: `vistest bench`»](../GUIDE.md#the-engine-on-your-own-failures-vistest-bench).
 
 ### Photographed too early: the capture-hazard stand
 
-How often a check fails because it photographed the page too early — data
-under a spinner, a late font, a banner that pushes the page down, a hover left
-by the previous step — is measured on local pages with real network delays,
-our `expect_screenshot` against Playwright's `toHaveScreenshot()`:
-
-```bash
-python -m tests.capture_hazards.measure
-```
-
-The stand's own test (the pages say when their hazard is over) carries its
-own pytest mark and is skipped otherwise: `pytest -m capture_hazards
-tests/capture_hazards`. What the pages are and how the table is counted:
-`tests/capture_hazards/README.md`.
+См. гайд библиотеки, на английском: [docs/GUIDE.md, «Photographed too early: the capture-hazard stand»](../GUIDE.md#photographed-too-early-the-capture-hazard-stand).
 
 ### Что работает автоматически
 
@@ -2653,7 +2250,7 @@ vistest serve --host 0.0.0.0 --port 8420
 Если инсталляция смотрит в открытую сеть, задайте `VISTEST_SETUP_TOKEN` — тогда
 форма первого администратора спросит его, и занять инсталляцию сможет только
 тот, у кого он есть. Подробности и честная оценка рисков — в
-[docs/SECURITY.md](SECURITY.md).
+[SECURITY.md](../../SECURITY.md).
 
 Потерян доступ ко всем администраторам:
 
@@ -3225,7 +2822,7 @@ JUnit показывают все, но не на первом экране: в 
 
 ### GitLab CI
 
-Готовый набор job'ов — [`.gitlab-ci.example.yml`](../.gitlab-ci.example.yml).
+Готовый набор job'ов — [`.gitlab-ci.example.yml`](../../.gitlab-ci.example.yml).
 Отдельным файлом-примером, а не готовым `.gitlab-ci.yml`, потому что у проекта
 почти наверняка уже есть свой пайплайн, и подменять его целиком неправильно —
 скопируйте нужное.
@@ -3292,7 +2889,7 @@ ai:
   perceptual_tolerance: 0.06     # cos-distance ниже → регион считается шумом
 ```
 
-Или разово: `python run.py test --preset balanced` с `VISTEST_PERCEPTUAL=1`.
+Или разово: `VISTEST_PERCEPTUAL=1` в окружении прогона.
 
 Модель ~10–30 МБ, работает на CPU, ~5 мс на регион. Если `onnxruntime` не стоит
 или файла модели нет — слой молча выключается.
@@ -3532,7 +3129,7 @@ VisTest ставит странице фиксированную точку от
 
 **`POST /api/check` возвращает 400 «неизвестные опции»** — в `options`
 разрешён ограниченный список порогов. Полный перечень — в
-[`clients/README.md`](../clients/README.md).
+[`clients/README.md`](../../clients/README.md).
 
 **Снимки из JS-клиента расходятся с питоновскими** — проверьте три вещи:
 инжектится ли `stabilize.js` (лучше через `installOnContext`, то есть до
@@ -3543,8 +3140,8 @@ VisTest ставит странице фиксированную точку от
 
 ## Что почитать дальше
 
-- [`README.md`](../README.md) — краткий обзор и чем этот подход отличается
-- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — разбор алгоритма сравнения,
+- [`README.md`](../../README.md) — краткий обзор и чем этот подход отличается
+- [`docs/ARCHITECTURE.ru.md`](../ARCHITECTURE.ru.md) — разбор алгоритма сравнения,
   схема БД, API, этапы внедрения
 - `tests/benchmark.py` — инструмент подстройки порогов
 - `examples/` — the library's example; `docs/server/examples/` — the server mode's
