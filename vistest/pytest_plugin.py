@@ -51,9 +51,11 @@ _INI = {
     "vistest_baselines": "Directory holding the committed baselines "
                          "(default: tests/__vistest__, or __vistest__ when there is "
                          "no tests/ folder)",
-    "vistest_platform": "Platform directory for baselines: browser and window "
-                        "size, e.g. chromium-1440x900. Empty — taken from the "
-                        "page under test.",
+    "vistest_platform": "Platform directory for baselines: system, browser, "
+                        "scale and window size, e.g. "
+                        "linux-chromium-1x-1440x900 (without the system every "
+                        "machine shares one set). Empty — taken from the page "
+                        "under test.",
     "vistest_report": "Where to write the HTML report "
                       "(default: .vistest/report/index.html)",
 }
@@ -106,7 +108,9 @@ def pytest_addoption(parser, pluginmanager):
     group.addoption("--vistest-platform", default=None,
                     dest="vistest_platform", metavar="NAME",
                     help="Platform directory for baselines, e.g. "
-                         "chromium-1440x900. Default: taken from the page.")
+                         "linux-chromium-1x-1440x900 — keep the OS in it: "
+                         "without it every machine shares one set. Default: "
+                         "taken from the page.")
     group.addoption("--vistest-report", default=None, metavar="PATH",
                     help="Where to write the HTML report "
                          "(default: .vistest/report/index.html)")
