@@ -623,6 +623,16 @@ picture after looking at it.
   SVG icon can be re-rasterised at the new offset rather than moved — its
   strokes come out a little different — and then the region is said in
   words («shape changed», «edges redrawn within 1 px») and fails.
+- **A part of the page a fraction of a pixel off, with pictures in it.** A
+  block that lands on a fractional position — a `transform`, an animation
+  stopped half-way — keeps its text on the pixel grid, but its raster
+  pictures are resampled at the new position: every thumbnail differs a
+  little, most at its rounded corners and edges, and v2 says «edges redrawn
+  within 1 px, same color» and fails. The page-shift rule does not cover it,
+  because only a part of the page moved. Below about a quarter of a pixel
+  the text of such a block is redrawn too. Make sure nothing on the page is
+  left at a fractional offset when the screenshot is taken (finish or
+  disable the animation, round the transform), or mask the pictures.
 - **A native checkbox (and other native form controls) on a page moved by a
   fraction of a pixel.** The browser draws them in its own theme, and the
   page-shift rule does not take them as moved with the page: they are left

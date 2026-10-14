@@ -804,12 +804,14 @@ def main() -> int:
                          "Default: v1 on the synthetic corpus — its output "
                          "stays what it was byte for byte — and both on the "
                          "browser corpus")
-    ap.add_argument("--corpus", choices=["synthetic", "browser"], default="synthetic",
+    ap.add_argument("--corpus", choices=["synthetic", "browser", "live"], default="synthetic",
                     help="synthetic (default): tests/benchmark_corpus, drawn by "
                          "OpenCV. browser: tests/browser_corpus, drawn by "
                          "Chromium — VisTest's three presets and the native "
                          "Playwright comparator on a threshold × maxDiffPixels "
-                         "grid, by family and by half (tests/benchmark_browser.py)")
+                         "grid, by family and by half (tests/benchmark_browser.py). "
+                         "live: tests/live_corpus, part of a page a fraction of a "
+                         "pixel off (tests/benchmark_live.py)")
     ap.add_argument("--final", action="store_true",
                     help="with --corpus browser: also run and print the sealed "
                          "half, held-out-2 — only for the final acceptance of "
@@ -820,6 +822,10 @@ def main() -> int:
     if args.final and args.corpus != "browser":
         ap.error("--final is for --corpus browser: the sealed half is a part of "
                  "the browser corpus")
+    if args.corpus == "live":
+        from tests import benchmark_live
+
+        return benchmark_live.main(args)
     if args.corpus == "browser":
         from tests import benchmark_browser
 

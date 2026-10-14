@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+### Live corpus — part of a page a fraction of a pixel off (v13)
+
+- `tests/live_corpus/`: two templates with generated photos (`history`
+  for calibration, `gallery` held out), 34 pairs, its own environment and
+  budget, frames as lossless WebP (`scripts/live_corpus.py`,
+  `scripts/live_photos.py`); `python tests/benchmark.py --corpus live`.
+- Measured before any change: v2 fails every NOISE pair (6 of 6 on each
+  template, a block or its pictures moved by 0.1–0.4 px) and misses no
+  SIGNAL; v1 passes the noise and misses 4 of 9 on each.
+- Attempt 1, «a picture drawn a fraction of a pixel over» (coverage kept,
+  centre moved by under a pixel, the blurred baseline moved that way is the
+  picture), chosen on `history` (6 → 2 false failures): on `gallery` 6 of 6
+  false failures and a new miss (a tint of ΔE00 4 on a large photo). Rolled
+  back, as preregistered; `gallery` is spent. The limitation is named in
+  the GUIDE («What engine v2 does not tell apart»).
+
 ### Breaking in 0.2.0.dev3
 
 The public surface of the library, before its first release on PyPI (review

@@ -328,8 +328,11 @@ _MUTATE = """(([sel, code, v]) => {
 class Session:
     """One Chromium process and context; every frame from a fresh page."""
 
-    def __init__(self, pw, launch: Launch = BASELINE):
+    def __init__(self, pw, launch: Launch = BASELINE, *, template_dir: Path | None = None):
         kw = {"args": list(launch.args)}
+        #  None: the corpus templates. The live corpus (scripts/live_corpus.py)
+        #  draws its own templates through the same session.
+        self.template_dir = template_dir
         if launch.channel:
             kw["channel"] = launch.channel
         self.launch = launch
@@ -352,7 +355,7 @@ class Session:
         try:
             if mutation is not None:
                 page.add_init_script(f"({_MUTATE})({json.dumps(list(mutation))})")
-            page.goto(template_url(template), wait_until="load")
+            page.goto(self.url(template), wait_until="load")
             if mutation is not None:
                 state = page.evaluate("() => window.__corpus || null")
                 if not state or state.get("error") or not state.get("done"):
@@ -370,11 +373,16 @@ class Session:
         finally:
             page.close()
 
+    def url(self, template: str) -> str:
+        if self.template_dir is None:
+            return template_url(template)
+        return (self.template_dir / f"{template}.html").as_uri()
+
     def read(self, template: str, js: str):
         """Evaluate `js` on the unchanged template."""
         page = self.context.new_page()
         try:
-            page.goto(template_url(template), wait_until="load")
+            page.goto(self.url(template), wait_until="load")
             return page.evaluate(js)
         finally:
             page.close()
