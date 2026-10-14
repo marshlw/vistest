@@ -1,0 +1,1212 @@
+{
+ "format": 1,
+ "about": "Live corpus of VisTest: part of a page a fraction of a pixel off, and real changes of the same photos. Written by `python scripts/live_corpus.py --regenerate`; do not edit.",
+ "environment": {
+  "playwright": "1.56.0",
+  "chromium": "141.0.7390.37",
+  "browser_build": "chromium_headless_shell-1194",
+  "browser_product": "HeadlessChrome/141.0.7390.37",
+  "os": "Linux",
+  "os_version": "Ubuntu 24.04.5 LTS",
+  "arch": "x86_64",
+  "distro": "Ubuntu 24.04.5 LTS",
+  "python": "3.11.17",
+  "viewport": {
+   "width": 1280,
+   "height": 800
+  },
+  "device_scale_factor": 1,
+  "container": {
+   "image": null,
+   "in_container": false
+  },
+  "host": {
+   "dpi": null,
+   "dpi_source": "no display: headless",
+   "font_smoothing": null
+  },
+  "capture": {
+   "via": "vistest.library.targets.capture",
+   "screenshot": {
+    "type": "png",
+    "animations": "disabled",
+    "caret": "hide",
+    "scale": "css"
+   },
+   "before": "document.fonts.ready",
+   "stability": "frames until two in a row are byte-identical, 5000 ms limit"
+  }
+ },
+ "control": "every frame drawn in two browsers started the same way; 0 pixels apart, or the capture stops",
+ "storage": "lossless WebP; the pixels of the PNG the capture returned",
+ "split": {
+  "rule": "by template: history is for calibration; gallery is held out — it never takes part in choosing a threshold or any other constant of the engine, and is measured once a choice has been made on history",
+  "calibration": [
+   "history"
+  ],
+  "held_out": [
+   "gallery"
+  ],
+  "spent": {
+   "gallery": "2026-10-14, v13 attempt 1 (the rule «a picture drawn a fraction of a pixel over»): measured once after the choice on history — 6 of 6 false failures and a new miss (image_tint/de4); rolled back. A second attempt is measured on a template drawn after this date"
+  }
+ },
+ "labels": {
+  "SIGNAL": "the page changed; a tool must fail",
+  "NOISE": "nobody changed the page; a tool must pass",
+  "DISPUTED": "printed, never counted"
+ },
+ "renderer": {
+  "file": "renderers/base.png",
+  "sha256": "72b61404d763bf46809d22e682d29ae7968550772042c2faeb8b67c58aaf83ea",
+  "via": "vistest.library.canary.draw"
+ },
+ "templates": {
+  "history": {
+   "title": "a list of trips with rounded photo thumbnails",
+   "split": "calibration",
+   "base": "frames/history/base.webp",
+   "sha256": "6652a8cb7c6f5b158a15a1893edc44cf27bb028c1e5c0f53068477fc4a24e409",
+   "fonts": [
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans",
+     "custom": true,
+     "glyphs": 426
+    },
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans-Bold",
+     "custom": true,
+     "glyphs": 292
+    }
+   ]
+  },
+  "gallery": {
+   "title": "a grid of large rounded photos, captions, badges, a dark header",
+   "split": "held_out",
+   "base": "frames/gallery/base.webp",
+   "sha256": "84f828101a620baa0ba5856649acfa58fd59240187f039f7a025f13088abe9cb",
+   "fonts": [
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans",
+     "custom": true,
+     "glyphs": 240
+    },
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans-Bold",
+     "custom": true,
+     "glyphs": 157
+    }
+   ]
+  }
+ },
+ "families": {
+  "part_shift": {
+   "target": "[data-m~=\"part\"]",
+   "what": "the block of photos and text is moved by a fraction of a pixel (transform)",
+   "kind": "noise",
+   "js": "els[0].style.transform = `translate(${v}px, ${v}px)`",
+   "magnitudes": {
+    "0_1px": {
+     "label": "NOISE",
+     "values": {
+      "history": 0.1,
+      "gallery": 0.1
+     },
+     "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
+    },
+    "0_25px": {
+     "label": "NOISE",
+     "values": {
+      "history": 0.25,
+      "gallery": 0.25
+     },
+     "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
+    },
+    "0_4px": {
+     "label": "NOISE",
+     "values": {
+      "history": 0.4,
+      "gallery": 0.4
+     },
+     "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
+    },
+    "0_5px": {
+     "label": "DISPUTED",
+     "values": {
+      "history": 0.5,
+      "gallery": 0.5
+     },
+     "why": "decided by the maintainer on 2026-10-14: at half a pixel the text of the block jumps by a whole pixel against the rest of the page. DISPUTED: printed, never counted"
+    }
+   }
+  },
+  "image_shift": {
+   "target": "[data-m~=\"part\"]",
+   "what": "only the photos of the block are moved by a fraction of a pixel",
+   "kind": "noise",
+   "js": "els[0].querySelectorAll('img').forEach(i => { i.style.transform = `translateX(${v}px)`; })",
+   "magnitudes": {
+    "0_1px": {
+     "label": "NOISE",
+     "values": {
+      "history": 0.1,
+      "gallery": 0.1
+     },
+     "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
+    },
+    "0_25px": {
+     "label": "NOISE",
+     "values": {
+      "history": 0.25,
+      "gallery": 0.25
+     },
+     "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
+    },
+    "0_4px": {
+     "label": "NOISE",
+     "values": {
+      "history": 0.4,
+      "gallery": 0.4
+     },
+     "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
+    }
+   }
+  },
+  "image_swap": {
+   "target": "[data-m~=\"photo\"]",
+   "what": "one photo is replaced by another",
+   "kind": "mutation",
+   "js": "els[0].src = v",
+   "magnitudes": {
+    "other": {
+     "label": "SIGNAL",
+     "values": {
+      "history": "photos/h9.webp",
+      "gallery": "photos/g9.webp"
+     }
+    }
+   }
+  },
+  "image_tint": {
+   "target": "[data-m~=\"photo\"]",
+   "what": "one photo is tinted warm (median ΔE00 over the photo)",
+   "kind": "mutation",
+   "js": "els[0].src = v",
+   "magnitudes": {
+    "de2": {
+     "label": "DISPUTED",
+     "values": {
+      "history": "photos/h3.tint2.webp",
+      "gallery": "photos/g2.tint2.webp"
+     },
+     "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side. DISPUTED, as in the browser corpus"
+    },
+    "de4": {
+     "label": "SIGNAL",
+     "values": {
+      "history": "photos/h3.tint4.webp",
+      "gallery": "photos/g2.tint4.webp"
+     }
+    },
+    "de8": {
+     "label": "SIGNAL",
+     "values": {
+      "history": "photos/h3.tint8.webp",
+      "gallery": "photos/g2.tint8.webp"
+     }
+    }
+   }
+  },
+  "image_radius": {
+   "target": "[data-m~=\"photo\"]",
+   "what": "the corner radius of one photo",
+   "kind": "mutation",
+   "js": "els[0].style.borderRadius = v + 'px'",
+   "magnitudes": {
+    "plus2px": {
+     "label": "SIGNAL",
+     "values": {
+      "history": 14,
+      "gallery": 16
+     }
+    },
+    "minus2px": {
+     "label": "SIGNAL",
+     "values": {
+      "history": 10,
+      "gallery": 12
+     }
+    }
+   }
+  },
+  "image_offset": {
+   "target": "[data-m~=\"photo\"]",
+   "what": "one photo is moved by whole pixels",
+   "kind": "mutation",
+   "js": "els[0].style.transform = `translateX(${v}px)`",
+   "magnitudes": {
+    "plus1px": {
+     "label": "SIGNAL",
+     "values": {
+      "history": 1,
+      "gallery": 1
+     },
+     "why": "a layout that moved by one pixel is a layout that changed (decided by the maintainer on 2026-09-28)"
+    },
+    "plus2px": {
+     "label": "SIGNAL",
+     "values": {
+      "history": 2,
+      "gallery": 2
+     }
+    }
+   }
+  },
+  "image_crop": {
+   "target": "[data-m~=\"photo\"]",
+   "what": "the crop of one photo moves (object-position)",
+   "kind": "mutation",
+   "js": "els[0].style.objectPosition = `calc(50% + ${v}px) 50%`",
+   "magnitudes": {
+    "plus4px": {
+     "label": "SIGNAL",
+     "values": {
+      "history": 4,
+      "gallery": 4
+     }
+    },
+    "plus12px": {
+     "label": "SIGNAL",
+     "values": {
+      "history": 12,
+      "gallery": 12
+     }
+    }
+   }
+  }
+ },
+ "cases": [
+  {
+   "name": "history/part_shift/0_1px",
+   "template": "history",
+   "split": "calibration",
+   "family": "part_shift",
+   "magnitude": "0_1px",
+   "value": 0.1,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/part_shift--0_1px.webp",
+   "sha256": "f5763d5cce77fbbad76049472dfbb13932ea24bf60697699e7f80bfbd8918f87",
+   "changed": {
+    "pixels": 43365,
+    "box": [
+     252,
+     106,
+     997,
+     623
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/part_shift/0_25px",
+   "template": "history",
+   "split": "calibration",
+   "family": "part_shift",
+   "magnitude": "0_25px",
+   "value": 0.25,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/part_shift--0_25px.webp",
+   "sha256": "dd444b4787b2f40bb1a1ffd3464a29bfd731e934011616557de707fe3a13c27c",
+   "changed": {
+    "pixels": 61520,
+    "box": [
+     252,
+     106,
+     997,
+     623
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/part_shift/0_4px",
+   "template": "history",
+   "split": "calibration",
+   "family": "part_shift",
+   "magnitude": "0_4px",
+   "value": 0.4,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/part_shift--0_4px.webp",
+   "sha256": "e7232463af49303af36b2c7e2aec02503df086e8de9e3fe4b79d37cc6e8a2018",
+   "changed": {
+    "pixels": 64196,
+    "box": [
+     252,
+     106,
+     997,
+     623
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/part_shift/0_5px",
+   "template": "history",
+   "split": "calibration",
+   "family": "part_shift",
+   "magnitude": "0_5px",
+   "value": 0.5,
+   "label": "DISPUTED",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: at half a pixel the text of the block jumps by a whole pixel against the rest of the page. DISPUTED: printed, never counted",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/part_shift--0_5px.webp",
+   "sha256": "2f26933149a76c9a49bb81472fd91ead03175dfe72ffc4e17c0f47fcee154ac2",
+   "changed": {
+    "pixels": 70982,
+    "box": [
+     252,
+     106,
+     997,
+     623
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_shift/0_1px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_shift",
+   "magnitude": "0_1px",
+   "value": 0.1,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_shift--0_1px.webp",
+   "sha256": "edae28717c09ff35ada216dc16afd72fd79507b59b040c4cea2d6610b556e68e",
+   "changed": {
+    "pixels": 10122,
+    "box": [
+     269,
+     117,
+     49,
+     600
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_shift/0_25px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_shift",
+   "magnitude": "0_25px",
+   "value": 0.25,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_shift--0_25px.webp",
+   "sha256": "cc34afec2866e30e88af3499a0e8a03a815fbae91baa5de52e778f147d596d46",
+   "changed": {
+    "pixels": 14997,
+    "box": [
+     269,
+     117,
+     49,
+     600
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_shift/0_4px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_shift",
+   "magnitude": "0_4px",
+   "value": 0.4,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_shift--0_4px.webp",
+   "sha256": "e1bc888b558d25af82d6e93f4d1fabb16be4ef60fc4875435189c0577d247025",
+   "changed": {
+    "pixels": 16930,
+    "box": [
+     269,
+     117,
+     49,
+     600
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_swap/other",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_swap",
+   "magnitude": "other",
+   "value": "photos/h9.webp",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is replaced by another",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_swap--other.webp",
+   "sha256": "e806f050e0d0cc4a05c7c54f972fe77fe9c25839a03cfd15752d90ea29b8a605",
+   "changed": {
+    "pixels": 2214,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_tint/de2",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_tint",
+   "magnitude": "de2",
+   "value": "photos/h3.tint2.webp",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side. DISPUTED, as in the browser corpus",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_tint--de2.webp",
+   "sha256": "771ec9f31e619efc4f1a823c99a54fe5726ce994892059106408858078451c12",
+   "changed": {
+    "pixels": 2210,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_tint/de4",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_tint",
+   "magnitude": "de4",
+   "value": "photos/h3.tint4.webp",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is tinted warm (median ΔE00 over the photo)",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_tint--de4.webp",
+   "sha256": "e76a415c9c462599eeab98495558776a6cc7d78a92d02da8a432492ae32d7a3f",
+   "changed": {
+    "pixels": 2212,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_tint/de8",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_tint",
+   "magnitude": "de8",
+   "value": "photos/h3.tint8.webp",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is tinted warm (median ΔE00 over the photo)",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_tint--de8.webp",
+   "sha256": "5d89ba4d0eaa6a0dc9499103819c63f08f456d60bacd6980ae04185e538cbfee",
+   "changed": {
+    "pixels": 2212,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_radius/plus2px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_radius",
+   "magnitude": "plus2px",
+   "value": 14,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corner radius of one photo",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_radius--plus2px.webp",
+   "sha256": "6e66d1bd878245f235d2d717bfe6aa69cb8f1651e5e3e9e262d9dc22e2e091bb",
+   "changed": {
+    "pixels": 137,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_radius/minus2px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_radius",
+   "magnitude": "minus2px",
+   "value": 10,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corner radius of one photo",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_radius--minus2px.webp",
+   "sha256": "4f87ca1df809231c9d2c53d94fb1e7d370ba3667543bb134b50777484f3b0d5e",
+   "changed": {
+    "pixels": 106,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_offset/plus1px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_offset",
+   "magnitude": "plus1px",
+   "value": 1,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a layout that moved by one pixel is a layout that changed (decided by the maintainer on 2026-09-28)",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_offset--plus1px.webp",
+   "sha256": "d318002012ca37e495ee9a23f1fac7575b46c7e71af117cde83d6699d607abae",
+   "changed": {
+    "pixels": 2147,
+    "box": [
+     269,
+     255,
+     49,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_offset/plus2px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_offset",
+   "magnitude": "plus2px",
+   "value": 2,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is moved by whole pixels",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_offset--plus2px.webp",
+   "sha256": "e4b9ffa6e970556caef839d21139ddb4a0c3bcf52ba3b106884ee61b5e8250d5",
+   "changed": {
+    "pixels": 2260,
+    "box": [
+     269,
+     255,
+     50,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_crop/plus4px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_crop",
+   "magnitude": "plus4px",
+   "value": 4,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the crop of one photo moves (object-position)",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_crop--plus4px.webp",
+   "sha256": "9707b47ae6262057f9a36ad31f5a3cb79a1ec9f46ae7759358734732578cada4",
+   "changed": {
+    "pixels": 2175,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "history/image_crop/plus12px",
+   "template": "history",
+   "split": "calibration",
+   "family": "image_crop",
+   "magnitude": "plus12px",
+   "value": 12,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the crop of one photo moves (object-position)",
+   "expected": "frames/history/base.webp",
+   "actual": "frames/history/image_crop--plus12px.webp",
+   "sha256": "45f5135fa87ea68b27244eee9a065730247124192c52f73c36f0999c8458a006",
+   "changed": {
+    "pixels": 2187,
+    "box": [
+     269,
+     255,
+     48,
+     48
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/part_shift/0_1px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_1px",
+   "value": 0.1,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/part_shift--0_1px.webp",
+   "sha256": "38b709d483fafd4fe06cc30f915e1787eb1560032b9b839ed3caaef4a0d76727",
+   "changed": {
+    "pixels": 148885,
+    "box": [
+     32,
+     118,
+     1217,
+     444
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/part_shift/0_25px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_25px",
+   "value": 0.25,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/part_shift--0_25px.webp",
+   "sha256": "4b2bd7d16d1eb5f4276de4b252f330376d77cbb61e42050e783574f43de633f3",
+   "changed": {
+    "pixels": 270780,
+    "box": [
+     32,
+     118,
+     1217,
+     446
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/part_shift/0_4px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_4px",
+   "value": 0.4,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/part_shift--0_4px.webp",
+   "sha256": "88b64bdcd47f9bc8122cba5c4027a577f28b69d17194d6c0e55a679e607c93c2",
+   "changed": {
+    "pixels": 325556,
+    "box": [
+     32,
+     118,
+     1217,
+     446
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/part_shift/0_5px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_5px",
+   "value": 0.5,
+   "label": "DISPUTED",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: at half a pixel the text of the block jumps by a whole pixel against the rest of the page. DISPUTED: printed, never counted",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/part_shift--0_5px.webp",
+   "sha256": "5a22c03c96cda2a1ed7bb4f83315c889fb04a939df9033f520ced20296513595",
+   "changed": {
+    "pixels": 351505,
+    "box": [
+     32,
+     118,
+     1217,
+     447
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_shift/0_1px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_shift",
+   "magnitude": "0_1px",
+   "value": 0.1,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_shift--0_1px.webp",
+   "sha256": "ffd0fe878c04080d3b73c0e69918c84f218dd808276077bbbe9edccd0a9ffa8c",
+   "changed": {
+    "pixels": 97549,
+    "box": [
+     32,
+     118,
+     1217,
+     403
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_shift/0_25px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_shift",
+   "magnitude": "0_25px",
+   "value": 0.25,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_shift--0_25px.webp",
+   "sha256": "2bd98e59071a97e756a892673fcf98c200eb7aa98e7e71038337e72cdc442d6e",
+   "changed": {
+    "pixels": 190807,
+    "box": [
+     32,
+     118,
+     1217,
+     403
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_shift/0_4px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_shift",
+   "magnitude": "0_4px",
+   "value": 0.4,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_shift--0_4px.webp",
+   "sha256": "db4aab826e10f15ec11c19e69831d22fc5217577269de779d94e6cdf46a69dd7",
+   "changed": {
+    "pixels": 247950,
+    "box": [
+     32,
+     118,
+     1217,
+     403
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_swap/other",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_swap",
+   "magnitude": "other",
+   "value": "photos/g9.webp",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is replaced by another",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_swap--other.webp",
+   "sha256": "c1a9e9e8e2b8c7ee4744183a940d900a74e4b7ad71eae120551612db3a8797f8",
+   "changed": {
+    "pixels": 49004,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_tint/de2",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_tint",
+   "magnitude": "de2",
+   "value": "photos/g2.tint2.webp",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side. DISPUTED, as in the browser corpus",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_tint--de2.webp",
+   "sha256": "0299724b2814398299c0764edf85d0d7379197391fa4bdbf71b0da847f53d0e1",
+   "changed": {
+    "pixels": 48994,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_tint/de4",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_tint",
+   "magnitude": "de4",
+   "value": "photos/g2.tint4.webp",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is tinted warm (median ΔE00 over the photo)",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_tint--de4.webp",
+   "sha256": "f6ef190327101320a732d9149743af2215d967b32caac785c77ae659fa307f5b",
+   "changed": {
+    "pixels": 48996,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_tint/de8",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_tint",
+   "magnitude": "de8",
+   "value": "photos/g2.tint8.webp",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is tinted warm (median ΔE00 over the photo)",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_tint--de8.webp",
+   "sha256": "5ea3ed4e133b80ebc74d78ccea308ca7815aa3dffe8b46efbe29371fd03e35ea",
+   "changed": {
+    "pixels": 49000,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_radius/plus2px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_radius",
+   "magnitude": "plus2px",
+   "value": 16,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corner radius of one photo",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_radius--plus2px.webp",
+   "sha256": "2fa645c6aea2e45cac878a21b6ef1ed83f32686cc6ebff38d6f718fae05586a9",
+   "changed": {
+    "pixels": 175,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_radius/minus2px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_radius",
+   "magnitude": "minus2px",
+   "value": 12,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the corner radius of one photo",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_radius--minus2px.webp",
+   "sha256": "d7488f518e867cd0fa97f23f61dfdc35ba57a2246e1e046695aa3ac3f682afcc",
+   "changed": {
+    "pixels": 143,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_offset/plus1px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_offset",
+   "magnitude": "plus1px",
+   "value": 1,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a layout that moved by one pixel is a layout that changed (decided by the maintainer on 2026-09-28)",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_offset--plus1px.webp",
+   "sha256": "b2668b130f319751f00aa9e1a2edc750054ba952f71c11693527a85937996550",
+   "changed": {
+    "pixels": 42550,
+    "box": [
+     341,
+     118,
+     290,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_offset/plus2px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_offset",
+   "magnitude": "plus2px",
+   "value": 2,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one photo is moved by whole pixels",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_offset--plus2px.webp",
+   "sha256": "fab99cbe6e8faba57a2cb1f7d56cc27bd7f7ed851de015166f493902b365d1a1",
+   "changed": {
+    "pixels": 46426,
+    "box": [
+     341,
+     118,
+     291,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_crop/plus4px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_crop",
+   "magnitude": "plus4px",
+   "value": 4,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the crop of one photo moves (object-position)",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_crop--plus4px.webp",
+   "sha256": "d0cfb15f6097e93949420b5c9644825a5325e3831a8d3512ca01d9325856516a",
+   "changed": {
+    "pixels": 47309,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "gallery/image_crop/plus12px",
+   "template": "gallery",
+   "split": "held_out",
+   "family": "image_crop",
+   "magnitude": "plus12px",
+   "value": 12,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the crop of one photo moves (object-position)",
+   "expected": "frames/gallery/base.webp",
+   "actual": "frames/gallery/image_crop--plus12px.webp",
+   "sha256": "3ab80c59ea4e927878d697d5003222a7a7879176b58cdb53d8ca69bc40dd788e",
+   "changed": {
+    "pixels": 48216,
+    "box": [
+     341,
+     118,
+     289,
+     170
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  }
+ ]
+}

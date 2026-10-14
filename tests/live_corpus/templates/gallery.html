@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gallery</title>
+<link rel="stylesheet" href="../../browser_corpus/templates/fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; font-size: 14px; color: #111827; background: #fff; }
+  header { display: flex; align-items: center; gap: 24px; padding: 14px 32px; background: #111827; color: #f9fafb; }
+  header b { font-size: 19px; }
+  header a { color: #9ca3af; }
+  header a.on { color: #f9fafb; }
+  header .search { margin-left: auto; width: 260px; padding: 7px 12px; border-radius: 8px; background: #1f2937; color: #9ca3af; font-size: 13px; }
+  .bar { display: flex; align-items: baseline; gap: 12px; padding: 20px 32px 10px; }
+  .bar h1 { margin: 0; font-size: 22px; }
+  .bar .count { color: #6b7280; }
+  .bar .sort { margin-left: auto; color: #374151; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; padding: 6px 32px; }
+  .card { position: relative; }
+  .card img { display: block; width: 100%; height: 170px; border-radius: 14px; object-fit: cover; }
+  .badge { position: absolute; top: 10px; left: 10px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: rgba(17,24,39,.75); color: #fff; }
+  .badge.new { background: #dc2626; }
+  .card p { margin: 9px 2px 2px; font-weight: 700; }
+  .card span { margin: 0 2px; color: #6b7280; font-size: 13px; }
+</style>
+</head>
+<body>
+<header><b>Lumen</b><a class="on">Collections</a><a>Explore</a><a>Prints</a><a>Upload</a><span class="search">Search photos…</span></header>
+<div class="bar"><h1>Autumn collections</h1><span class="count">8 albums · 412 photos</span><span class="sort">Sort: newest</span></div>
+<div class="grid" data-m="part">
+  <div class="card"><img src="photos/g1.webp" alt=""><span class="badge new">New</span><p>Morning over the ridge</p><span>Ana Ruiz · 1.2k likes</span></div>
+  <div class="card"><img src="photos/g2.webp" alt="" data-m="photo"><p>Purple hour</p><span>Tom Berg · 860 likes</span></div>
+  <div class="card"><img src="photos/g3.webp" alt=""><span class="badge">4K</span><p>Three valleys</p><span>Mei Lin · 2.4k likes</span></div>
+  <div class="card"><img src="photos/g4.webp" alt=""><p>Low sun, long shadows</p><span>Jon Park · 530 likes</span></div>
+  <div class="card"><img src="photos/g5.webp" alt=""><p>Quiet lake</p><span>Ana Ruiz · 940 likes</span></div>
+  <div class="card"><img src="photos/g6.webp" alt=""><span class="badge">4K</span><p>After the rain</p><span>Sam Okoro · 1.7k likes</span></div>
+  <div class="card"><img src="photos/g7.webp" alt=""><span class="badge new">New</span><p>Ridge in the fog</p><span>Mei Lin · 310 likes</span></div>
+  <div class="card"><img src="photos/g8.webp" alt=""><p>The last warm day</p><span>Tom Berg · 1.1k likes</span></div>
+</div>
+</body>
+</html>

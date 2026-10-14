@@ -216,7 +216,7 @@ def test_without_corpus_the_benchmark_is_the_synthetic_one():
     """`--corpus` defaults to the synthetic corpus: the old command is unchanged."""
     out = subprocess.run([sys.executable, str(ROOT / "tests" / "benchmark.py"), "--help"],
                          capture_output=True, text=True, check=True).stdout
-    assert "--corpus {synthetic,browser}" in out
+    assert "--corpus {synthetic,browser,live}" in out
     src = (ROOT / "tests" / "benchmark.py").read_text("utf-8")
     assert 'default="synthetic"' in src
 
