@@ -652,6 +652,27 @@ message, with the exact counts behind them. Checks that passed are listed
 shut. Each row says how the picture was taken: the number of frames and the
 time to stability.
 
+### Allure
+
+With `allure-pytest` installed (`pip install allure-pytest`, or the `report`
+extra) and `--alluredir` given, a failed check attaches its pictures to the
+test in Allure — nothing to configure:
+
+| The check | Attached to the test |
+| --- | --- |
+| differs from the baseline | `Baseline`, `Actual screenshot`, `What changed` (PNG), and `result.json` with the regions and the numbers |
+| has no baseline yet | `Actual screenshot` |
+| passes | nothing |
+
+The failure's message is the test's error in Allure, as in pytest. Without
+`allure-pytest` nothing is attached and nothing is asked for; an attachment
+that cannot be written is a warning, never a failed run.
+
+```bash
+pytest --alluredir=allure-results
+allure serve allure-results
+```
+
 ## Commands
 
 The library's commands need no server:
