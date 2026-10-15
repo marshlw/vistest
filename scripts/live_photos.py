@@ -40,11 +40,16 @@ PHOTO_DIR = REPO / "tests" / "live_corpus" / "templates" / "photos"
 PHOTOS: dict[str, tuple[int, int, int]] = {
     **{f"h{i}": (256, 144, 100 + i) for i in range(1, 10)},
     **{f"g{i}": (560, 280, 200 + i) for i in range(1, 10)},
+    #  The feed (drawn after attempt 1 of v13): one large photo and the one
+    #  it is swapped for, round avatars, the thumbnails of a side column.
+    "f1": (800, 300, 301), "f9": (800, 300, 309),
+    **{f"a{i}": (120, 120, 320 + i) for i in range(1, 5)},
+    **{f"t{i}": (180, 120, 340 + i) for i in range(1, 6)},
 }
 
 #: The tinted copies: (photo, median ΔE00 of the tint over the photo).
 TINTS: tuple[tuple[str, int], ...] = tuple(
-    (p, de) for p in ("h3", "g2") for de in (2, 4, 8))
+    (p, de) for p in ("h3", "g2", "f1") for de in (2, 4, 8))
 
 WEBP_LOSSLESS = [cv2.IMWRITE_WEBP_QUALITY, 101]
 

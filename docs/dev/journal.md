@@ -18,8 +18,18 @@
   centre moved by under a pixel, the blurred baseline moved that way is the
   picture), chosen on `history` (6 → 2 false failures): on `gallery` 6 of 6
   false failures and a new miss (a tint of ΔE00 4 on a large photo). Rolled
-  back, as preregistered; `gallery` is spent. The limitation is named in
-  the GUIDE («What engine v2 does not tell apart»).
+  back, as preregistered; `gallery` is spent.
+- Attempt 2, the same rule asked only of raster pictures, with a search
+  that finds the whole photo, chosen on `history` (and the gate on the
+  browser corpus's calibration half), measured once on a third template
+  drawn for it, `feed`, the acceptance narrowed to pictures by the
+  maintainer before the measurement: photos moved by a fraction 0 of 3
+  false failures, browser corpus and synthetic unchanged, but a new miss —
+  the crop of a large smooth photo moved by 4 px reads as noise once
+  blurred. Rolled back; `feed` is spent. The text of a block at a fraction
+  of a pixel was not addressed (v13b).
+- The limitation is named in the GUIDE («What engine v2 does not tell
+  apart»). The engine is untouched.
 
 ### Breaking in 0.2.0.dev3
 

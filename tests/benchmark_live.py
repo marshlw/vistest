@@ -80,16 +80,21 @@ def score(tool: Tool, cases: list[dict]) -> tuple[int, int, int, int]:
 
 def report(manifest: dict, tools: list[Tool]) -> str:
     cases = manifest["cases"]
+    spent = manifest["split"].get("spent") or {}
     L = ["Live corpus: tests/live_corpus — part of a page a fraction of a pixel "
          "off, and real changes of the same photos",
          f"Split: {', '.join(manifest['split'][lc.CALIBRATION])} = calibration; "
-         f"{', '.join(manifest['split'][lc.HELD_OUT])} = held out", ""]
-    for half, title in ((lc.CALIBRATION, "calibration"), (lc.HELD_OUT, "held out")):
-        part = [c for c in cases if c["split"] == half]
-        L.append(f"{title} ({len(part)} pairs)")
-        for t in tools:
-            ff, n, miss, s = score(t, part)
-            L.append(f"  {t.title:22s} false failures {ff}/{n}   misses {miss}/{s}")
+         f"{', '.join(manifest['split'][lc.HELD_OUT])} = held out"
+         + (f"; spent: {', '.join(spent)}" if spent else ""), ""]
+    for key, t in manifest["templates"].items():
+        part = [c for c in cases if c["template"] == key]
+        title = {lc.CALIBRATION: "calibration", lc.HELD_OUT: "held out"}[t["split"]]
+        if key in spent:
+            title += ", spent"
+        L.append(f"{key} — {title} ({len(part)} pairs)")
+        for tool in tools:
+            ff, n, miss, s = score(tool, part)
+            L.append(f"  {tool.title:22s} false failures {ff}/{n}   misses {miss}/{s}")
         L.append("")
     L.append("Every pair (F = fails, . = passes):")
     width = max(len(c["name"]) for c in cases)
