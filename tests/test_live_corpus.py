@@ -51,14 +51,15 @@ def test_a_template_loads_only_its_own_files(key):
 def test_every_target_is_one_element(key):
     html = (lc.TEMPLATE_DIR / f"{key}.html").read_text("utf-8")
     tokens = [t for v in re.findall(r'data-m="([^"]+)"', html) for t in v.split()]
-    assert sorted(tokens) == ["part", "photo"]
+    kind = {t.key: t.kind for t in lc.TEMPLATES}[key]
+    assert sorted(tokens) == (["line", "part"] if kind == "text" else ["part", "photo"])
 
 
 def test_every_photo_a_family_names_is_there():
     for t in lc.TEMPLATES:
         for f in lc.families(t):
             for m in f.magnitudes:
-                if isinstance(m.value, str):
+                if isinstance(m.value, str) and m.value.startswith("photos/"):
                     assert (lc.TEMPLATE_DIR / m.value).is_file(), m.value
 
 
@@ -104,7 +105,7 @@ def test_the_budget_holds(manifest):
 def test_the_split_is_by_template_and_the_held_out_one_is_spent(manifest):
     split = manifest["split"]
     assert split[lc.CALIBRATION] == ["history"]
-    assert split[lc.HELD_OUT] == ["gallery", "feed"]
+    assert split[lc.HELD_OUT] == ["gallery", "feed", "inbox"]
     assert set(split["spent"]) == {"gallery", "feed"}
     for c in manifest["cases"]:
         assert c["split"] == manifest["templates"][c["template"]]["split"]
@@ -116,7 +117,7 @@ def test_the_labels_are_the_maintainers(manifest):
         if c["family"] in ("part_shift", "image_shift"):
             want = "DISPUTED" if c["value"] >= 0.5 else "NOISE"
             assert "2026-10-14" in c["why"], c["name"]
-        elif c["name"].endswith("image_tint/de2"):
+        elif c["name"].endswith(("image_tint/de2", "text_tint/de2")):
             want = "DISPUTED"
         else:
             want = "SIGNAL"
@@ -127,7 +128,7 @@ def test_the_labels_are_the_maintainers(manifest):
 def test_every_pair_changed_pixels_and_names_its_renderer(manifest):
     assert manifest["renderer"]["file"] == lc.CANARY
     names = [c["name"] for c in manifest["cases"]]
-    assert len(names) == len(set(names)) == 51
+    assert len(names) == len(set(names)) == 65
     for c in manifest["cases"]:
         assert c["changed"]["pixels"] > 0, c["name"]
         assert c["renderer"] == {"expected": "base", "actual": "base"}
@@ -180,4 +181,5 @@ def test_the_benchmark_reads_every_pair():
     assert "history — calibration (17 pairs)" in out
     assert "gallery — held out, spent (17 pairs)" in out
     assert "feed — held out, spent (17 pairs)" in out
+    assert "inbox — held out (14 pairs)" in out
     assert benchmark_live.main(types.SimpleNamespace(engine="v2", no_ai=True)) == 0

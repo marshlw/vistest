@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox</title>
+<link rel="stylesheet" href="../../browser_corpus/templates/fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; font-size: 14px; color: #1e293b; background: #f8fafc; display: flex; }
+  nav { width: 210px; min-height: 800px; padding: 20px 16px; border-right: 1px solid #e2e8f0; background: #fff; }
+  nav b { display: block; font-size: 18px; color: #7c3aed; margin-bottom: 20px; }
+  nav a { display: flex; justify-content: space-between; padding: 7px 10px; border-radius: 6px; color: #475569; }
+  nav a.on { background: #f3e8ff; color: #6d28d9; font-weight: 700; }
+  main { flex: 1; padding: 22px 30px; }
+  .top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .top h1 { margin: 0; font-size: 21px; }
+  .top span { color: #64748b; }
+  .mail { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+  .m { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid #f1f5f9; }
+  .m:first-child { border-top: 0; }
+  .av { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff; flex: none; }
+  .dot { width: 8px; color: #7c3aed; flex: none; }
+  .who { width: 150px; font-weight: 700; flex: none; }
+  .what { flex: 1; color: #334155; white-space: nowrap; overflow: hidden; }
+  .what i { font-style: normal; color: #94a3b8; }
+  .when { width: 70px; text-align: right; color: #64748b; font-size: 13px; flex: none; }
+  .line { display: inline-block; }
+</style>
+</head>
+<body>
+<nav><b>Postbox</b><a class="on">Inbox <span>12</span></a><a>Starred <span>3</span></a><a>Sent</a><a>Drafts <span>1</span></a><a>Archive</a><a>Spam</a></nav>
+<main>
+  <div class="top"><h1>Inbox</h1><span>12 unread · 248 total</span></div>
+  <div class="mail" data-m="part">
+    <div class="m"><span class="dot">•</span><span class="av" style="background:#0ea5e9">AR</span><span class="who">Ana Ruiz</span><span class="what">Trip photos are up · <i>I picked the best forty from the ridge loop and the lake</i></span><span class="when">09:41</span></div>
+    <div class="m"><span class="dot">•</span><span class="av" style="background:#f97316">TB</span><span class="who">Tom Berg</span><span class="what"><span class="line" data-m="line">Invoice 2041 for October is ready</span> · <i>Total due by the 30th</i></span><span class="when">08:15</span></div>
+    <div class="m"><span class="dot"></span><span class="av" style="background:#22c55e">ML</span><span class="who">Mei Lin</span><span class="what">Re: Saturday paddle · <i>Boats are booked for eight, meet at 6:15</i></span><span class="when">Yesterday</span></div>
+    <div class="m"><span class="dot">•</span><span class="av" style="background:#a855f7">JP</span><span class="who">Jon Park</span><span class="what">New route draft · <i>Have a look before Friday, the descent is steep</i></span><span class="when">Oct 13</span></div>
+    <div class="m"><span class="dot"></span><span class="av" style="background:#ef4444">SO</span><span class="who">Sam Okoro</span><span class="what">Club meeting notes · <i>Minutes from Tuesday and the budget for spring</i></span><span class="when">Oct 12</span></div>
+    <div class="m"><span class="dot"></span><span class="av" style="background:#14b8a6">LK</span><span class="who">Lena Kovacs</span><span class="what">Your order has shipped · <i>Tracking number and delivery window inside</i></span><span class="when">Oct 11</span></div>
+    <div class="m"><span class="dot">•</span><span class="av" style="background:#64748b">PS</span><span class="who">Priya Shah</span><span class="what">Map tiles for the north valley · <i>Offline pack, 120 MB, valid until May</i></span><span class="when">Oct 10</span></div>
+    <div class="m"><span class="dot"></span><span class="av" style="background:#eab308">MV</span><span class="who">Marco Vidal</span><span class="what">Hut reservation confirmed · <i>Two nights, half board, arrival after 4 pm</i></span><span class="when">Oct 9</span></div>
+  </div>
+</main>
+</body>
+</html>
