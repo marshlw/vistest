@@ -54,6 +54,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import browser_corpus as bc  # noqa: E402
 
 NATIVE_DEFAULT = ROOT / "docs" / "benchmark_browser_native.json"
+#: Argos's own comparison (scripts/bench_argos.mjs) — plan v7.
+ARGOS_DEFAULT = ROOT / "docs" / "benchmark_browser_argos.json"
+#: The groups of tools, in the order the tables print them.
+GROUPS = ("VisTest", "Playwright", "Argos")
 PRESETS = ("strict", "balanced", "loose")
 #: `--engine`: which VisTest paths get rows. On this corpus both by default —
 #: the table exists to put v1, v2 and Playwright side by side.
@@ -70,7 +74,7 @@ class NativeError(RuntimeError):
 class Tool:
     key: str                      # short column name
     title: str
-    group: str                    # "VisTest" | "Playwright"
+    group: str                    # one of GROUPS
     failed: dict[str, bool] = field(default_factory=dict)
     ms: float = 0.0
     default: bool = False         # the setting a user gets without touching it
@@ -176,6 +180,39 @@ def load_native(path: Path, manifest_path: Path = bc.MANIFEST) -> dict:
             f"{got or 'missing'}, the corpus on disk is {want}). Re-run: node "
             f"scripts/bench_playwright_grid.mjs > {path}")
     return doc
+
+
+def load_argos(path: Path, manifest_path: Path = bc.MANIFEST) -> dict:
+    doc = json.loads(Path(path).read_text("utf-8"))
+    if doc.get("source") != "argos":
+        raise NativeError(f"{path}: not an Argos run (source={doc.get('source')!r})")
+    want = bc.corpus_digest(manifest_path)
+    got = (doc.get("corpus") or {}).get("sha256")
+    if got != want:
+        raise NativeError(
+            f"{path} was computed on a different browser corpus (sha256 "
+            f"{got or 'missing'}, the corpus on disk is {want}). Re-run: node "
+            f"scripts/bench_argos.mjs > {path}")
+    return doc
+
+
+def argos_tools(argos: dict, cases: list[dict]) -> list[Tool]:
+    """One row per threshold of Argos's comparison; 0.5 is its default."""
+    version = argos["environment"]["packages"]["odiff-bin"]
+    tools = []
+    for thr in argos["grid"]["threshold"]:
+        key = f"{thr:g}"
+        default = thr == 0.5
+        t = Tool(key=f"a{key}", group="Argos", default=default,
+                 title=f"Argos (odiff-bin {version}) threshold {key}"
+                       + (" (default)" if default else ""))
+        for c in cases:
+            entry = argos["results"].get(c["name"])
+            if entry is None:
+                raise NativeError(f"no Argos result for {c['name']}")
+            t.failed[c["name"]] = bool(entry["failed"][key])
+        tools.append(t)
+    return tools
 
 
 def playwright_tools(native: dict, cases: list[dict]) -> list[Tool]:
@@ -401,7 +438,7 @@ def report(manifest: dict, tools: list[Tool], *, timing: bool, notes: list[str],
                      f"{_frac(a.disputed_failed, a.disputed):>8s} |")
 
     # ---- per family ------------------------------------------------------ #
-    for group in ("VisTest", "Playwright"):
+    for group in GROUPS:
         members = [t for t in tools if t.group == group]
         if not members:
             continue
@@ -433,7 +470,7 @@ def report(manifest: dict, tools: list[Tool], *, timing: bool, notes: list[str],
     L.append("")
     L.append("Frontier: settings no other setting of the same tool beats on both "
              "false failures and misses")
-    for group in ("VisTest", "Playwright"):
+    for group in GROUPS:
         members = [t for t in tools if t.group == group]
         if not members:
             continue
@@ -484,7 +521,7 @@ def sealed_report(sealed: dict, tools: list[Tool], *, timing: bool,
         L.append(f"{t.title:{w}s} | {_frac(a.false, a.noise):>6s} {_pct(a.false, a.noise)} "
                  f"{_frac(a.misses, a.signal):>8s} {_pct(a.misses, a.signal)} | "
                  f"{_frac(a.disputed_failed, a.disputed):>8s} | {ms}")
-    for group in ("VisTest", "Playwright"):
+    for group in GROUPS:
         members = [t for t in tools if t.group == group]
         if not members:
             continue
@@ -511,7 +548,7 @@ def sealed_report(sealed: dict, tools: list[Tool], *, timing: bool,
 
 
 def markdown(manifest: dict, tools: list[Tool], native: dict | None,
-             *, ai: bool) -> str:
+             *, ai: bool, argos: dict | None = None) -> str:
     """The same tables for docs/benchmark_browser.md."""
     from datetime import date
 
@@ -569,7 +606,7 @@ def markdown(manifest: dict, tools: list[Tool], native: dict | None,
             L.append(f"| {t.title} | {c.false}/{c.noise} | {c.misses}/{c.signal} | "
                      f"{h.false}/{h.noise} | {h.misses}/{h.signal} | "
                      f"{a.false}/{a.noise} | {a.misses}/{a.signal} |")
-    for group in ("VisTest", "Playwright"):
+    for group in GROUPS:
         members = [t for t in tools if t.group == group]
         if not members:
             continue
@@ -602,7 +639,7 @@ def markdown(manifest: dict, tools: list[Tool], native: dict | None,
     L.append("Settings of one tool that no other setting of the same tool beats on "
              "both axes at once.")
     L.append("")
-    for group in ("VisTest", "Playwright"):
+    for group in GROUPS:
         members = [t for t in tools if t.group == group]
         for half in (bc.CALIBRATION, bc.HELD_OUT, None):
             if not members:
@@ -621,6 +658,11 @@ def markdown(manifest: dict, tools: list[Tool], native: dict | None,
                  f"`{native['corpus']['sha256'][:16]}…`). The comparator is "
                  f"@playwright/test {native['environment']['packages']['@playwright/test']}; "
                  "the frames were captured with the Python Playwright named above.")
+    if argos:
+        L.append("")
+        L.append(f"Argos rows: {argos['tool']['invoked']} — {argos['tool']['source']} "
+                 f"(`scripts/bench_argos.mjs`, `docs/benchmark_browser_argos.json`, "
+                 f"corpus digest `{argos['corpus']['sha256'][:16]}…`).")
     L.append("")
     return "\n".join(L)
 
@@ -651,6 +693,21 @@ def main(args, *, python_env: str = "") -> int:
     else:
         notes.append(f"No {native_path.relative_to(ROOT)}: the Playwright rows are "
                      "left out (node scripts/bench_playwright_grid.mjs writes it).")
+    argos: dict | None = None
+    argos_arg = getattr(args, "argos", None)
+    argos_path = Path(argos_arg) if argos_arg else ARGOS_DEFAULT
+    if argos_path.is_file():
+        try:
+            argos = load_argos(argos_path)
+        except NativeError as e:
+            print(f"--argos: {e}", file=sys.stderr)
+            return 2
+    elif argos_arg:
+        print(f"--argos: {argos_path} does not exist", file=sys.stderr)
+        return 2
+    else:
+        notes.append(f"No {argos_path.relative_to(ROOT)}: the Argos rows are left "
+                     "out (node scripts/bench_argos.mjs writes it).")
 
     if python_env:
         #  stderr, as for the synthetic corpus: stdout stays comparable.
@@ -663,6 +720,8 @@ def main(args, *, python_env: str = "") -> int:
         tools.append(run_vistest(manifest, "balanced", ai=not args.no_ai, engine="v2"))
     if native is not None:
         tools += playwright_tools(native, cases)
+    if argos is not None:
+        tools += argos_tools(argos, cases)
     out = report(manifest, tools, timing=not args.no_timing, notes=notes)
     if getattr(args, "final", False):
         sealed = bc.sealed_only(whole)
@@ -681,12 +740,20 @@ def main(args, *, python_env: str = "") -> int:
                     "Playwright rows are left out (node "
                     "scripts/bench_playwright_grid.mjs --final > FILE writes "
                     "them; then --native FILE).")
+        if argos is not None:
+            if all(c["name"] in argos["results"] for c in sealed["cases"]):
+                final += argos_tools(argos, sealed["cases"])
+            else:
+                final_notes.append(
+                    f"{argos_path.name} holds no result for this half: its Argos "
+                    "rows are left out (node scripts/bench_argos.mjs --final > "
+                    "FILE writes them; then --argos FILE).")
         out += sealed_report(sealed, final, timing=not args.no_timing, notes=final_notes)
     sys.stdout.write(out)
     if args.markdown:
         path = Path(args.markdown)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(markdown(manifest, tools, native, ai=not args.no_ai),
+        path.write_text(markdown(manifest, tools, native, ai=not args.no_ai, argos=argos),
                         encoding="utf-8", newline="\n")
         print(f"\nMarkdown: {path.resolve()}")
     return 0
