@@ -5,6 +5,25 @@
 
 ## [Unreleased]
 
+### The text of a block at a fraction of a pixel (v13b)
+
+- Found: across the line text keeps to the pixel grid (a vertical fraction
+  under half a pixel draws the same text; from half a pixel it moves by
+  one); along the line every glyph is drawn at a fraction, its coverage
+  kept. Where few box edges of the page move, the page-shift rule has
+  nothing to prove the move on.
+- `tests/live_corpus/` gains `inbox`, a text-only held-out template, with
+  one line changed the way the browser corpus changes text. The live
+  corpus's budget is 12 MiB.
+- Tried, chosen on history, gallery and feed and the browser corpus's
+  calibration half: the move proven by the text (many regions moved along
+  the line by one fraction, coverage kept), a dot of text taken at the
+  fraction, text allowed to snap across the line. Browser corpus and
+  synthetic unchanged; on `inbox`, measured once: 0.1 px passed, 0.25 and
+  0.4 px failed (the box edges proved a move glyph pieces did not follow;
+  a round avatar) — 2 of 3 false failures against at most 1. Rolled back
+  as preregistered; `inbox` is spent. The engine is untouched.
+
 ### Argos in the browser benchmark (v7)
 
 - `scripts/bench_argos.mjs` runs Argos's own comparison — `diffImages`

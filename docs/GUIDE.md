@@ -629,8 +629,9 @@ picture after looking at it.
   pictures are resampled at the new position: every thumbnail differs a
   little, most at its rounded corners and edges, and v2 says «edges redrawn
   within 1 px, same color» and fails. The page-shift rule does not cover it,
-  because only a part of the page moved. Below about a quarter of a pixel
-  the text of such a block is redrawn too. Make sure nothing on the page is
+  because only a part of the page moved. The text of such a block is drawn
+  at the fraction along the line (it keeps to the pixel grid across it), and
+  fails too — every glyph on a fractional grid of its own. Make sure nothing on the page is
   left at a fractional offset when the screenshot is taken (finish or
   disable the animation, round the transform), or mask the pictures.
 - **A native checkbox (and other native form controls) on a page moved by a

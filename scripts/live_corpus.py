@@ -24,10 +24,10 @@ corpus of its own, drawn the same way:
 * labels known before the frame exists, decided by the maintainer on
   2026-10-14 (`DECIDED_*`);
 * split by template: `history` is for calibration, `gallery` is held out —
-  it never takes part in choosing a number of the engine. `gallery` and
-  `feed` (drawn after attempt 1) are spent (`SPENT`): a rule measured on
-  each failed, and an attempt that has seen their figures needs a template
-  drawn after it.
+  it never takes part in choosing a number of the engine. `gallery`,
+  `feed` (drawn after attempt 1 of v13) and `inbox` (text only, drawn for
+  v13b) are spent (`SPENT`): a rule measured on each failed, and an attempt
+  that has seen their figures needs a template drawn after it.
 
 It has its own environment, recorded in its manifest: it was drawn in
 another container than the browser corpus (whose baselines come out ~55
@@ -130,6 +130,13 @@ SPENT = {
         "maintainer before it was measured: image_shift 0 of 3 false failures, "
         "but a new miss (image_crop/plus4px — a large smooth photo whose crop "
         "moved by 4 px reads as noise once blurred); rolled back"),
+    "inbox": (
+        "2026-10-15, v13b (the page's move proven by its text, a dot of text "
+        "drawn at the fraction, text snapped across the line): part_shift 0.1 "
+        "passed, 0.25 and 0.4 failed — the box edges proved a move of "
+        "(0.375, 0.375) while glyph pieces moved by 0.17 along the line, and a "
+        "round avatar did not follow; 2 of 3 false failures against at most 1; "
+        "rolled back"),
 }
 
 DECIDED_NOISE = ("decided by the maintainer on 2026-10-14: a part of the page "
