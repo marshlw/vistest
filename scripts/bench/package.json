@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@playwright/test": "1.63.0",
+    "odiff-bin": "4.5.0",
     "pixelmatch": "7.2.0"
   }
 }

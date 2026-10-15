@@ -812,6 +812,10 @@ def main() -> int:
                          "grid, by family and by half (tests/benchmark_browser.py). "
                          "live: tests/live_corpus, part of a page a fraction of a "
                          "pixel off (tests/benchmark_live.py)")
+    ap.add_argument("--argos", metavar="JSON",
+                    help="with --corpus browser: Argos's own comparison from "
+                         "scripts/bench_argos.mjs (default "
+                         "docs/benchmark_browser_argos.json, when it exists)")
     ap.add_argument("--final", action="store_true",
                     help="with --corpus browser: also run and print the sealed "
                          "half, held-out-2 — only for the final acceptance of "

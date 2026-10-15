@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Argos in the browser benchmark (v7)
+
+- `scripts/bench_argos.mjs` runs Argos's own comparison — `diffImages`
+  from argos-ci/argos (MIT), ported line for line at a named commit, over
+  the odiff-bin 4.5.0 it pins (now pinned in `scripts/bench`) — on every
+  pair of the browser corpus, threshold 0.25, 0.5 (its default) and 1, and
+  writes `docs/benchmark_browser_argos.json`; `tests/benchmark.py --corpus
+  browser` prints the rows as a third group. `--argos-fixtures` checks the
+  port against Argos's own test table (17 of 18 cases; one of two sizes is
+  not ported). The sealed half is compared only with `--final`.
+
 ### Live corpus — part of a page a fraction of a pixel off (v13)
 
 - `tests/live_corpus/`: two templates with generated photos (`history`
