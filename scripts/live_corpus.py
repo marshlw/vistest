@@ -24,9 +24,10 @@ corpus of its own, drawn the same way:
 * labels known before the frame exists, decided by the maintainer on
   2026-10-14 (`DECIDED_*`);
 * split by template: `history` is for calibration, `gallery` is held out —
-  it never takes part in choosing a number of the engine. It is spent
-  (`SPENT`): the first rule measured on it failed, and a second attempt
-  that has seen its figures needs a template drawn after it.
+  it never takes part in choosing a number of the engine. `gallery` and
+  `feed` (drawn after attempt 1) are spent (`SPENT`): a rule measured on
+  each failed, and an attempt that has seen their figures needs a template
+  drawn after it.
 
 It has its own environment, recorded in its manifest: it was drawn in
 another container than the browser corpus (whose baselines come out ~55
@@ -91,6 +92,11 @@ TEMPLATES: tuple[Template, ...] = (
              photo="h3", swap="h9", radius=12),
     Template("gallery", "a grid of large rounded photos, captions, badges, a dark "
              "header", HELD_OUT, photo="g2", swap="g9", radius=14),
+    #  Drawn after attempt 1 of v13 spent `gallery` (`SPENT`), before any
+    #  change of attempt 2: its held-out template.
+    Template("feed", "a social feed: a large rounded photo in a post, round "
+             "avatars, a column of thumbnails", HELD_OUT, photo="f1", swap="f9",
+             radius=10),
 )
 
 SPLIT_RULE = (
@@ -106,6 +112,12 @@ SPENT = {
         "pixel over»): measured once after the choice on history — 6 of 6 "
         "false failures and a new miss (image_tint/de4); rolled back. A second "
         "attempt is measured on a template drawn after this date"),
+    "feed": (
+        "2026-10-15, v13 attempt 2 (the rule «a raster picture drawn a fraction "
+        "of a pixel over»), the acceptance narrowed to pictures by the "
+        "maintainer before it was measured: image_shift 0 of 3 false failures, "
+        "but a new miss (image_crop/plus4px — a large smooth photo whose crop "
+        "moved by 4 px reads as noise once blurred); rolled back"),
 }
 
 DECIDED_NOISE = ("decided by the maintainer on 2026-10-14: a part of the page "

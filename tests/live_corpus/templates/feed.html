@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feed</title>
+<link rel="stylesheet" href="../../browser_corpus/templates/fonts.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Corpus Sans", sans-serif; font-size: 14px; color: #0f172a; background: #eef2f6; }
+  header { display: flex; align-items: center; gap: 20px; height: 56px; padding: 0 40px; background: #fff; border-bottom: 1px solid #dbe2ea; }
+  header b { font-size: 19px; color: #0e7490; }
+  header a { color: #475569; }
+  header .me { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #334155; }
+  header .me img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+  .wrap { display: flex; gap: 24px; padding: 20px 40px; }
+  .feed { width: 640px; }
+  .post { background: #fff; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; border: 1px solid #dbe2ea; }
+  .who { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .who img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+  .who span { display: block; color: #64748b; font-size: 12px; margin-top: 2px; }
+  .post p { margin: 0 0 12px; line-height: 20px; }
+  .post .shot { display: block; width: 100%; height: 250px; border-radius: 10px; object-fit: cover; }
+  .acts { display: flex; gap: 18px; margin-top: 10px; color: #64748b; font-size: 13px; }
+  aside { width: 300px; }
+  .box { background: #fff; border-radius: 12px; padding: 14px 16px; border: 1px solid #dbe2ea; }
+  .box h2 { margin: 0 0 10px; font-size: 15px; }
+  .trend { display: flex; gap: 10px; align-items: center; padding: 7px 0; }
+  .trend img { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; }
+  .trend b { display: block; font-size: 13px; }
+  .trend span { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<header><b>Outpost</b><a>Feed</a><a>Places</a><a>Groups</a><span class="me"><img src="photos/a4.webp" alt="">Lena K.</span></header>
+<div class="wrap" data-m="part">
+  <div class="feed">
+    <div class="post">
+      <div class="who"><img src="photos/a1.webp" alt=""><div><b>Marco Vidal</b><span>2 h · Dolomites</span></div></div>
+      <p>Made it to the hut before the clouds came in. The last hour was all switchbacks, but the view at the top was worth every step.</p>
+      <img class="shot" src="photos/f1.webp" alt="" data-m="photo">
+      <div class="acts"><span>214 likes</span><span>31 comments</span><span>Share</span></div>
+    </div>
+    <div class="post">
+      <div class="who"><img src="photos/a2.webp" alt=""><div><b>Priya Shah</b><span>5 h · Lake trail</span></div></div>
+      <p>Who is in for the sunrise paddle on Saturday? Meeting at the north pier at 6:15, boats are booked for eight people.</p>
+      <div class="acts"><span>48 likes</span><span>12 comments</span><span>Share</span></div>
+    </div>
+  </div>
+  <aside>
+    <div class="box"><h2>Trending places</h2>
+      <div class="trend"><img src="photos/t1.webp" alt=""><div><b>Granite ridge loop</b><span>1.2k visits this week</span></div></div>
+      <div class="trend"><img src="photos/t2.webp" alt=""><div><b>Old mill falls</b><span>860 visits</span></div></div>
+      <div class="trend"><img src="photos/t3.webp" alt=""><div><b>Pine bay campsite</b><span>640 visits</span></div></div>
+      <div class="trend"><img src="photos/t4.webp" alt=""><div><b>Sky meadow</b><span>590 visits</span></div></div>
+      <div class="trend"><img src="photos/t5.webp" alt=""><div><b>Cedar canyon</b><span>410 visits</span></div></div>
+    </div>
+    <div class="box" style="margin-top:16px"><h2>Your groups</h2>
+      <div class="who"><img src="photos/a3.webp" alt=""><div><b>Weekend hikers</b><span>3 new posts</span></div></div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

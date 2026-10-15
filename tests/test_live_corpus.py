@@ -104,8 +104,8 @@ def test_the_budget_holds(manifest):
 def test_the_split_is_by_template_and_the_held_out_one_is_spent(manifest):
     split = manifest["split"]
     assert split[lc.CALIBRATION] == ["history"]
-    assert split[lc.HELD_OUT] == ["gallery"]
-    assert "gallery" in split["spent"]
+    assert split[lc.HELD_OUT] == ["gallery", "feed"]
+    assert set(split["spent"]) == {"gallery", "feed"}
     for c in manifest["cases"]:
         assert c["split"] == manifest["templates"][c["template"]]["split"]
 
@@ -127,7 +127,7 @@ def test_the_labels_are_the_maintainers(manifest):
 def test_every_pair_changed_pixels_and_names_its_renderer(manifest):
     assert manifest["renderer"]["file"] == lc.CANARY
     names = [c["name"] for c in manifest["cases"]]
-    assert len(names) == len(set(names)) == 34
+    assert len(names) == len(set(names)) == 51
     for c in manifest["cases"]:
         assert c["changed"]["pixels"] > 0, c["name"]
         assert c["renderer"] == {"expected": "base", "actual": "base"}
@@ -177,5 +177,7 @@ def test_the_benchmark_reads_every_pair():
     tool = benchmark_live.run(m, "v2", ai=False)
     assert sorted(tool.failed) == sorted(c["name"] for c in m["cases"])
     out = benchmark_live.report(m, [tool])
-    assert "calibration (17 pairs)" in out and "held out (17 pairs)" in out
+    assert "history — calibration (17 pairs)" in out
+    assert "gallery — held out, spent (17 pairs)" in out
+    assert "feed — held out, spent (17 pairs)" in out
     assert benchmark_live.main(types.SimpleNamespace(engine="v2", no_ai=True)) == 0
