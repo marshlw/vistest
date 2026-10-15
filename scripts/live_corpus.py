@@ -70,9 +70,10 @@ FRAMES_DIR = LIVE_DIR / "frames"
 #: machine its baseline came from.
 CANARY = "renderers/base.png"
 
-#: What the frozen frames may weigh together (decided by the maintainer on
-#: 2026-10-14, with the format).
-BUDGET_BYTES = 10 * 1024 * 1024
+#: What the frozen frames may weigh together: 10 MiB with the format
+#: (decided by the maintainer on 2026-10-14), 12 MiB since the text template
+#: of v13b (decided by the maintainer on 2026-10-15).
+BUDGET_BYTES = 12 * 1024 * 1024
 
 CALIBRATION, HELD_OUT = bc.CALIBRATION, bc.HELD_OUT
 
@@ -82,9 +83,14 @@ class Template:
     key: str
     title: str
     split: str
-    photo: str          # the picture the image families change
-    swap: str           # the picture it is swapped for
-    radius: int         # its corner radius, px
+    photo: str = ""     # the picture the image families change
+    swap: str = ""      # the picture it is swapped for
+    radius: int = 0     # its corner radius, px
+    #  A text template (v13b) has no photo: its families change one line.
+    kind: str = "photo"
+    line_colour: str = ""   # the line's text colour, #rrggbb
+    one_char: str = ""      # the line with one character changed
+    word_swap: str = ""     # the line with one word replaced
 
 
 TEMPLATES: tuple[Template, ...] = (
@@ -97,6 +103,12 @@ TEMPLATES: tuple[Template, ...] = (
     Template("feed", "a social feed: a large rounded photo in a post, round "
              "avatars, a column of thumbnails", HELD_OUT, photo="f1", swap="f9",
              radius=10),
+    #  v13b, drawn before any change of it: the held-out template of the text
+    #  of a block at a fraction of a pixel. Text only, no photo.
+    Template("inbox", "a mail list: senders, subjects, snippets, middle dots, "
+             "initials in round avatars — text only", HELD_OUT, kind="text",
+             line_colour="#334155", one_char="Invoice 2047 for October is ready",
+             word_swap="Invoice 2041 for November is ready"),
 )
 
 SPLIT_RULE = (
@@ -131,6 +143,7 @@ DECIDED_DE2 = bc.DECIDED + (": ΔE00 ≈ 2 sits at the edge of what a person see
 
 PART = '[data-m~="part"]'
 PHOTO = '[data-m~="photo"]'
+LINE = '[data-m~="line"]'
 
 
 @dataclass(frozen=True)
@@ -155,15 +168,62 @@ def _px(v: float) -> str:
     return f"{v:g}px".replace(".", "_")
 
 
-def families(t: Template) -> tuple[Family, ...]:
-    """The families of one template: its photo, its radius and its swap differ."""
+def _part_shift() -> Family:
+    return Family("part_shift", PART,
+                  "els[0].style.transform = `translate(${v}px, ${v}px)`",
+                  "the block of photos and text is moved by a fraction of a pixel "
+                  "(transform)", "noise",
+                  tuple(Magnitude(_px(v), v, "NOISE", DECIDED_NOISE) for v in (0.1, 0.25, 0.4))
+                  + (Magnitude(_px(0.5), 0.5, "DISPUTED", DECIDED_HALF),))
+
+
+DECIDED_LETTER = (bc.DECIDED + ": +0.2px per letter is invisible in one glyph and "
+                  "adds up to several pixels over a line. SIGNAL, as in the browser corpus")
+DECIDED_ONE_PX = ("a layout that moved by one pixel is a layout that changed "
+                  "(decided by the maintainer on 2026-09-28)")
+
+
+def _text_families(t: Template) -> tuple[Family, ...]:
+    """v13b: one line of a text template, changed the way the browser corpus
+    changes text, with the maintainer's labels of 2026-09-28."""
+    h = t.line_colour.lstrip("#")
+    rgb = (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    tints = []
+    for d in (2, 4, 8):
+        colour, _ = bc.shift_colour(rgb, d)
+        tints.append(Magnitude(f"de{d}", bc.css_hex(colour), "DISPUTED" if d == 2 else "SIGNAL",
+                               DECIDED_DE2 if d == 2 else ""))
     return (
-        Family("part_shift", PART,
-               "els[0].style.transform = `translate(${v}px, ${v}px)`",
-               "the block of photos and text is moved by a fraction of a pixel "
-               "(transform)", "noise",
-               tuple(Magnitude(_px(v), v, "NOISE", DECIDED_NOISE) for v in (0.1, 0.25, 0.4))
-               + (Magnitude(_px(0.5), 0.5, "DISPUTED", DECIDED_HALF),)),
+        _part_shift(),
+        Family("text_tint", LINE, "els[0].style.color = v",
+               "the colour of one line of text (ΔE00 from its own)", "mutation",
+               tuple(tints)),
+        Family("letter_spacing", LINE, "els[0].style.letterSpacing = v + 'px'",
+               "the letter spacing of one line", "mutation",
+               (Magnitude("plus0_2px", 0.2, "SIGNAL", DECIDED_LETTER),
+                Magnitude("plus0_5px", 0.5, "SIGNAL"))),
+        Family("one_char", LINE, "els[0].textContent = v",
+               "one character of the line changes", "mutation",
+               (Magnitude("one", t.one_char, "SIGNAL"),)),
+        Family("word_swap", LINE, "els[0].textContent = v",
+               "one word of the line is replaced", "mutation",
+               (Magnitude("one", t.word_swap, "SIGNAL"),)),
+        Family("font_weight", LINE, "els[0].style.fontWeight = v",
+               "the line goes bold", "mutation", (Magnitude("bold", "700", "SIGNAL"),)),
+        Family("line_offset", LINE, "els[0].style.marginLeft = v + 'px'",
+               "the line moves along by whole pixels", "mutation",
+               (Magnitude("plus1px", 1, "SIGNAL", DECIDED_ONE_PX),
+                Magnitude("plus2px", 2, "SIGNAL"))),
+    )
+
+
+def families(t: Template) -> tuple[Family, ...]:
+    """The families of one template: its photo, its radius and its swap
+    differ; a text template changes one line instead."""
+    if t.kind == "text":
+        return _text_families(t)
+    return (
+        _part_shift(),
         Family("image_shift", PART,
                "els[0].querySelectorAll('img').forEach("
                "i => { i.style.transform = `translateX(${v}px)`; })",
@@ -442,9 +502,9 @@ def drift(manifest: dict, *, full: bool = False, pw=None,
             for key, t in manifest["templates"].items():
                 if not np.array_equal(read(root / t["base"]), bc.pixels(session.frame(key))):
                     drifted.append(t["base"])
-            fams = {f.key: f for f in families(TEMPLATES[0])}
+            by_key = {t.key: t for t in TEMPLATES}
             for c in sample(manifest, full=full):
-                f = fams[c["family"]]
+                f = {x.key: x for x in families(by_key[c["template"]])}[c["family"]]
                 png = session.frame(c["template"], (f.target, f.js, c["value"]))
                 if not np.array_equal(read(root / c["actual"]), bc.pixels(png)):
                     drifted.append(c["actual"])

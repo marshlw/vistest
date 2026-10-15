@@ -46,7 +46,8 @@
   ],
   "held_out": [
    "gallery",
-   "feed"
+   "feed",
+   "inbox"
   ],
   "spent": {
    "gallery": "2026-10-14, v13 attempt 1 (the rule «a picture drawn a fraction of a pixel over»): measured once after the choice on history — 6 of 6 false failures and a new miss (image_tint/de4); rolled back. A second attempt is measured on a template drawn after this date",
@@ -123,6 +124,26 @@
      "glyphs": 139
     }
    ]
+  },
+  "inbox": {
+   "title": "a mail list: senders, subjects, snippets, middle dots, initials in round avatars — text only",
+   "split": "held_out",
+   "base": "frames/inbox/base.webp",
+   "sha256": "76ccaebbd00bae02094a3b84748dc509e6e90cdfc2bcef47d50a9ecf547b1152",
+   "fonts": [
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans",
+     "custom": true,
+     "glyphs": 999
+    },
+    {
+     "family": "DejaVu Sans",
+     "postscript": "DejaVuSans-Bold",
+     "custom": true,
+     "glyphs": 109
+    }
+   ]
   }
  },
  "families": {
@@ -137,7 +158,8 @@
      "values": {
       "history": 0.1,
       "gallery": 0.1,
-      "feed": 0.1
+      "feed": 0.1,
+      "inbox": 0.1
      },
      "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
     },
@@ -146,7 +168,8 @@
      "values": {
       "history": 0.25,
       "gallery": 0.25,
-      "feed": 0.25
+      "feed": 0.25,
+      "inbox": 0.25
      },
      "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
     },
@@ -155,7 +178,8 @@
      "values": {
       "history": 0.4,
       "gallery": 0.4,
-      "feed": 0.4
+      "feed": 0.4,
+      "inbox": 0.4
      },
      "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it"
     },
@@ -164,7 +188,8 @@
      "values": {
       "history": 0.5,
       "gallery": 0.5,
-      "feed": 0.5
+      "feed": 0.5,
+      "inbox": 0.5
      },
      "why": "decided by the maintainer on 2026-10-14: at half a pixel the text of the block jumps by a whole pixel against the rest of the page. DISPUTED: printed, never counted"
     }
@@ -323,6 +348,117 @@
       "history": 12,
       "gallery": 12,
       "feed": 12
+     }
+    }
+   }
+  },
+  "text_tint": {
+   "target": "[data-m~=\"line\"]",
+   "what": "the colour of one line of text (ΔE00 from its own)",
+   "kind": "mutation",
+   "js": "els[0].style.color = v",
+   "magnitudes": {
+    "de2": {
+     "label": "DISPUTED",
+     "values": {
+      "inbox": "#39475b"
+     },
+     "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side. DISPUTED, as in the browser corpus"
+    },
+    "de4": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": "#3f4d61"
+     }
+    },
+    "de8": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": "#4b586e"
+     }
+    }
+   }
+  },
+  "letter_spacing": {
+   "target": "[data-m~=\"line\"]",
+   "what": "the letter spacing of one line",
+   "kind": "mutation",
+   "js": "els[0].style.letterSpacing = v + 'px'",
+   "magnitudes": {
+    "plus0_2px": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": 0.2
+     },
+     "why": "decided by the maintainer on 2026-09-28: +0.2px per letter is invisible in one glyph and adds up to several pixels over a line. SIGNAL, as in the browser corpus"
+    },
+    "plus0_5px": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": 0.5
+     }
+    }
+   }
+  },
+  "one_char": {
+   "target": "[data-m~=\"line\"]",
+   "what": "one character of the line changes",
+   "kind": "mutation",
+   "js": "els[0].textContent = v",
+   "magnitudes": {
+    "one": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": "Invoice 2047 for October is ready"
+     }
+    }
+   }
+  },
+  "word_swap": {
+   "target": "[data-m~=\"line\"]",
+   "what": "one word of the line is replaced",
+   "kind": "mutation",
+   "js": "els[0].textContent = v",
+   "magnitudes": {
+    "one": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": "Invoice 2041 for November is ready"
+     }
+    }
+   }
+  },
+  "font_weight": {
+   "target": "[data-m~=\"line\"]",
+   "what": "the line goes bold",
+   "kind": "mutation",
+   "js": "els[0].style.fontWeight = v",
+   "magnitudes": {
+    "bold": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": "700"
+     }
+    }
+   }
+  },
+  "line_offset": {
+   "target": "[data-m~=\"line\"]",
+   "what": "the line moves along by whole pixels",
+   "kind": "mutation",
+   "js": "els[0].style.marginLeft = v + 'px'",
+   "magnitudes": {
+    "plus1px": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": 1
+     },
+     "why": "a layout that moved by one pixel is a layout that changed (decided by the maintainer on 2026-09-28)"
+    },
+    "plus2px": {
+     "label": "SIGNAL",
+     "values": {
+      "inbox": 2
      }
     }
    }
@@ -1699,6 +1835,384 @@
      195,
      602,
      250
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/part_shift/0_1px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_1px",
+   "value": 0.1,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/part_shift--0_1px.webp",
+   "sha256": "6fd25f52f5f5cc38af8b633588837792643092886a8d862827f4aa587beab9f9",
+   "changed": {
+    "pixels": 30972,
+    "box": [
+     240,
+     60,
+     1011,
+     442
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/part_shift/0_25px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_25px",
+   "value": 0.25,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/part_shift--0_25px.webp",
+   "sha256": "29433747b5362653b03875b2c0be68e1b28a24771c1ad6fa9ba0e7761c4d769a",
+   "changed": {
+    "pixels": 45508,
+    "box": [
+     240,
+     60,
+     1011,
+     442
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/part_shift/0_4px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_4px",
+   "value": 0.4,
+   "label": "NOISE",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: a part of the page a fraction of a pixel off, under half a pixel, is NOISE — as for the whole page shifted by 0.25 px. Nobody changed it",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/part_shift--0_4px.webp",
+   "sha256": "bef400520dc1aae81f80dae84466dcd0609caad903eca9f9f11d73a1adf4651c",
+   "changed": {
+    "pixels": 47042,
+    "box": [
+     240,
+     60,
+     1011,
+     442
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/part_shift/0_5px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "part_shift",
+   "magnitude": "0_5px",
+   "value": 0.5,
+   "label": "DISPUTED",
+   "kind": "noise",
+   "why": "decided by the maintainer on 2026-10-14: at half a pixel the text of the block jumps by a whole pixel against the rest of the page. DISPUTED: printed, never counted",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/part_shift--0_5px.webp",
+   "sha256": "c8195729b67ca4bb904a773028a4f01c4ea33c13ba285c49767e9aa89a06b06f",
+   "changed": {
+    "pixels": 53282,
+    "box": [
+     240,
+     60,
+     1011,
+     442
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/text_tint/de2",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "text_tint",
+   "magnitude": "de2",
+   "value": "#39475b",
+   "label": "DISPUTED",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: ΔE00 ≈ 2 sits at the edge of what a person sees side by side. DISPUTED, as in the browser corpus",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/text_tint--de2.webp",
+   "sha256": "d85d628add7d87ce08a1fc8b48fb3a869ad7e8ed6ef3b2649b36469479a3a432",
+   "changed": {
+    "pixels": 1138,
+    "box": [
+     484,
+     137,
+     233,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/text_tint/de4",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "text_tint",
+   "magnitude": "de4",
+   "value": "#3f4d61",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour of one line of text (ΔE00 from its own)",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/text_tint--de4.webp",
+   "sha256": "2f3bf2ac4a86b17e7a83455a46c95bccecc246089c6f891a1ffcc4c36a1849c5",
+   "changed": {
+    "pixels": 1162,
+    "box": [
+     484,
+     137,
+     233,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/text_tint/de8",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "text_tint",
+   "magnitude": "de8",
+   "value": "#4b586e",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the colour of one line of text (ΔE00 from its own)",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/text_tint--de8.webp",
+   "sha256": "e61cd83c0d5aef38eb6eec260d91130ef72db95972719060e471beaa4712b8b9",
+   "changed": {
+    "pixels": 1166,
+    "box": [
+     484,
+     137,
+     233,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/letter_spacing/plus0_2px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "letter_spacing",
+   "magnitude": "plus0_2px",
+   "value": 0.2,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "decided by the maintainer on 2026-09-28: +0.2px per letter is invisible in one glyph and adds up to several pixels over a line. SIGNAL, as in the browser corpus",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/letter_spacing--plus0_2px.webp",
+   "sha256": "22330957b0455dd015f509614ca375caf129cee80af04f29ce23cfd812626044",
+   "changed": {
+    "pixels": 2874,
+    "box": [
+     496,
+     137,
+     390,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/letter_spacing/plus0_5px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "letter_spacing",
+   "magnitude": "plus0_5px",
+   "value": 0.5,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the letter spacing of one line",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/letter_spacing--plus0_5px.webp",
+   "sha256": "5a489d81c645529c70bb13dffbd555861c88c87d8d330406d4676511e45a5f59",
+   "changed": {
+    "pixels": 3069,
+    "box": [
+     488,
+     137,
+     408,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/one_char/one",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "one_char",
+   "magnitude": "one",
+   "value": "Invoice 2047 for October is ready",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one character of the line changes",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/one_char--one.webp",
+   "sha256": "8a09021b03b704e2ff5df6070a4feec03cbb8c7c21a1a484834ca487382c2d1e",
+   "changed": {
+    "pixels": 51,
+    "box": [
+     565,
+     137,
+     7,
+     11
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/word_swap/one",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "word_swap",
+   "magnitude": "one",
+   "value": "Invoice 2041 for November is ready",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "one word of the line is replaced",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/word_swap--one.webp",
+   "sha256": "6eadc726a3d2a0e4be00495ec13826922d2372db8451972420529d374e98fabb",
+   "changed": {
+    "pixels": 2208,
+    "box": [
+     602,
+     137,
+     294,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/font_weight/bold",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "font_weight",
+   "magnitude": "bold",
+   "value": "700",
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the line goes bold",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/font_weight--bold.webp",
+   "sha256": "4e8e410122c53c73082da4e4eeddcc18601ffb6b962d52159a189ed07351d6a7",
+   "changed": {
+    "pixels": 3338,
+    "box": [
+     484,
+     137,
+     424,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/line_offset/plus1px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "line_offset",
+   "magnitude": "plus1px",
+   "value": 1,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "a layout that moved by one pixel is a layout that changed (decided by the maintainer on 2026-09-28)",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/line_offset--plus1px.webp",
+   "sha256": "d17d3a8fc7ea5710acc50b2d90cd968c42c83d28331382e25da88305a02d7a2f",
+   "changed": {
+    "pixels": 2451,
+    "box": [
+     484,
+     137,
+     396,
+     14
+    ]
+   },
+   "renderer": {
+    "expected": "base",
+    "actual": "base"
+   }
+  },
+  {
+   "name": "inbox/line_offset/plus2px",
+   "template": "inbox",
+   "split": "held_out",
+   "family": "line_offset",
+   "magnitude": "plus2px",
+   "value": 2,
+   "label": "SIGNAL",
+   "kind": "mutation",
+   "why": "the line moves along by whole pixels",
+   "expected": "frames/inbox/base.webp",
+   "actual": "frames/inbox/line_offset--plus2px.webp",
+   "sha256": "ef4eaf45c1f677a5a7d0849dd490683ad97199e297a887ed02e761b25a74dfd5",
+   "changed": {
+    "pixels": 2914,
+    "box": [
+     484,
+     137,
+     397,
+     14
     ]
    },
    "renderer": {
