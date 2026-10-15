@@ -51,7 +51,8 @@
   ],
   "spent": {
    "gallery": "2026-10-14, v13 attempt 1 (the rule «a picture drawn a fraction of a pixel over»): measured once after the choice on history — 6 of 6 false failures and a new miss (image_tint/de4); rolled back. A second attempt is measured on a template drawn after this date",
-   "feed": "2026-10-15, v13 attempt 2 (the rule «a raster picture drawn a fraction of a pixel over»), the acceptance narrowed to pictures by the maintainer before it was measured: image_shift 0 of 3 false failures, but a new miss (image_crop/plus4px — a large smooth photo whose crop moved by 4 px reads as noise once blurred); rolled back"
+   "feed": "2026-10-15, v13 attempt 2 (the rule «a raster picture drawn a fraction of a pixel over»), the acceptance narrowed to pictures by the maintainer before it was measured: image_shift 0 of 3 false failures, but a new miss (image_crop/plus4px — a large smooth photo whose crop moved by 4 px reads as noise once blurred); rolled back",
+   "inbox": "2026-10-15, v13b (the page's move proven by its text, a dot of text drawn at the fraction, text snapped across the line): part_shift 0.1 passed, 0.25 and 0.4 failed — the box edges proved a move of (0.375, 0.375) while glyph pieces moved by 0.17 along the line, and a round avatar did not follow; 2 of 3 false failures against at most 1; rolled back"
   }
  },
  "labels": {
