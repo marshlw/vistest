@@ -8,7 +8,7 @@
 
 """Snapshot name -> path on disk. One implementation, used by both layouts.
 
-These rules used to live inside `vistest.storage.fs`, next to the store that
+These rules used to live inside `vistest_server.storage.fs`, next to the store that
 needed them. They moved out when a second layout appeared: the library mode
 keeps baselines as plain files in the user's repository, the service keeps a
 directory per snapshot, and the two have to agree on the mapping exactly —

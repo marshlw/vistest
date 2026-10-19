@@ -308,7 +308,7 @@ def test_a_profile_cannot_be_mutated_in_place():
 
 def test_overrides_of_a_subclass_return_that_subclass():
     """`SuiteProfile` extends this, and an override must not downgrade it."""
-    from vistest.suites.base import SuiteProfile
+    from vistest_server.suites.base import SuiteProfile
 
     profile = SuiteProfile(id="x", title="X", actual=("a",))
     got = profile.with_overrides(naming={"actual": "b"})

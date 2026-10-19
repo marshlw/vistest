@@ -24,8 +24,9 @@ of it. Everything below imports what it needs inside the function that needs
 it.
 
 The server's fixtures (`visual`, `visual_soft`) and flags (`--vistest-api`,
-`--vistest-perceptual`, `--vistest-fail-on`) are in `pytest_server.py`, and
-this plugin registers them only when the `server` extra is installed.
+`--vistest-perceptual`, `--vistest-fail-on`) are the server's
+(`vistest_server.pytest_server`), and this plugin registers them only when the
+`server` extra is installed.
 
 **Under `pytest -n` (xdist)** the work is split across processes and nothing is
 shared between them. Each worker writes its own artifacts and its own one-file
@@ -120,15 +121,27 @@ def pytest_addoption(parser, pluginmanager):
     for name, help_text in _INI.items():
         parser.addini(name, help_text, default="")
 
-    #  The server's fixtures and flags, only with the server's extra
-    #  (vistest/pytest_server.py). pytest_addoption is a historic hook: the
-    #  plugin registered here gets its own call at once.
-    from ._extras import server_missing
+    #  Halves of the plugin other packages offer — the server's fixtures and
+    #  flags among them — through the `vistest.pytest` entry point: each
+    #  returns a plugin module, or None when it has nothing to offer here.
+    #  pytest_addoption is a historic hook: a plugin registered here gets its
+    #  own call at once.
+    for name, module in _offered_plugins():
+        if not pluginmanager.has_plugin(name):
+            pluginmanager.register(module, name)
 
-    if not server_missing() and not pluginmanager.has_plugin(SERVER_PLUGIN):
-        from . import pytest_server
 
-        pluginmanager.register(pytest_server, SERVER_PLUGIN)
+def _offered_plugins() -> list[tuple[str, object]]:
+    """(name, module) of every `vistest.pytest` entry point that offers one."""
+    from importlib.metadata import entry_points
+
+    out = []
+    for ep in entry_points(group="vistest.pytest"):
+        module = ep.load()()
+        if module is not None:
+            out.append((SERVER_PLUGIN if ep.name == "server" else f"vistest.{ep.name}",
+                        module))
+    return out
 
 
 #: The name the server's half of the plugin is registered under.

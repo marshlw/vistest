@@ -196,7 +196,7 @@ import cv2  # noqa: E402
 
 from vistest.config import VisTestConfig  # noqa: E402
 from vistest.models import Verdict  # noqa: E402
-from vistest.service import CheckService  # noqa: E402
+from vistest_server.service import CheckService  # noqa: E402
 
 from . import synthetic as syn  # noqa: E402
 

@@ -21,6 +21,7 @@ import pytest
 import vistest
 from vistest import _term, cli
 from vistest.core import pngio
+from vistest_server import cli as server_cli
 
 
 def _vistest(*args: str, cwd, env_extra: dict | None = None) -> subprocess.CompletedProcess:
@@ -42,21 +43,21 @@ def test_the_version_is_one_flag_away(capsys):
 @pytest.fixture
 def snapped(monkeypatch):
     seen: list = []
-    monkeypatch.setattr(cli, "_snap", lambda args: seen.append(args) or 0)
+    monkeypatch.setattr(server_cli, "_snap", lambda args: seen.append(args) or 0)
     return seen
 
 
 def test_snap_without_a_viewport_is_one_picture_at_the_default_size(snapped):
     assert cli.main(["snap", "https://shop.example/checkout"]) == 0
-    targets = cli._snap_targets(snapped[0])
-    assert [t["viewport"] for t in targets] == [cli.SNAP_VIEWPORT]
+    targets = server_cli._snap_targets(snapped[0])
+    assert [t["viewport"] for t in targets] == [server_cli.SNAP_VIEWPORT]
     assert [t["name"] for t in targets] == ["shop.example-checkout.png"]
 
 
 def test_snap_with_viewports_takes_exactly_those(snapped):
     assert cli.main(["snap", "https://shop.example/checkout",
                      "--viewport", "390x844", "--viewport", "768x1024"]) == 0
-    targets = cli._snap_targets(snapped[0])
+    targets = server_cli._snap_targets(snapped[0])
     assert [t["viewport"] for t in targets] == ["390x844", "768x1024"]
     assert [t["name"] for t in targets] == ["shop.example-checkout-390x844.png",
                                            "shop.example-checkout-768x1024.png"]
@@ -120,7 +121,7 @@ def test_no_color_wins_over_a_terminal_and_force_color_over_a_pipe(monkeypatch):
 
 def test_every_command_that_colours_uses_the_one_switch():
     from vistest import doctor
-    from vistest.record import session, snap
+    from vistest_server.record import session, snap
 
     assert doctor.C is _term.C and snap.C is _term.C and session.C is _term.C
 

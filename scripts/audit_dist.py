@@ -39,10 +39,10 @@ from pathlib import Path
 REQUIRED_IN_WHEEL = (
     "vistest/library/fonts/canary-sans.ttf",    # the renderer's fingerprint
     "vistest/bench/playwright_compare.mjs",     # `vistest bench`
-    "vistest/ai/region_gate.json",              # the region gate's model
-    "vistest/frontend/index.html",              # the review UI, `/ui/`
+    "vistest_server/ai/region_gate.json",       # the region gate's model
+    "vistest_server/frontend/index.html",       # the review UI, `/ui/`
 )
-REQUIRED_GLOBS = (("vistest/bench/", ".mjs"), ("vistest/ai/", ".json"),
+REQUIRED_GLOBS = (("vistest/bench/", ".mjs"), ("vistest_server/ai/", ".json"),
                   ("vistest/library/fonts/", ""))
 
 ENTRY_POINTS = (

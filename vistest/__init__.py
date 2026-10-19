@@ -15,7 +15,7 @@ its own tests needs, and nothing else is exported here.
 
 Everything else — the server's runner and check service, the stores, the
 config loader, the integrations — is reached by its full path:
-`from vistest.service import CheckService`. Asking the top for one of those
+`from vistest_server.service import CheckService`. Asking the top for one of those
 names is an AttributeError that says where it is now (`_MOVED`); there is no
 shim that keeps the old spelling working with a warning — there was no public
 release that promised it.
@@ -65,17 +65,18 @@ _LAZY = {
     "VisTestWarning": ".library",
 }
 
-#  Exported at the top until 0.2.0.dev3, and where each one is now. Only for
+#  Exported at the top until 0.2.0.dev3, and where each one is now — None
+#  for a name that is the server's, which another package provides. Only for
 #  the message: asking for one of these is still an AttributeError.
 _MOVED = {
     "VisTestConfig": "vistest.config",
-    "VisualSession": "vistest.integrations",
-    "VisualTestCase": "vistest.integrations",
-    "visual_check": "vistest.integrations",
-    "visual_session": "vistest.integrations",
-    "VisualTester": "vistest.runner",
-    "VisualMismatch": "vistest.runner",
-    "CheckService": "vistest.service",
+    "VisualSession": None,
+    "VisualTestCase": None,
+    "visual_check": None,
+    "visual_session": None,
+    "VisualTester": None,
+    "VisualMismatch": None,
+    "CheckService": None,
     "FileStore": "vistest.storage",
     "SnapshotKey": "vistest.storage",
     "SnapshotMeta": "vistest.storage",
@@ -94,11 +95,13 @@ def __getattr__(name):
     """
     module = _LAZY.get(name)
     if module is None:
-        moved = _MOVED.get(name)
-        if moved is not None:
+        if name in _MOVED:
+            moved = _MOVED[name]
+            where = (f"from {moved} import {name}" if moved is not None
+                     else "it is the server's, in the vistest-server package")
             raise AttributeError(
                 f"module {__name__!r} has no attribute {name!r}: it is not exported "
-                f"at the top since 0.2.0.dev3 — from {moved} import {name}")
+                f"at the top since 0.2.0.dev3 — {where}")
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
 

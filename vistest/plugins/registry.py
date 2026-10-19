@@ -75,7 +75,7 @@ class HostContext:
 
     ``settings`` — the server's key-value settings (``None`` in the library
     mode). ``plugin_database`` — a callable returning a handle restricted to the
-    calling plugin's own tables, see `vistest.plugins.migrations`. ``require``
+    calling plugin's own tables, see `vistest_server.plugins.migrations`. ``require``
     and ``audit`` — the server's access check and audit log, for routes a
     plugin serves.
     """

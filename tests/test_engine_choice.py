@@ -291,7 +291,7 @@ def test_every_layer_names_the_area_limit_too(tmp_path, monkeypatch):
 
 
 def test_an_area_limit_saved_in_the_interface_is_named():
-    from vistest.api.thresholds import apply, env_for
+    from vistest_server.api.thresholds import apply, env_for
 
     class DB:
         rows = {("global", ""): {"fail_severity": 30.0, "max_changed_area_pct": 1.0},
@@ -315,7 +315,7 @@ def test_an_area_limit_saved_in_the_interface_is_named():
 def test_an_override_saved_in_the_interface_is_named():
     """Saved before the switch, respected after it — and named, so a person
     sees that the old number now lets something through."""
-    from vistest.api.thresholds import apply, env_for
+    from vistest_server.api.thresholds import apply, env_for
 
     class DB:
         rows = {("global", ""): {"fail_severity": 30.0},
@@ -433,7 +433,7 @@ def test_the_area_limit_in_the_message_says_where_from_and_what_to_do(ctx):
 def test_the_api_answer_carries_the_list(tmp_path, monkeypatch):
     """`POST /api/check` answers with `to_dict()`: the threshold, what is below
     it, and the line in the notes."""
-    from vistest.service import CheckService
+    from vistest_server.service import CheckService
 
     monkeypatch.delenv("VISTEST_ENGINE", raising=False)
     cfg = VisTestConfig()
@@ -455,7 +455,7 @@ def test_the_api_answer_carries_the_list(tmp_path, monkeypatch):
 def test_the_api_takes_the_engine_as_an_option():
     from fastapi import HTTPException
 
-    from vistest.api.check import _clean_overrides
+    from vistest_server.api.check import _clean_overrides
 
     assert _clean_overrides({"engine": "V1"}) == {"engine": "v1"}
     with pytest.raises(HTTPException) as e:

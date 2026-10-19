@@ -115,7 +115,7 @@ def test_dir_lists_what_has_not_been_imported_yet():
         " vistest.compare;"
         " import sys;"
         " print(all(n in dir(vistest) for n in vistest.__all__));"
-        " print('vistest.service' in sys.modules)"
+        " print('vistest_server.service' in sys.modules)"
     )
     done = subprocess.run([sys.executable, "-c", probe],
                           cwd=INIT.parents[1], capture_output=True,

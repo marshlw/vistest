@@ -34,13 +34,13 @@ LIBRARY = {"expect_screenshot", "BaselineMissing", "ScreenshotMismatch",
 #: Every name that was exported at the top before 0.2.0.dev3, and its module.
 MOVED = {
     "VisTestConfig": "vistest.config",
-    "VisualSession": "vistest.integrations",
-    "VisualTestCase": "vistest.integrations",
-    "visual_check": "vistest.integrations",
-    "visual_session": "vistest.integrations",
-    "VisualTester": "vistest.runner",
-    "VisualMismatch": "vistest.runner",
-    "CheckService": "vistest.service",
+    "VisualSession": "vistest_server.integrations",
+    "VisualTestCase": "vistest_server.integrations",
+    "visual_check": "vistest_server.integrations",
+    "visual_session": "vistest_server.integrations",
+    "VisualTester": "vistest_server.runner",
+    "VisualMismatch": "vistest_server.runner",
+    "CheckService": "vistest_server.service",
     "FileStore": "vistest.storage",
     "SnapshotKey": "vistest.storage",
     "SnapshotMeta": "vistest.storage",
@@ -71,7 +71,12 @@ def test_a_name_that_left_the_top_says_in_one_line_where_it_is(name, module):
             getattr(vistest, name)
     text = str(gone.value)
     assert "\n" not in text, text
-    assert f"from {module} import {name}" in text, text
+    if module.startswith("vistest_server."):
+        #  The library does not name the server's modules (o1): it says whose
+        #  the name is, and the server's package has it.
+        assert "the server's, in the vistest-server package" in text, text
+    else:
+        assert f"from {module} import {name}" in text, text
     #  ... and it is really there.
     assert getattr(importlib.import_module(module), name) is not None
     assert not hasattr(vistest, name)

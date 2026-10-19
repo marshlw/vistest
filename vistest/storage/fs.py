@@ -47,7 +47,7 @@ from .base import BaselineRecord, BaselineStore
 
 #  Re-exported, not just used: `MAX_DEPTH`, `split_project` and `_safe` were
 #  defined in this module before the second layout needed one copy of the
-#  mapping, and `from vistest.storage.fs import ...` is what the rest of the
+#  mapping, and `from vistest_server.storage.fs import ...` is what the rest of the
 #  package and the tests still say.
 from .paths import MAX_DEPTH, safe_name, split_project
 
@@ -409,7 +409,7 @@ class FileBaselineStore(BaselineStore):
         историю зон. Паспорт эталона — не то место, где можно позволить себе
         полузапись.
         """
-        from ..core.regions import normalize
+        from vistest.core.regions import normalize
 
         # `normalize` до замка: разбирать ввод, держа каталог запертым, незачем,
         # а ошибка в зоне должна прилетать вызывающему, а не оставлять замок.
@@ -446,7 +446,7 @@ class FileBaselineStore(BaselineStore):
             return None
         mask = rec.stability_mask
         if rec.ignore_boxes:
-            from ..core.regions import mask as zone_mask
+            from vistest.core.regions import mask as zone_mask
 
             boxes_mask, _ = zone_mask(shape, rec.ignore_boxes, baseline_dom=rec.dom)
             mask = boxes_mask if mask is None else _noise.merge_masks(mask, boxes_mask)

@@ -6,48 +6,15 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Подключение VisTest к уже написанным тестам.
+"""The driver: one interface over a Playwright page and a Selenium WebDriver.
 
-Три способа, от самого простого:
-
-1. **Функция** — работает в любом Python-тесте, без фикстур и наследования:
-
-       from vistest.integrations import visual_check
-       visual_check(driver, "checkout.png")      # driver: Playwright Page или Selenium
-
-2. **Миксин** — для проектов на unittest:
-
-       class MyTest(VisualTestCase, unittest.TestCase):
-           def test_home(self):
-               self.driver.get(URL)
-               self.assert_screenshot("home.png")
-
-3. **Контекстный менеджер** — когда нужно собрать несколько проверок в один прогон:
-
-       with visual_session() as vs:
-           vs.check(driver, "step1.png")
-           vs.check(driver, "step2.png")
-
-Для тестов не на Python — HTTP-эндпоинт `POST /api/check`, см. `clients/`.
+`wrap_driver(page_or_webdriver)` and `driver.capture(cfg=...)`. Connecting
+VisTest to existing tests in server mode — `visual_check`, `visual_session`,
+`VisualTestCase` — lives with the server, in `vistest_server.integrations`.
 """
 
 from __future__ import annotations
 
 from .driver import Driver, PlaywrightDriver, SeleniumDriver, wrap_driver
-from .session import (
-    VisualSession,
-    VisualTestCase,
-    visual_check,
-    visual_session,
-)
 
-__all__ = [
-    "visual_check",
-    "visual_session",
-    "VisualSession",
-    "VisualTestCase",
-    "wrap_driver",
-    "Driver",
-    "PlaywrightDriver",
-    "SeleniumDriver",
-]
+__all__ = ["wrap_driver", "Driver", "PlaywrightDriver", "SeleniumDriver"]

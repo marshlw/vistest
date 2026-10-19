@@ -45,8 +45,8 @@ WHEEL_OK = {
     "vistest/__init__.py": b"x = 1\n",
     "vistest/library/fonts/canary-sans.ttf": b"\0ttf",
     "vistest/bench/playwright_compare.mjs": b"// mjs\n",
-    "vistest/ai/region_gate.json": b"{}",
-    "vistest/frontend/index.html": b"<html></html>",
+    "vistest_server/ai/region_gate.json": b"{}",
+    "vistest_server/frontend/index.html": b"<html></html>",
     "vistest-1.dist-info/entry_points.txt": ENTRY,
 }
 SDIST_OK = {"LICENSE": b"l", "NOTICE": b"n", "README.md": b"r", "pyproject.toml": b"p"}

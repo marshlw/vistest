@@ -206,7 +206,7 @@ def test_the_environment_report_names_the_runtimes():
     """
     pytest.importorskip("fastapi")
 
-    from vistest.api.doctor import env_report
+    from vistest_server.api.doctor import env_report
 
     names = [r["name"] for r in env_report()["runtimes"]]
 

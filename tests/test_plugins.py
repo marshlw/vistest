@@ -29,8 +29,9 @@ from vistest.ai.pipeline import AIPipeline
 from vistest.config import AIConfig, PluginsConfig, VisTestConfig
 from vistest.core.settings import ConfigError
 from vistest.models import ChangeKind, CompareResult, DiffRegion, Verdict
-from vistest.plugins import api, loader, migrations, runtime
+from vistest.plugins import api, loader, runtime
 from vistest.plugins.registry import PluginRegistry
+from vistest_server.plugins import migrations
 
 
 # --------------------------------------------------------------------------- #
@@ -591,7 +592,7 @@ def test_empty_credentials_never_reach_the_provider():
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def core_db(tmp_path):
-    from vistest.api.db import Database
+    from vistest_server.api.db import Database
 
     db = Database(tmp_path / "vistest.db")
     yield db

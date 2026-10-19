@@ -413,7 +413,7 @@ def test_a_network_step_at_its_limit_names_the_request_and_the_way_out():
 def test_the_service_says_when_a_baseline_was_taken_an_older_way(tmp_path):
     from vistest.config import VisTestConfig
     from vistest.models import Verdict
-    from vistest.service import CheckService
+    from vistest_server.service import CheckService
 
     from . import synthetic as syn
 

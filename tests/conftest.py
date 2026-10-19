@@ -9,15 +9,15 @@
 """Every test leaves the process the way it found it.
 
 Twenty-odd test files build the service on a temporary database the same way:
-point `VISTEST_ROOT` at a `tmp_path`, then `importlib.reload(vistest.api.main)`
+point `VISTEST_ROOT` at a `tmp_path`, then `importlib.reload(vistest_server.api.main)`
 so the module-level `db` is rebuilt against it. `monkeypatch` puts the
 environment variable back afterwards — but nothing puts the module back.
 `importlib.reload` rebuilds a module **in place**, so after such a test
-`vistest.api.main.db` still points at that test's temporary database, for the
+`vistest_server.api.main.db` still points at that test's temporary database, for the
 rest of the session.
 
 That is invisible until something reads the service database lazily. It does:
-`vistest.api.settings._guard` does `from .main import db` inside the function
+`vistest_server.api.settings._guard` does `from .main import db` inside the function
 and asks whether any users exist. A test that created an administrator on its
 temporary database leaves `any_users(db)` true, and the variable-editor tests —
 which are about IP addresses and have no users of their own — start failing
@@ -79,16 +79,16 @@ def pytest_configure(config):
 #  state — an open database, a built router, a licence read at import — that a
 #  reload rebinds and never restores.
 RELOADED_MODULES = (
-    "vistest.api.main",
-    "vistest.api.check",
-    "vistest.api.baselines",
-    "vistest.licensing",
+    "vistest_server.api.main",
+    "vistest_server.api.check",
+    "vistest_server.api.baselines",
+    "vistest_server.licensing",
 )
 
 #  Connection cache: thread-local sqlite handles. After a test its connections
 #  point at a `tmp_path` database that pytest is about to delete, so it is
 #  emptied rather than restored.
-_DB_MODULE = "vistest.api.db"
+_DB_MODULE = "vistest_server.api.db"
 
 
 @pytest.fixture(autouse=True)

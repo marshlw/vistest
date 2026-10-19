@@ -35,7 +35,7 @@ and by what.
 
 `FORBIDDEN_PACKAGES` is kept alongside it — the allowlist already implies them
 — for two reasons. A failure that names `fastapi` reads better than one that
-names a stray `vistest.api.main` several steps away from the cause. And those
+names a stray `vistest_server.api.main` several steps away from the cause. And those
 six names are the promise as it is written down for users, so they are worth
 asserting in the words the promise uses.
 
@@ -166,6 +166,6 @@ def test_the_allowlist_does_not_approve_the_whole_package():
     rule itself gets caught.
     """
     assert "vistest" not in ALLOWED_PACKAGES
-    assert _outside_the_allowlist(["vistest.service"]) == ["vistest.service"]
+    assert _outside_the_allowlist(["vistest_server.service"]) == ["vistest_server.service"]
     assert _outside_the_allowlist(["vistest", "vistest.models"]) == []
     assert _outside_the_allowlist(["vistest.core.comparator"]) == []

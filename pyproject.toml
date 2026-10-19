@@ -102,7 +102,15 @@ vistest = "vistest.pytest_plugin"
 # them when the repositories are split. After changing this table, reinstall
 # (`pip install -e .`): entry points are read from the installed metadata.
 [project.entry-points."vistest.plugins"]
-bundled-extensions = "vistest._extensions"
+bundled-extensions = "vistest_server._extensions"
+
+# The server's half of the pytest plugin and the server's commands, offered to
+# the library through entry points (o1): `vistest` never names `vistest_server`.
+[project.entry-points."vistest.pytest"]
+server = "vistest_server.pytest_entry:plugin"
+
+[project.entry-points."vistest.commands"]
+server = "vistest_server.cli:register"
 
 # One source of the version: `vistest/__init__.py`. setuptools reads the
 # assignment without importing the package (it is a plain string literal, keep
@@ -111,7 +119,7 @@ bundled-extensions = "vistest._extensions"
 version = { attr = "vistest.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["vistest*"]
+include = ["vistest*", "vistest_server*"]
 
 # Модель гейта регионов уезжает вместе с пакетом: полтора килобайта
 # коэффициентов, читаемых глазами. Без неё гейт молча выключается, и `pip
@@ -119,7 +127,8 @@ include = ["vistest*"]
 [tool.setuptools.package-data]
 # The canary font draws the renderer's fingerprint (vistest/library/canary.py);
 # `vistest bench` runs Playwright's comparator through bench/*.mjs.
-vistest = ["ai/*.json", "library/fonts/*", "bench/*.mjs"]
+vistest = ["library/fonts/*", "bench/*.mjs"]
+vistest_server = ["ai/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

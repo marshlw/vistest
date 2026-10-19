@@ -6,10 +6,12 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Оффлайн-отчёты: разбор прогона и накопленная статистика качества."""
+"""The offline report: one run, explained in one HTML file.
 
-from .evidence import collect_evidence, to_html, to_markdown, wilson
+Quality statistics over the history of runs, the PR comment and the CI
+decision are the server's.
+"""
+
 from .html import build_report, render_report
 
-__all__ = ["build_report", "render_report",
-           "collect_evidence", "to_markdown", "to_html", "wilson"]
+__all__ = ["build_report", "render_report"]
