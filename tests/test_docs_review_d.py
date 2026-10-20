@@ -73,7 +73,7 @@ def _code(text: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 def _code_flags() -> set[str]:
     flags = set()
-    for rel in ("vistest/pytest_plugin.py", "vistest_server/pytest_server.py"):
+    for rel in ("vistest/pytest_plugin.py", "server/vistest_server/pytest_server.py"):
         flags |= set(re.findall(r'addoption\(\s*"(--vistest-[a-z-]+)"', _read(rel)))
     return flags
 
@@ -81,7 +81,7 @@ def _code_flags() -> set[str]:
 def _code_commands() -> set[str]:
     """`compare`, `check`, … and the nested ones: `project add`, `baselines export`."""
     #  The library's commands and the server's (o1).
-    source = _read("vistest/cli.py") + _read("vistest_server/cli.py")
+    source = _read("vistest/cli.py") + _read("server/vistest_server/cli.py")
     parent = {"sub": "", "pr_sub": "project ", "u_sub": "user ", "bl_sub": "baselines "}
     found = set()
     for var, name in re.findall(r'(\w+)\.add_parser\(\s*"([\w-]+)"', source):

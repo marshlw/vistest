@@ -66,25 +66,12 @@ dependencies = [
 # working example. Unpinned for the same reason as Playwright: other people's
 # environments.
 browser = ["playwright>=1.47,<2", "pytest>=7.4", "pytest-playwright>=0.4"]
-# The server: the review interface, the API, the database. Renamed from
-# `service` in 0.2 — one word for one thing, and the library mode made the
-# distinction worth being exact about. `pip install "vistest[service]"` no
-# longer resolves; the new spelling is `vistest[server]`.
-server  = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
-           "requests>=2.31"]
-ai      = ["onnxruntime>=1.17"]
-# ldap3 — чистый Python: ни компилятора, ни системных библиотек, ставится
-# внутри закрытого контура. Без него вход через каталог просто выключен.
-ldap    = ["ldap3>=2.9"]
+# The allure attachments of a failed `expect_screenshot`, when the project
+# reports through allure. The server, its ONNX gate and its directory login are
+# another package, `vistest-server` (server/pyproject.toml; o1).
 report  = ["allure-pytest>=2.13"]
 dev     = ["pytest>=7.4", "pytest-cov", "pytest-xdist>=3.5", "ruff",
            "httpx>=0.27", "tomli>=2.0; python_version<'3.11'"]
-full    = [
-    "playwright>=1.47,<2", "pytest>=7.4", "pytest-playwright>=0.4",   # see `browser` above
-    "fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9",
-    "requests>=2.31", "pyyaml>=6.0",
-    "onnxruntime>=1.17", "allure-pytest>=2.13",
-]
 
 [project.urls]
 Homepage = "https://github.com/marshlw/vistest"
@@ -97,21 +84,6 @@ vistest = "vistest.cli:main"
 [project.entry-points.pytest11]
 vistest = "vistest.pytest_plugin"
 
-# Temporary. The extension modules still in this repository, registered through
-# the same door any installed plugin uses — see vistest/_extensions. Leaves with
-# them when the repositories are split. After changing this table, reinstall
-# (`pip install -e .`): entry points are read from the installed metadata.
-[project.entry-points."vistest.plugins"]
-bundled-extensions = "vistest_server._extensions"
-
-# The server's half of the pytest plugin and the server's commands, offered to
-# the library through entry points (o1): `vistest` never names `vistest_server`.
-[project.entry-points."vistest.pytest"]
-server = "vistest_server.pytest_entry:plugin"
-
-[project.entry-points."vistest.commands"]
-server = "vistest_server.cli:register"
-
 # One source of the version: `vistest/__init__.py`. setuptools reads the
 # assignment without importing the package (it is a plain string literal, keep
 # it one), so `pip install` and `vistest.__version__` cannot disagree.
@@ -119,16 +91,12 @@ server = "vistest_server.cli:register"
 version = { attr = "vistest.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["vistest*", "vistest_server*"]
+include = ["vistest", "vistest.*"]
 
-# Модель гейта регионов уезжает вместе с пакетом: полтора килобайта
-# коэффициентов, читаемых глазами. Без неё гейт молча выключается, и `pip
-# install vistest` дал бы движок слабее, чем из исходников.
 [tool.setuptools.package-data]
 # The canary font draws the renderer's fingerprint (vistest/library/canary.py);
 # `vistest bench` runs Playwright's comparator through bench/*.mjs.
 vistest = ["library/fonts/*", "bench/*.mjs"]
-vistest_server = ["ai/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

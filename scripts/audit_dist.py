@@ -35,15 +35,17 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-#: What the wheel must carry for the installed package to work.
+#: What the wheel must carry for the installed package to work. This is the
+#: library's archive, the one that goes to a public index; the server is a
+#: package of its own (server/, o1b) and is not in it.
 REQUIRED_IN_WHEEL = (
     "vistest/library/fonts/canary-sans.ttf",    # the renderer's fingerprint
     "vistest/bench/playwright_compare.mjs",     # `vistest bench`
-    "vistest_server/ai/region_gate.json",       # the region gate's model
-    "vistest_server/frontend/index.html",       # the review UI, `/ui/`
 )
-REQUIRED_GLOBS = (("vistest/bench/", ".mjs"), ("vistest_server/ai/", ".json"),
-                  ("vistest/library/fonts/", ""))
+REQUIRED_GLOBS = (("vistest/bench/", ".mjs"), ("vistest/library/fonts/", ""))
+
+#: The server's paths: in neither of the library's archives.
+SERVER_PATHS = re.compile(r"^(server|vistest_server|frontend)/")
 
 ENTRY_POINTS = (
     ("console_scripts", "vistest = vistest.cli:main"),
@@ -215,9 +217,13 @@ def main(argv=None) -> int:
             problems.append(f"wheel: {n}: a picture")
         if WHEEL_OUTSIDE.match(n):
             problems.append(f"wheel: {n}: outside the package")
+        if SERVER_PATHS.match(n):
+            problems.append(f"wheel: {n}: the server's")
     for n in sorted(sdist):
         if IMAGE.search(n):
             problems.append(f"sdist: {n}: a picture")
+        if SERVER_PATHS.match(n):
+            problems.append(f"sdist: {n}: the server's")
     problems += _scan("wheel", wheel, terms)
     problems += _scan("sdist", sdist, terms)
     if problems:

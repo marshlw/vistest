@@ -6,14 +6,15 @@
 # the trademark and commercial-licensing terms. Removing this header does not
 # remove those obligations.
 
-"""Run pytest or the CLI as if the `server` extra were not installed.
+"""Run pytest or the CLI as if the server were not installed.
 
-The test environment has `vistest[server]`, and a second venv per test is a
-minute each. A finder at the front of `sys.meta_path` makes the server's
-modules fail to import the way an absent package does — `import fastapi`
-raises ModuleNotFoundError, `importlib.util.find_spec` too — in a child
-process only. The clean venv with `vistest[browser]` alone is checked by hand
-for the review report.
+The test environment has `vistest-server` installed next to `vistest`, and a
+second venv per test is a minute each. Without the server there is no
+`vistest_server` to import and none of its entry points; so, in a child
+process only, a finder at the front of `sys.meta_path` makes the server's
+package (and its web stack) fail to import the way an absent one does, and
+`importlib.metadata.entry_points` stops listing what that package offers. The
+clean venv with `vistest[browser]` alone is checked by `scripts/check_install.py`.
 """
 
 from __future__ import annotations
@@ -23,11 +24,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-HIDDEN = ("fastapi", "uvicorn", "requests", "multipart", "python_multipart",
-          "starlette")
+HIDDEN = ("vistest_server", "fastapi", "uvicorn", "requests", "multipart",
+          "python_multipart", "starlette")
 
 _PRELUDE = f"""
 import sys
+import importlib.metadata as _metadata
 
 class _NoServer:
     def find_spec(self, name, path=None, target=None):
@@ -36,6 +38,15 @@ class _NoServer:
         return None
 
 sys.meta_path.insert(0, _NoServer())
+
+_entry_points = _metadata.entry_points
+
+def _without_the_server(**select):
+    found = _entry_points(**select)
+    return _metadata.EntryPoints(
+        e for e in found if e.value.split(".")[0] != "vistest_server")
+
+_metadata.entry_points = _without_the_server
 """
 
 

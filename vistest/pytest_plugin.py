@@ -26,7 +26,7 @@ it.
 The server's fixtures (`visual`, `visual_soft`) and flags (`--vistest-api`,
 `--vistest-perceptual`, `--vistest-fail-on`) are the server's
 (`vistest_server.pytest_server`), and this plugin registers them only when the
-`server` extra is installed.
+`vistest-server` package is installed.
 
 **Under `pytest -n` (xdist)** the work is split across processes and nothing is
 shared between them. Each worker writes its own artifacts and its own one-file

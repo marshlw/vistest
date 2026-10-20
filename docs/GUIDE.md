@@ -166,7 +166,7 @@ Two fixtures:
 
 The fixtures `visual`, `visual_soft` and the flags `--vistest-api`,
 `--vistest-perceptual`, `--vistest-fail-on` are the server's: they exist only
-with `pip install "vistest[server]"`.
+when the separate `vistest-server` package is installed.
 
 `pytest -n auto` is supported: every write goes through a temporary file and
 an atomic rename, there is no shared index and no lock, and the report is
@@ -696,8 +696,8 @@ The library's commands need no server:
 | `vistest bench [FOLDER]` | the engine on your own failures, against Playwright's comparator |
 | `vistest baselines export\|import` | move a set of baselines |
 
-`vistest --help` lists them apart from the server's; a server command without
-`vistest[server]` says what to install in one line and exits 2.
+`vistest --help` lists them apart from the server's. Without the server, a
+command that is not the library's says so in one line and exits 2.
 
 ### `vistest check`
 

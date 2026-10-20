@@ -5,7 +5,7 @@ failed.** One function, `expect_screenshot`, with the baselines in your
 repository and nothing running anywhere else. A check that fails names what
 changed — «recolored: #1f2937 → #4d5666», «block moved by +1 px along y» —
 instead of printing a percentage. A self-hosted server for teams is optional
-and described [below](#server-optional-vistestserver).
+and described [below](#server-optional-a-separate-package).
 
 *Читать по-русски: [README.ru.md](https://github.com/marshlw/vistest/blob/main/README.ru.md)*
 
@@ -315,11 +315,11 @@ The layout and the messages are the library's. Also in the library:
 
 ---
 
-# Server (optional, vistest[server])
+# Server (optional, a separate package)
 
 Everything below is the self-hosted service: a review interface, the history
-of runs, connected test suites, users and roles. It needs
-`pip install "vistest[server]"`; the library above does not.
+of runs, connected test suites, users and roles. It is a separate package,
+`vistest-server`; the library above does not need it.
 
 ## What it does
 
@@ -445,8 +445,8 @@ python run.py snap https://your-app.example.com/checkout
 
 ## Use in tests
 
-The `visual` fixture is the server mode's, and comes with `pip install
-"vistest[server]"` (examples in `docs/server/examples/`). A project without a
+The `visual` fixture is the server mode's, and comes with the server
+(examples in `docs/server/examples/`). A project without a
 server calls `expect_screenshot` — the top of this page.
 
 ```python
@@ -803,15 +803,15 @@ python run.py docker [up|test|down] run in a container
 `vistest` (or `python -m vistest.cli`) exposes the same commands plus `serve`
 and `user`, and `vistest --help` lists them in two groups: the library's —
 `compare`, `check`, `bench`, `doctor`, `baselines export|import` — and the
-server's, which need `pip install "vistest[server]"`. A server command without
-it says so in one line and exits 2.
+server's, which come with the separate `vistest-server` package. Without it, a
+command that is not the library's says so in one line and exits 2.
 
 ### Signing in through a corporate directory
 
 LDAP and Active Directory, configured in **Settings → Corporate directory**.
 
 ```bash
-pip install "vistest[ldap]"          # ldap3, pure Python, installs offline
+pip install "vistest-server[ldap]"   # ldap3, pure Python, installs offline
 VISTEST_LDAP_BIND_PASSWORD=…         # the service account password
 ```
 

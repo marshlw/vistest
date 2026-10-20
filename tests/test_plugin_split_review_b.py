@@ -10,7 +10,7 @@
 
 With `vistest` or `vistest[browser]` alone, `pytest --fixtures` and
 `pytest --help` show the library: `vistest`, `vistest_config`, and five
-flags. The server's fixtures and flags come with `vistest[server]`.
+flags. The server's fixtures and flags come with `vistest-server`.
 """
 
 from __future__ import annotations

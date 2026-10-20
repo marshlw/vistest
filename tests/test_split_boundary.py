@@ -65,7 +65,7 @@ def _names_the_server(path: Path) -> list[str]:
 
 def test_the_library_is_where_it_is_expected():
     assert len(_modules()) > 50
-    assert (ROOT / SERVER / "__init__.py").is_file()
+    assert (ROOT / "server" / SERVER / "__init__.py").is_file()
 
 
 @pytest.mark.parametrize("path", _modules(), ids=lambda p: str(p.relative_to(ROOT)))

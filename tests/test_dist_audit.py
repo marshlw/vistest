@@ -45,8 +45,6 @@ WHEEL_OK = {
     "vistest/__init__.py": b"x = 1\n",
     "vistest/library/fonts/canary-sans.ttf": b"\0ttf",
     "vistest/bench/playwright_compare.mjs": b"// mjs\n",
-    "vistest_server/ai/region_gate.json": b"{}",
-    "vistest_server/frontend/index.html": b"<html></html>",
     "vistest-1.dist-info/entry_points.txt": ENTRY,
 }
 SDIST_OK = {"LICENSE": b"l", "NOTICE": b"n", "README.md": b"r", "pyproject.toml": b"p"}
@@ -83,7 +81,17 @@ LEAKS = [
     ("vistest/keys/signing.pem", b"x", "key file"),
     ("vistest/frame.png", b"\x89PNG", "a picture"),
     ("tests/x.py", b"x = 1", "outside the package"),
+    ("vistest_server/api/main.py", b"x = 1", "the server's"),
+    ("vistest_server/frontend/index.html", b"<html></html>", "the server's"),
 ]
+
+
+@pytest.mark.parametrize("name", ["server/vistest_server/cli.py", "server/frontend/index.html",
+                                  "vistest_server/cli.py"])
+def test_the_server_is_not_in_the_librarys_sdist(tmp_path, capsys, name):
+    sdist = {**SDIST_OK, name: b"x = 1"}
+    assert audit.main([str(_dist(tmp_path, WHEEL_OK, sdist))]) == 1
+    assert "the server's" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("name, data, what", LEAKS)
@@ -144,6 +152,9 @@ def test_the_browser_extra_brings_what_the_readme_example_needs():
 
     extras = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8")
                            )["project"]["optional-dependencies"]
-    for name in ("browser", "full"):
-        names = {re.split(r"[<>=!~\[ ;]", d, maxsplit=1)[0].lower() for d in extras[name]}
-        assert {"playwright", "pytest", "pytest-playwright"} <= names, name
+    names = {re.split(r"[<>=!~\[ ;]", d, maxsplit=1)[0].lower() for d in extras["browser"]}
+    assert {"playwright", "pytest", "pytest-playwright"} <= names
+    #  The server's `full`, which the images install, takes the same extra.
+    server = tomllib.loads((ROOT / "server" / "pyproject.toml").read_text("utf-8")
+                           )["project"]["optional-dependencies"]
+    assert any(re.match(r"vistest\[[^\]]*\bbrowser\b", d) for d in server["full"])

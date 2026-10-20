@@ -59,7 +59,7 @@ FORBIDDEN_MODULES = (
 )
 
 
-def _pyproject() -> dict:
+def _pyproject(path: str = "pyproject.toml") -> dict:
     try:
         import tomllib
     except ImportError:  # Python 3.10 has no tomllib
@@ -69,7 +69,7 @@ def _pyproject() -> dict:
             pytest.fail(
                 "reading pyproject.toml needs tomllib (3.11+) or tomli. "
                 "Install the dev extra: pip install -e '.[dev]'")
-    return tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
+    return tomllib.loads((ROOT / path).read_text("utf-8"))
 
 
 def _dependencies() -> list[str]:
@@ -96,11 +96,16 @@ def test_the_base_install_declares_only_the_engine_dependencies():
         "ALLOWED_DEPENDENCIES in this test and say why in the commit.")
 
 
-def test_the_server_lives_in_its_own_extra():
+def test_the_server_lives_in_its_own_package():
+    """No extra of the library pulls in the web stack; the server's package
+    does (o1b: `vistest[server]` became `vistest-server`)."""
     extras = _pyproject()["project"]["optional-dependencies"]
-    assert "server" in extras
-    names = {_name_of(r) for r in extras["server"]}
-    assert {"fastapi", "uvicorn"} <= names
+    assert "server" not in extras and "full" not in extras
+    for name, reqs in extras.items():
+        assert not {"fastapi", "uvicorn"} & {_name_of(r) for r in reqs}, name
+    server = _pyproject("server/pyproject.toml")
+    names = {_name_of(r) for r in server["project"]["dependencies"]}
+    assert {"vistest", "fastapi", "uvicorn"} <= names
 
 
 def test_the_pytest_plugin_is_declared_as_an_entry_point():

@@ -5,7 +5,7 @@
 вашем репозитории, и больше ничего нигде не запущено. Упавшая проверка
 называет, что изменилось — «recolored: #1f2937 → #4d5666», «block moved by
 +1 px along y», — а не печатает процент. Сервер для команд необязателен и
-описан [ниже](#сервер-необязательно-vistestserver).
+описан [ниже](#сервер-необязательно-отдельный-пакет).
 
 *Read in English: [README.md](README.md)*
 
@@ -243,11 +243,11 @@ vistest check checkout.png shots/checkout.png --json
 
 ---
 
-# Сервер (необязательно, vistest[server])
+# Сервер (необязательно, отдельный пакет)
 
 Всё, что ниже, — сервис, который разворачивается у вас: интерфейс ревью,
-история прогонов, подключённые наборы тестов, пользователи и роли. Ему нужен
-`pip install "vistest[server]"`; библиотеке выше — нет.
+история прогонов, подключённые наборы тестов, пользователи и роли. Это
+отдельный пакет, `vistest-server`; библиотеке выше он не нужен.
 
 ## Что это
 
@@ -483,8 +483,8 @@ python run.py snap https://your-app.example.com/checkout
 
 ## Использование в тестах
 
-Фикстура `visual` — серверного режима и ставится с `pip install
-"vistest[server]"` (примеры в `docs/server/examples/`). Проект без сервера
+Фикстура `visual` — серверного режима и приходит вместе с сервером
+(примеры в `docs/server/examples/`). Проект без сервера
 вызывает `expect_screenshot` — начало этой страницы.
 
 ```python
@@ -836,15 +836,15 @@ python run.py docker [up|test|down] запуск в контейнере
 `vistest` (или `python -m vistest.cli`) даёт те же команды плюс `serve` и
 `user`, а `vistest --help` показывает их двумя группами: библиотечные —
 `compare`, `check`, `bench`, `doctor`, `baselines export|import` — и серверные,
-которым нужен `pip install "vistest[server]"`. Серверная команда без него
-говорит об этом одной строкой и выходит с кодом 2.
+которые приходят с отдельным пакетом `vistest-server`. Без него команда не
+из библиотеки говорит об этом одной строкой и выходит с кодом 2.
 
 ### Вход через корпоративный каталог
 
 LDAP и Active Directory, настраивается в **Settings → Corporate directory**.
 
 ```bash
-pip install "vistest[ldap]"          # ldap3, чистый Python, ставится офлайн
+pip install "vistest-server[ldap]"   # ldap3, чистый Python, ставится офлайн
 VISTEST_LDAP_BIND_PASSWORD=…         # пароль сервисного аккаунта
 ```
 
