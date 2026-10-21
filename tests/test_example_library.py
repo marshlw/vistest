@@ -93,7 +93,11 @@ def test_red_then_update_then_green_then_red_after_a_change(tmp_path, capsys, co
     try:
         check.example_outcomes(sys.executable, EXAMPLES, tmp_path / "project", env)
     except check.Failed as e:
-        if "Executable doesn't exist" in str(e):
+        #  No browser here. The message keeps the last 800 characters of the
+        #  run, and at 80 columns Playwright's box pushes its first line, the
+        #  one with «Executable doesn't exist», out of them; the box's own
+        #  «playwright install» stays.
+        if "Executable doesn't exist" in str(e) or "playwright install" in str(e):
             pytest.skip("no Chromium for Playwright on this machine")
         raise
     said = capsys.readouterr().out

@@ -109,7 +109,9 @@ def test_doctor_writes_no_escape_codes_into_a_pipe(tmp_path):
     done = _vistest("doctor", page.as_uri(), "--runs", "2", cwd=tmp_path,
                     env_extra={"NO_COLOR": "", "FORCE_COLOR": ""})
     out = done.stdout + done.stderr
-    if b"Executable doesn't exist" in out:
+    #  No browser here: Playwright's own words, or the library's hint, which
+    #  replaces them and always names the command (vistest.matrix.install_hint).
+    if b"Executable doesn't exist" in out or b"playwright install chromium" in out:
         pytest.skip("no Chromium for Playwright on this machine")
     assert b"suitable for visual testing" in done.stdout, out
     assert b"\033[" not in out
