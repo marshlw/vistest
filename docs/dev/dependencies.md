@@ -1,5 +1,7 @@
 # Dependencies: vulnerabilities and licences
 
+> Since o1b the extras `server`, `ai`, `ldap` and `full` are the `vistest-server` package's (`vistest-server[full]`, `./server[full]`); the record below is of the dev3 wheel, as it was audited.
+
 Plan item v4, taken on 2026-10-13 against the wheel of 0.2.0.dev3 (the one on
 TestPyPI). Each extra was installed into a fresh Python 3.11 environment, and
 the resolved set was frozen and checked. Repeat it before every release; the

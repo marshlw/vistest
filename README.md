@@ -730,7 +730,7 @@ python run.py docker test    # run the tests inside the container
 
 ```bash
 pytest tests/                           # invariants: noise must not fail, regressions must be caught
-pytest tests/api                        # API tests: auth, roles, invites, team
+python -m pytest server/tests/api       # API tests: auth, roles, invites, team (vistest-server)
 python tests/benchmark.py --artifacts   # noise / signal table plus images
 python tests/benchmark.py --regenerate  # redraw the frozen corpus (deliberately)
 

@@ -764,7 +764,7 @@ python run.py docker test    # прогнать тесты в контейнер
 
 ```bash
 pytest tests/                           # инварианты: шум не валит, регрессы находятся
-pytest tests/api                        # автотесты API: вход, роли, приглашения, команда
+python -m pytest server/tests/api       # автотесты API: вход, роли, приглашения, команда
 python tests/benchmark.py --artifacts   # таблица «шум / сигнал» + картинки
 python tests/benchmark.py --regenerate  # перерисовать замороженный корпус (осознанно)
 
