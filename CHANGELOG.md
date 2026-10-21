@@ -6,6 +6,12 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+### Security
+
+- **Pillow 13 is allowed** (`pillow>=10.0,<14`, was `<13`): Pillow 13.0.0
+  fixes the CVEs reported against 12.3.0. Pillow 13 needs Python 3.11 or
+  newer; on Python 3.10 pip still resolves Pillow 12.x.
+
 ### Breaking
 
 - **The server is a package of its own, `vistest-server`.** `vistest` is the

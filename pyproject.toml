@@ -49,7 +49,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.24,<3",
     "opencv-python-headless>=4.8,<6",
-    "pillow>=10.0,<13",
+    "pillow>=10.0,<14",
     "pyyaml>=6.0,<7",
 ]
 
