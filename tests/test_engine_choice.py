@@ -28,7 +28,6 @@ engines themselves (their own tests do that):
 from __future__ import annotations
 
 import ast
-import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -290,48 +289,6 @@ def test_every_layer_names_the_area_limit_too(tmp_path, monkeypatch):
         VisTestConfig.load(_yaml(tmp_path, "diff:\n  area_source: call\n"))
 
 
-def test_an_area_limit_saved_in_the_interface_is_named():
-    from vistest_server.api.thresholds import apply, env_for
-
-    class DB:
-        rows = {("global", ""): {"fail_severity": 30.0, "max_changed_area_pct": 1.0},
-                ("project", "acme"): {"max_changed_area_pct": 2.0}}
-
-        def query(self, _sql, args):
-            scope, key = args
-            return [{"name": k, "value": v} for k, v in self.rows.get((scope, key), {}).items()]
-
-    cfg = VisTestConfig()
-    acme = apply(cfg, DB(), "acme").diff
-    assert (acme.v2_area_limit, acme.v2_area_source) == (2, "project override")
-    assert acme.threshold_source == "global override"
-    other = apply(cfg, DB(), "other").diff
-    assert (other.v2_area_limit, other.v2_area_source) == (1, "global override")
-    env = env_for(DB(), "acme")
-    assert env["VISTEST_AREA_SOURCE"] == "project override"
-    assert env["VISTEST_THRESHOLD_SOURCE"] == "global override"
-
-
-def test_an_override_saved_in_the_interface_is_named():
-    """Saved before the switch, respected after it — and named, so a person
-    sees that the old number now lets something through."""
-    from vistest_server.api.thresholds import apply, env_for
-
-    class DB:
-        rows = {("global", ""): {"fail_severity": 30.0},
-                ("project", "acme"): {"fail_severity": 20.0}}
-
-        def query(self, _sql, args):
-            scope, key = args
-            return [{"name": k, "value": v} for k, v in self.rows.get((scope, key), {}).items()]
-
-    cfg = VisTestConfig()
-    assert apply(cfg, DB(), "acme").diff.threshold_source == "project override"
-    assert apply(cfg, DB(), "other").diff.threshold_source == "global override"
-    assert apply(cfg, DB(), "other").diff.fail_severity == 30
-    assert env_for(DB(), "acme")["VISTEST_THRESHOLD_SOURCE"] == "project override"
-
-
 # --------------------------------------------------------------------------- #
 #  The library: engine=, the message, the report
 # --------------------------------------------------------------------------- #
@@ -430,34 +387,3 @@ def test_the_area_limit_in_the_message_says_where_from_and_what_to_do(ctx):
     assert "area 1.40% / 0.15% (default)" in html and "area 1.40% / 5.00% (call)" in html
 
 
-def test_the_api_answer_carries_the_list(tmp_path, monkeypatch):
-    """`POST /api/check` answers with `to_dict()`: the threshold, what is below
-    it, and the line in the notes."""
-    from vistest_server.service import CheckService
-
-    monkeypatch.delenv("VISTEST_ENGINE", raising=False)
-    cfg = VisTestConfig()
-    cfg.paths = type(cfg.paths)(root=str(tmp_path))
-    svc = CheckService(cfg, platform="p", run_dir=tmp_path / "run")
-    a, b = _pair()
-    svc.check("page.png", a, render=False)
-    res = svc.check("page.png", b, render=False,
-                    diff_overrides={"fail_severity": 25})
-    body = json.loads(res.to_json())
-    assert body["threshold"]["source"] == "call" and len(body["below_threshold"]) == 1
-    assert (body["threshold"]["area_limit"], body["threshold"]["area_source"]) \
-        == (0.15, "default")
-    assert any(n.startswith("below the threshold 25 (call)") for n in body["notes"])
-    old = svc.check("page.png", b, render=False, diff_overrides={"engine": "v1"})
-    assert engines.V1_DEPRECATED in old.notes
-
-
-def test_the_api_takes_the_engine_as_an_option():
-    from fastapi import HTTPException
-
-    from vistest_server.api.check import _clean_overrides
-
-    assert _clean_overrides({"engine": "V1"}) == {"engine": "v1"}
-    with pytest.raises(HTTPException) as e:
-        _clean_overrides({"engine": "v3"})
-    assert "must be 'v1' or 'v2'" in str(e.value.detail)

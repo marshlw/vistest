@@ -66,28 +66,3 @@ def test_without_the_server_a_test_asking_for_visual_is_told_it_is_not_there(pro
     assert "fixture 'visual' not found" in done.stdout
 
 
-def test_with_the_server_its_flags_and_fixtures_are_there(project):
-    shown = _no_server.run("pytest", ["--help"], project, hide=False)
-    assert _flags(shown.stdout) == sorted(LIBRARY_FLAGS + SERVER_FLAGS)
-    listed = _no_server.run("pytest", ["--fixtures", "-v", "-p", "no:cacheprovider"],
-                            project, hide=False)
-    assert set(SERVER_FIXTURES) <= _fixtures(listed.stdout), listed.stdout
-
-
-def test_the_server_flags_set_what_their_help_says(project):
-    """--vistest-api and --vistest-perceptual were registered and read by nothing."""
-    (project / "test_x.py").write_text(
-        "def test_x(request, vistest_config):\n"
-        "    ctx = request.config._vistest_context\n"
-        "    print('SAID', vistest_config.service.api_url,\n"
-        "          vistest_config.ai.perceptual_enabled, ctx.plugins_config.fail_on)\n",
-        "utf-8")
-    done = _no_server.run("pytest", ["-q", "-s", "-p", "no:cacheprovider", "-p", "no:xdist",
-                                     "--vistest-api", "http://127.0.0.1:9",
-                                     "--vistest-perceptual", "--vistest-fail-on",
-                                     "confirmed"], project, hide=False)
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "SAID http://127.0.0.1:9 True confirmed" in done.stdout
-    #  The server's lines of the summary are the server plugin's now.
-    assert "vistest server" in done.stdout
-    assert "Review UI: http://127.0.0.1:9/" in done.stdout

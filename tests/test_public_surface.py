@@ -32,15 +32,11 @@ LIBRARY = {"expect_screenshot", "BaselineMissing", "ScreenshotMismatch",
            "Verdict", "compare"}
 
 #: Every name that was exported at the top before 0.2.0.dev3, and its module.
+#: The server's are listed by name only: this half of the suite does not
+#: import the server (o1c), and server/tests/test_public_surface_server.py
+#: checks that each of them is in the module the CHANGELOG names.
 MOVED = {
     "VisTestConfig": "vistest.config",
-    "VisualSession": "vistest_server.integrations",
-    "VisualTestCase": "vistest_server.integrations",
-    "visual_check": "vistest_server.integrations",
-    "visual_session": "vistest_server.integrations",
-    "VisualTester": "vistest_server.runner",
-    "VisualMismatch": "vistest_server.runner",
-    "CheckService": "vistest_server.service",
     "FileStore": "vistest.storage",
     "SnapshotKey": "vistest.storage",
     "SnapshotMeta": "vistest.storage",
@@ -48,6 +44,8 @@ MOVED = {
     "ChangeKind": "vistest.models",
     "DiffRegion": "vistest.models",
 }
+MOVED_TO_THE_SERVER = {"VisualSession", "VisualTestCase", "visual_check", "visual_session",
+                       "VisualTester", "VisualMismatch", "CheckService"}
 
 
 def test_the_top_of_the_package_is_the_library():
@@ -63,7 +61,8 @@ def test_every_library_name_resolves_and_capture_error_is_the_librarys():
     assert vistest.CaptureError is CaptureError
 
 
-@pytest.mark.parametrize("name, module", sorted(MOVED.items()))
+@pytest.mark.parametrize("name, module", sorted(MOVED.items())
+                         + sorted((name, None) for name in MOVED_TO_THE_SERVER))
 def test_a_name_that_left_the_top_says_in_one_line_where_it_is(name, module):
     with warnings.catch_warnings():
         warnings.simplefilter("error")          # no DeprecationWarning shim
@@ -71,14 +70,14 @@ def test_a_name_that_left_the_top_says_in_one_line_where_it_is(name, module):
             getattr(vistest, name)
     text = str(gone.value)
     assert "\n" not in text, text
-    if module.startswith("vistest_server."):
+    if module is None:
         #  The library does not name the server's modules (o1): it says whose
         #  the name is, and the server's package has it.
         assert "the server's, in the vistest-server package" in text, text
     else:
         assert f"from {module} import {name}" in text, text
-    #  ... and it is really there.
-    assert getattr(importlib.import_module(module), name) is not None
+        #  ... and it is really there.
+        assert getattr(importlib.import_module(module), name) is not None
     assert not hasattr(vistest, name)
     assert name not in dir(vistest)
 

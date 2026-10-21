@@ -18,8 +18,6 @@ plugin migrations cannot reach core tables, unknown config keys are kept.
 from __future__ import annotations
 
 import logging
-import sqlite3
-import sys
 from dataclasses import dataclass
 
 import numpy as np
@@ -31,7 +29,6 @@ from vistest.core.settings import ConfigError
 from vistest.models import ChangeKind, CompareResult, DiffRegion, Verdict
 from vistest.plugins import api, loader, runtime
 from vistest.plugins.registry import PluginRegistry
-from vistest_server.plugins import migrations
 
 
 # --------------------------------------------------------------------------- #
@@ -585,123 +582,6 @@ def test_empty_credentials_never_reach_the_provider():
 
     assert _auth(Spy(), secret="") is None
     assert called == []
-
-
-# --------------------------------------------------------------------------- #
-#  Migrations
-# --------------------------------------------------------------------------- #
-@pytest.fixture
-def core_db(tmp_path):
-    from vistest_server.api.db import Database
-
-    db = Database(tmp_path / "vistest.db")
-    yield db
-    db.close()
-
-
-def _plugin_with(steps, name="acme"):
-    reg = PluginRegistry()
-    with reg.registering(name):
-        reg.add_migrations(steps)
-    return reg
-
-
-def test_plugin_migrations_run_once_and_record_their_own_version(core_db):
-    core_version = core_db.schema_version()
-    reg = _plugin_with([
-        "CREATE TABLE ext_acme_notes (id INTEGER PRIMARY KEY, text TEXT)",
-        "CREATE INDEX ext_acme_ix ON ext_acme_notes(text)",
-    ])
-    assert migrations.apply_all(core_db.path, reg) == {"acme": 2}
-    assert migrations.apply_all(core_db.path, reg) == {"acme": 2}
-    assert migrations.version_of(core_db.path, "acme") == 2
-    assert core_db.schema_version() == core_version, "the core version is the core's"
-
-    handle = migrations.PluginDatabase(core_db.path, "acme")
-    handle.execute("INSERT INTO ext_acme_notes(text) VALUES (?)", ("hi",))
-    assert handle.query("SELECT text FROM ext_acme_notes") == [{"text": "hi"}]
-
-
-@pytest.mark.parametrize("statement", [
-    "ALTER TABLE region ADD COLUMN acme TEXT",
-    "CREATE INDEX ext_acme_ix ON user(login)",
-    "UPDATE user SET role='admin'",
-    "DELETE FROM audit",
-    "DROP TABLE run",
-    "CREATE TABLE ext_acme_x AS SELECT * FROM user",
-    "CREATE TABLE sneaky (id INTEGER)",
-    "CREATE TABLE ext_other_x (id INTEGER)",
-    "CREATE TRIGGER ext_acme_t AFTER INSERT ON user BEGIN SELECT 1; END",
-    "PRAGMA user_version = 99",
-    "ATTACH DATABASE ':memory:' AS other",
-])
-def test_plugin_migrations_cannot_touch_core_tables(core_db, statement, caplog):
-    reg = _plugin_with(["CREATE TABLE ext_acme_ok (id INTEGER)", statement])
-    with caplog.at_level(logging.WARNING, logger="vistest.plugins"):
-        outcome = migrations.apply_all(core_db.path, reg)
-    assert str(outcome["acme"]).startswith("failed")
-    #  All or nothing: the step that was allowed is rolled back with the rest.
-    assert migrations.version_of(core_db.path, "acme") == 0
-    tables = {r["name"] for r in core_db.query(
-        "SELECT name FROM sqlite_master WHERE type='table'")}
-    assert "ext_acme_ok" not in tables and "sneaky" not in tables
-    assert core_db.schema_version() > 0
-    assert "acme" not in {c["name"] for c in core_db.query("PRAGMA table_info(region)")}
-
-
-def test_the_plugin_handle_cannot_read_core_tables(core_db):
-    handle = migrations.PluginDatabase(core_db.path, "acme")
-    with pytest.raises(sqlite3.DatabaseError):
-        handle.query("SELECT password FROM user")
-
-
-def test_a_downgraded_plugin_does_not_migrate(core_db):
-    migrations.apply_all(core_db.path, _plugin_with(
-        ["CREATE TABLE ext_acme_a (id INTEGER)", "CREATE TABLE ext_acme_b (id INTEGER)"]))
-    outcome = migrations.apply_all(core_db.path, _plugin_with(
-        ["CREATE TABLE ext_acme_a (id INTEGER)"]))
-    assert "downgraded" in outcome["acme"]
-    assert migrations.version_of(core_db.path, "acme") == 2
-
-
-def test_one_plugins_failure_does_not_block_another(core_db):
-    reg = PluginRegistry()
-    with reg.registering("bad"):
-        reg.add_migrations(["DROP TABLE user"])
-    with reg.registering("good"):
-        reg.add_migrations(["CREATE TABLE ext_good_t (id INTEGER)"])
-    outcome = migrations.apply_all(core_db.path, reg)
-    assert outcome["good"] == 1 and outcome["bad"].startswith("failed")
-
-
-@pytest.mark.parametrize("none_clears", [True, False], ids=["py3.11+", "py3.10"])
-def test_after_a_plugins_steps_the_core_statements_are_allowed(core_db, monkeypatch,
-                                                                none_clears):
-    """The authorizer comes off before the version row and the COMMIT (or the
-    ROLLBACK). On 3.10 `set_authorizer(None)` does not clear it — None became
-    the callback and every statement after it was "not authorized" — so there
-    an authorizer that allows everything stands in. Both ways are run on any
-    Python the second can run on."""
-    if none_clears and sys.version_info < (3, 11):
-        pytest.skip("set_authorizer(None) clears the authorizer from Python 3.11")
-    monkeypatch.setattr(migrations, "_NONE_CLEARS", none_clears)
-    reg = PluginRegistry()
-    with reg.registering("broken"):
-        reg.add_migrations(["CREATE TABLE ext_broken_a (id INTEGER)",
-                            "CREATE TABLE ext_broken_a (id INTEGER)"])
-    with reg.registering("good"):
-        reg.add_migrations(["CREATE TABLE ext_good_t (id INTEGER)"])
-    outcome = migrations.apply_all(core_db.path, reg)
-    assert outcome["good"] == 1
-    assert migrations.version_of(core_db.path, "good") == 1
-    #  The step's own error, not a refused ROLLBACK in its place; and the
-    #  ROLLBACK did run: the first, valid step is gone.
-    assert outcome["broken"] == ("failed: OperationalError: "
-                                 "table ext_broken_a already exists"), outcome
-    assert migrations.version_of(core_db.path, "broken") == 0
-    tables = {r["name"] for r in core_db.query(
-        "SELECT name FROM sqlite_master WHERE type='table'")}
-    assert "ext_good_t" in tables and "ext_broken_a" not in tables
 
 
 # --------------------------------------------------------------------------- #

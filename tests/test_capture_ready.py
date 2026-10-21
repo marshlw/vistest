@@ -410,37 +410,6 @@ def test_a_network_step_at_its_limit_names_the_request_and_the_way_out():
     assert "capture.ignore_requests" in text
 
 
-def test_the_service_says_when_a_baseline_was_taken_an_older_way(tmp_path):
-    from vistest.config import VisTestConfig
-    from vistest.models import Verdict
-    from vistest_server.service import CheckService
-
-    from . import synthetic as syn
-
-    cfg = VisTestConfig.preset_of("balanced")
-    cfg.paths.root = str(tmp_path / ".vistest")
-    cfg.ai.attribution_enabled = False
-    svc = CheckService(cfg, platform="test-chromium-1x", run_dir=tmp_path / "run")
-    ours = {"capture_version": ready.CAPTURE_VERSION}
-    base = syn.page()
-    changed = syn.regress_button_removed(base)
-
-    svc.check("old.png", base, render=False)                    # no record: version 1
-    res = svc.check("old.png", changed, render=False, meta=ours)
-    assert res.verdict is Verdict.FAIL
-    assert any("taken the old way" in n for n in res.notes)
-    assert not any("taken the old way" in n
-                   for n in svc.check("old.png", changed, render=False).notes), \
-        "a picture from elsewhere is not compared by how it was taken"
-
-    svc.check("new.png", base, render=False, meta=ours)
-    res = svc.check("new.png", changed, render=False, meta=ours)
-    assert res.verdict is Verdict.FAIL
-    assert not any("taken the old way" in n for n in res.notes)
-    assert not any("taken the old way" in n
-                   for n in svc.check("old.png", base, render=False, meta=ours).notes)
-
-
 # --------------------------------------------------------------------------- #
 #  dev2: the quiet window is counted from the end of the last request
 # --------------------------------------------------------------------------- #
