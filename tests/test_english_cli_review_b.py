@@ -51,21 +51,11 @@ def test_no_string_a_person_sees_is_in_russian(module):
 
 
 def test_help_has_no_russian(capsys):
+    """The library's help; `snap --help` and `matrix --help` are the server's
+    commands, checked in server/tests/test_english_cli_review_b_server.py."""
     with pytest.raises(SystemExit):
         cli.main(["--help"])
-    for command in ("snap", "matrix"):
-        with pytest.raises(SystemExit):
-            cli.main([command, "--help"])
     assert not CYRILLIC.search(capsys.readouterr().out)
-
-
-def test_vistest_matrix_says_it_in_english(tmp_path, monkeypatch, capsys):
-    monkeypatch.chdir(tmp_path)
-    assert cli.main(["matrix"]) == 0
-    out = capsys.readouterr().out
-    assert out.startswith("No matrix is declared — one variant, as before.")
-    assert "1 variant:" in out and "Baselines: " in out
-    assert not CYRILLIC.search(out)
 
 
 def test_a_bad_window_size_in_vistest_yaml_is_said_in_english(tmp_path):

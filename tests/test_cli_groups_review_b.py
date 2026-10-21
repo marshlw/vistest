@@ -56,20 +56,6 @@ def no_server(monkeypatch):
     monkeypatch.setattr(cli, "_server_commands", lambda sub: None)
 
 
-def test_help_lists_the_library_first_and_then_the_server(capsys):
-    text = _help(capsys)
-    assert text.index("library:") < text.index("\nserver:\n")
-    assert _section(text, "library:") == LIBRARY
-    assert sorted(_section(text, "\nserver:\n")) == sorted(SERVER)
-    assert NOT_INSTALLED not in text
-
-
-def test_every_command_is_in_one_group_and_the_table_knows_them_all(capsys):
-    text = _help(capsys)
-    listed = _section(text, "library:") + _section(text, "\nserver:\n")
-    assert len(listed) == len(set(listed)) == len(LIBRARY) + len(SERVER)
-
-
 def test_help_without_the_server_says_so_in_one_line(no_server, capsys):
     text = _help(capsys)
     assert _section(text, "library:") == LIBRARY

@@ -6,7 +6,7 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 10644 lines in 216 files.
+# 10643 lines in 217 files.
 
 52	.github/workflows/ci.yml
 7	.vistest/secrets.env.example
@@ -104,6 +104,7 @@
 38	server/tests/test_baseline_scope.py
 20	server/tests/test_baseline_versions.py
 36	server/tests/test_branch_baselines.py
+35	server/tests/test_cli_ci.py
 31	server/tests/test_clients_java.py
 19	server/tests/test_clients_js.py
 18	server/tests/test_cluster.py
@@ -201,7 +202,7 @@
 55	tests/synthetic.py
 7	tests/test_backend_debts_library.py
 39	tests/test_benchmark.py
-55	tests/test_cli_ci.py
+19	tests/test_cli_ci_library.py
 31	tests/test_doctor.py
 24	tests/test_engine.py
 7	tests/test_engine_missing_library.py

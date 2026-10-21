@@ -114,27 +114,3 @@ def test_the_servers_options_need_a_server(project, capsys):
     assert err.startswith("vistest check: --frames is the server's — pass --api URL"), err
 
 
-def test_a_configured_server_gets_the_check(project, capsys, monkeypatch):
-    """VISTEST_API_URL (or service.api_url) sends it to the server, in its layout."""
-    import requests
-
-    seen = {}
-
-    class Answer:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"verdict": "pass", "name": "checkout.png", "passed": True,
-                    "metrics": {"max_severity": 0.0}}
-
-    def post(url, data, files, timeout):
-        seen["url"], seen["data"] = url, data
-        return Answer()
-
-    monkeypatch.setattr(requests, "post", post)
-    monkeypatch.setenv("VISTEST_API_URL", "http://127.0.0.1:9")
-    assert cli.main(["check", "checkout.png", "shot.png"]) == 0
-    assert seen["url"] == "http://127.0.0.1:9/api/check"
-    assert seen["data"]["name"] == "checkout.png"
-    assert not (project / "tests" / "__vistest__").exists()
