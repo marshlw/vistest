@@ -4,6 +4,24 @@ What changed for someone who uses VisTest, release by release, and what to
 change in your tests. Every decision, measurement and test behind it is in the
 development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/blob/main/docs/dev/journal.md).
 
+## Unreleased
+
+### Breaking
+
+- **The server is a package of its own, `vistest-server`.** `vistest` is the
+  library: the engine, `expect_screenshot`, the pytest plugin and the
+  library's commands. Its extras are `browser`, `report` and `dev`; `server`,
+  `full`, `ai` and `ldap` are gone from it and are `vistest-server`'s now.
+  - the library, as before: `pip install "vistest[browser]"`;
+  - the server, the review interface and its commands (`vistest serve`,
+    `gate`, `comment`, `snap`, `matrix`, …): `pip install vistest-server`,
+    with `vistest-server[ai]`, `[ldap]` or `[full]` for what those extras
+    brought; it installs the matching `vistest` itself;
+  - from a checkout: `pip install -e ".[browser,report]" -e "./server[full]"`.
+
+  Without the server, `vistest --help` says so in one line, and a server
+  command exits with code 2 and the same line.
+
 ## 0.2.0.dev3
 
 The library is ready to be shown to someone who has never seen it: its
