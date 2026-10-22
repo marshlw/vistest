@@ -16,7 +16,10 @@ from enum import Enum
 from typing import Any
 
 
-class ChangeKind(str, Enum):
+#  `(str, Enum)`, not `StrEnum` (ruff UP042 since py311): StrEnum changes what
+#  str() and an f-string print — "Verdict.FAIL" becomes "fail" — in messages
+#  and reports. Not a change to make in passing.
+class ChangeKind(str, Enum):  # noqa: UP042
     """Класс изменения региона. Порядок ~ по возрастанию подозрительности."""
 
     NOISE = "noise"              # отфильтровано (AA, нестабильность, perceptual gate)
@@ -30,7 +33,7 @@ class ChangeKind(str, Enum):
     CONTENT = "content"          # всё остальное
 
 
-class Verdict(str, Enum):
+class Verdict(str, Enum):  # noqa: UP042
     PASS = "pass"
     FAIL = "fail"
     NEW_BASELINE = "new_baseline"

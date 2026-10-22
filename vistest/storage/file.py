@@ -41,7 +41,7 @@ a set from here to an installation and back.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..core import pngio
@@ -127,7 +127,7 @@ class FileStore:
         width, height = pngio.dimensions(png, source=self.path_of(key))
         try:
             stamp = datetime.fromtimestamp(
-                self.path_of(key).stat().st_mtime, timezone.utc).isoformat()
+                self.path_of(key).stat().st_mtime, UTC).isoformat()
         except OSError:  # pragma: no cover - the file was just read
             stamp = ""
         return SnapshotMeta(version=1, width=width, height=height,
@@ -206,7 +206,7 @@ class FileStore:
 
         version = 1 if current is None else int((previous.version if previous
                                                  else 1) + (0 if unchanged else 1))
-        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        stamp = datetime.now(UTC).isoformat(timespec="seconds")
         from .. import __version__ as tool_version
 
         merged = (meta or previous or SnapshotMeta()).with_(

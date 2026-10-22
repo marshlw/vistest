@@ -60,15 +60,8 @@ FORBIDDEN_MODULES = (
 
 
 def _pyproject(path: str = "pyproject.toml") -> dict:
-    try:
-        import tomllib
-    except ImportError:  # Python 3.10 has no tomllib
-        try:
-            import tomli as tomllib
-        except ImportError:
-            pytest.fail(
-                "reading pyproject.toml needs tomllib (3.11+) or tomli. "
-                "Install the dev extra: pip install -e '.[dev]'")
+    import tomllib
+
     return tomllib.loads((ROOT / path).read_text("utf-8"))
 
 

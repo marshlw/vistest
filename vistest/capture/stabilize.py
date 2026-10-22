@@ -93,7 +93,7 @@ DEFAULT_FROZEN_TIME = "2024-01-01T12:00:00.000Z"
 def determinism_js(frozen_time: str = DEFAULT_FROZEN_TIME,
                    ticking: bool = True) -> str:
     """Скрипт детерминизма под конкретную точку отсчёта."""
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     text = (frozen_time or DEFAULT_FROZEN_TIME).replace("Z", "+00:00")
     try:
@@ -104,7 +104,7 @@ def determinism_js(frozen_time: str = DEFAULT_FROZEN_TIME,
             "(example: 2024-01-01T12:00:00Z)"
         ) from e
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
 
     return _DETERMINISM_TEMPLATE.format(
         origin=int(dt.timestamp() * 1000),

@@ -145,10 +145,7 @@ def test_the_version_is_written_once():
 
 def test_the_browser_extra_brings_what_the_readme_example_needs():
     """The README and `examples/` take `page` from pytest-playwright's fixture."""
-    try:
-        import tomllib
-    except ModuleNotFoundError:          # Python 3.10
-        import tomli as tomllib
+    import tomllib
 
     extras = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8")
                            )["project"]["optional-dependencies"]

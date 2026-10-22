@@ -273,12 +273,12 @@ def test_clock_ticks_from_fixed_origin():
 
 
 def test_frozen_time_is_configurable():
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     from vistest.capture import stabilize as stab
 
     moment = "2030-06-15T00:00:00Z"
-    expected = int(datetime(2030, 6, 15, tzinfo=timezone.utc).timestamp() * 1000)
+    expected = int(datetime(2030, 6, 15, tzinfo=UTC).timestamp() * 1000)
     assert f"const ORIGIN = {expected}" in stab.determinism_js(moment)
 
     with pytest.raises(ValueError, match="frozen_time"):

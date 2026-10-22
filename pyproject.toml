@@ -7,7 +7,7 @@ name = "vistest"
 dynamic = ["version"]
 description = "Precise visual regression testing: ΔE00 + SSIM + alignment + automatic noise suppression"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Kirill Kulagin" }]
@@ -112,7 +112,7 @@ filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
 line-length = 96
-target-version = "py310"
+target-version = "py311"
 src = [".", "server"]
 
 [tool.ruff.lint]

@@ -34,7 +34,7 @@ import os
 import shutil
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -242,7 +242,7 @@ class FileBaselineStore(BaselineStore):
                 "version": version,
                 "width": int(record.image.shape[1]),
                 "height": int(record.image.shape[0]),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
                 "ignore_boxes": record.ignore_boxes or prev_meta.get("ignore_boxes", []),
             }
             _write_atomic_text(
