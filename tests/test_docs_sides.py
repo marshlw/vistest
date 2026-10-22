@@ -219,6 +219,12 @@ def test_the_library_asks_for_python_3_11():
         assert not any(c.startswith("Programming Language :: Python :: 3.10")
                        for c in project.get("classifiers", [])), path
         assert _old_python(raw) == [], path
+        #  A marker for a Python below the minimum never applies: a dependency
+        #  behind one is dead (tomli for < 3.11 was, until o1i).
+        dead = [(op, minor) for op, minor
+                in re.findall(r"python_version\s*(<=?)\s*[\"']3\.(\d+)", raw)
+                if int(minor) < 11 or (op == "<" and int(minor) == 11)]
+        assert dead == [], path
 
 
 def test_the_changelog_says_3_10_is_gone_and_names_it_nowhere_else():
