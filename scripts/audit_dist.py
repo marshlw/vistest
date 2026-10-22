@@ -37,7 +37,7 @@ from pathlib import Path
 
 #: What the wheel must carry for the installed package to work. This is the
 #: library's archive, the one that goes to a public index; the server is a
-#: package of its own (server/, o1b) and is not in it.
+#: package of its own and is not in it.
 REQUIRED_IN_WHEEL = (
     "vistest/library/fonts/canary-sans.ttf",    # the renderer's fingerprint
     "vistest/bench/playwright_compare.mjs",     # `vistest bench`

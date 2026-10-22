@@ -1,20 +1,15 @@
 # What goes into the sdist on top of the `vistest` package.
 #
-# The docker images and the examples live outside the package, so setuptools
-# will not pick them up on its own. The review UI is the server's: it goes into
-# the server's archives (server/MANIFEST.in).
+# The examples and the tests live outside the package, so setuptools will not
+# pick them up on its own. Nothing of the server's is here: it is a package of
+# its own, with its own archives.
 
 include README.md README.ru.md
 include LICENSE NOTICE CONTRIBUTORS.md
-include vistest.yaml
-include run.py run.sh run.ps1
 #  What checks a build before it is uploaded; tests/test_dist_audit.py needs the first.
 include scripts/audit_dist.py scripts/check_install.py
 
-recursive-include docker *
-recursive-include clients *
 recursive-include examples *
-recursive-include docs/server/examples *.py
 recursive-include tests *.py
 
 # Never ship these
