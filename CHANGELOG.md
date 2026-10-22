@@ -21,6 +21,14 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
   On 3.10 pip now refuses the package with a message about `requires-python`
   instead of installing it.
 
+- **The images with a browser are on Playwright 1.56.0 and Ubuntu 24.04**
+  (`docker/Dockerfile.full`, `docker/Dockerfile.runner`, the team compose
+  file: `mcr.microsoft.com/playwright/python:v1.56.0-noble`, was
+  `v1.47.0-jammy`, whose Python is too old for VisTest now). A newer
+  Playwright brings a newer Chromium, which draws some pixels differently:
+  baselines taken in the old image (the `docker-chromium-…` platform key) are
+  to be taken again in the new one and looked at before they are accepted.
+
 - **The server is a package of its own, `vistest-server`.** `vistest` is the
   library: the engine, `expect_screenshot`, the pytest plugin and the
   library's commands. Its extras are `browser`, `report` and `dev`; `server`,
