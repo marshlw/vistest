@@ -2,8 +2,8 @@
 
 The library in full: `expect_screenshot`, its pytest plugin, the
 `vistest.yaml` keys it reads, the files it writes, and its commands. The
-[README](../README.md) is the short version. The self-hosted server has its own
-guide, in Russian: [docs/server/GUIDE.ru.md](server/GUIDE.ru.md).
+[README](../README.md) is the short version. There is also a server for teams —
+a commercial product.
 
 - [Install](#install)
 - [A first check](#a-first-check)
@@ -163,10 +163,6 @@ Two fixtures:
 - `vistest` — `expect_screenshot` itself, for a suite that would rather ask
   for a fixture (and override it in one place with its own defaults);
 - `vistest_config` — the loaded configuration of this run.
-
-The fixtures `visual`, `visual_soft` and the flags `--vistest-api`,
-`--vistest-perceptual`, `--vistest-fail-on` are the server's: they exist only
-when the separate `vistest-server` package is installed.
 
 `pytest -n auto` is supported: every write goes through a temporary file and
 an atomic rename, there is no shared index and no lock, and the report is
