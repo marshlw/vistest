@@ -10,9 +10,16 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 - **Pillow 13 is allowed** (`pillow>=10.0,<14`, was `<13`): Pillow 13.0.0
   fixes the CVEs reported against 12.3.0. Pillow 13 needs Python 3.11 or
-  newer; on Python 3.10 pip still resolves Pillow 12.x.
+  newer, and so does VisTest now (see Breaking).
 
 ### Breaking
+
+- **Python 3.11 or newer is required**, for `vistest` and `vistest-server`
+  alike (`requires-python = ">=3.11"`; 3.10 is no longer supported). The
+  reason is Pillow 13 and its security fixes: Pillow 13 does not install on
+  3.10, and there pip would have stayed on Pillow 12.x with the CVEs above.
+  On 3.10 pip now refuses the package with a message about `requires-python`
+  instead of installing it.
 
 - **The server is a package of its own, `vistest-server`.** `vistest` is the
   library: the engine, `expect_screenshot`, the pytest plugin and the

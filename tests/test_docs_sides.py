@@ -21,11 +21,17 @@ extra of the library that is gone, and no path of a test that moved. The
 audit of 13.10 (`docs/dev/dependencies.md`) is a record of the dev3 wheel and
 is not rewritten either: it carries one line on top that says the extras
 moved. And the contributing section says how to run the two halves.
+
+Since o1p2 the minimum is Python 3.11 (Pillow 13, which carries the security
+fixes, needs it). In the same places, in both `pyproject.toml` and in the
+changelog's Unreleased section, 3.10 is not named as a version that works.
+The changelog's sections of past releases are records, like the journal.
 """
 
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -132,3 +138,66 @@ def test_the_check_sees_what_it_is_meant_to():
             "python -m pytest server/tests/api/test_auth.py tests/apidoc.md\n"
             "pytest server/tests/test_wheel_ui.py tests/test_library.py\n")
     assert _old_spellings(good, moved) == []
+
+
+#  "Python 3.10", "Python ≥ 3.10", "3.10+", "3.10–3.14", ">=3.10", a CI matrix
+#  entry, ruff's py310 — but not "3.10%" in a table of numbers, and not
+#  "3.10 is no longer supported".
+_OLD_PYTHON = re.compile(
+    r"(?i)python\s*(?:≥|>=)?\s*3\.10(?![\d%])"
+    r"|(?<![\d.])3\.10\+"
+    r"|(?<![\d.])3\.10\s*[–-]\s*3\.\d+"
+    r"|>=\s*[\"']?3\.10(?!\d)"
+    r"|python-version:\s*[\"']?3\.10(?!\d)"
+    r"|\[[^\]\n]*[\"']3\.10[\"'][^\]\n]*\]"
+    r"|\b(?:py|cp)310\b")
+
+
+def _old_python(text: str) -> list[str]:
+    return [f"line {n}: {m.group(0)}" for n, line in enumerate(text.splitlines(), 1)
+            for m in _OLD_PYTHON.finditer(line)]
+
+
+def _unreleased(changelog: str) -> str:
+    """The changelog down to its first released version: what is still news."""
+    head, _, rest = changelog.partition("## Unreleased")
+    assert rest, "CHANGELOG.md has no Unreleased section"
+    return re.split(r"(?m)^## (?!#)", rest, maxsplit=1)[0]
+
+
+@pytest.mark.parametrize("path", _texts(), ids=lambda p: p.relative_to(ROOT).as_posix())
+def test_python_3_10_is_not_named_as_supported(path):
+    text = _read(path)
+    if text is None:
+        pytest.skip("not text")
+    assert _old_python(text) == []
+
+
+def test_both_packages_ask_for_python_3_11():
+    for path in ("pyproject.toml", "server/pyproject.toml"):
+        raw = (ROOT / path).read_text("utf-8")
+        project = tomllib.loads(raw)["project"]
+        assert project["requires-python"] == ">=3.11", path
+        assert not any(c.startswith("Programming Language :: Python :: 3.10")
+                       for c in project.get("classifiers", [])), path
+        assert _old_python(raw) == [], path
+
+
+def test_the_changelog_says_3_10_is_gone_and_names_it_nowhere_else():
+    unreleased = _unreleased((ROOT / "CHANGELOG.md").read_text("utf-8"))
+    assert _old_python(unreleased) == []
+    breaking = unreleased.split("### Breaking", 1)[1]
+    assert "Python 3.11" in breaking and "Pillow 13" in breaking
+
+
+def test_the_python_check_sees_what_it_is_meant_to():
+    bad = ("Python 3.10 or newer\n- Python 3.10+\nPython 3.10–3.14.\n"
+           "needs Python ≥ 3.10 and Node\nrequires-python = \">=3.10\"\n"
+           'python: ["3.10", "3.13"]\npython-version: "3.10"\n'
+           'target-version = "py310"\n')
+    assert len(_old_python(bad)) == 8, _old_python(bad)
+    good = ("Python 3.11 or newer\n- Python 3.11+\nPython 3.11–3.14.\n"
+            "  within one load    3.10%  animations\n"
+            "3.10 is no longer supported\nPillow 13.10.0\n"
+            'python: ["3.11", "3.13"]\nrequires-python = ">=3.11"\n')
+    assert _old_python(good) == [], _old_python(good)

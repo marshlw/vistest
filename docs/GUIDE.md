@@ -30,7 +30,7 @@ playwright install chromium
 ```
 
 `[browser]` installs Playwright and `pytest-playwright` (the `page` fixture);
-the second line downloads Chromium. Python 3.10–3.14. The package alone —
+the second line downloads Chromium. Python 3.11–3.14. The package alone —
 `pip install vistest` — compares pictures it is handed (PNG bytes, files,
 arrays) and needs no browser.
 

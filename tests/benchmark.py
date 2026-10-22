@@ -706,7 +706,7 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L += REPRO_COMMANDS
     L.append("```")
     L.append("")
-    L.append("Нужны Python ≥ 3.10 и Node.js ≥ 18; браузер для этой таблицы не "
+    L.append("Нужны Python ≥ 3.11 и Node.js ≥ 18; браузер для этой таблицы не "
              "нужен. `--no-timing` убирает единственное, что меняется от "
              "прогона к прогону: консольный вывод воспроизводится побайтно, "
              "а в этом файле от машины к машине меняются только дата и "

@@ -19,7 +19,7 @@ playwright install chromium
 ```
 
 `[browser]` brings Playwright and `pytest-playwright`, which gives your tests
-the `page` fixture; the second line downloads the browser. Python 3.10 or newer.
+the `page` fixture; the second line downloads the browser. Python 3.11 or newer.
 Without `[browser]` the package compares pictures you hand it and opens no
 browser.
 
@@ -368,7 +368,7 @@ re-captured.
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - For browser capture: Playwright 1.47 or newer 1.x and its Chromium build (installed by `setup`)
 - Optional: Docker, for reproducible cross-machine baselines
 
