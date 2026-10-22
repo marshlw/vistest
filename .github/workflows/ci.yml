@@ -4,14 +4,18 @@
 # другой вопрос. Здесь — то, без чего нельзя мержить: сходится ли код, проходят
 # ли тесты и поднимается ли интерфейс.
 #
+# Two packages, two halves of the suite (o1c). `library` installs `vistest`
+# alone — no vistest-server, no fastapi — and runs tests/: that is the
+# environment of everyone who installs the library from the index, and a test
+# that needs the server would fail there rather than pass by accident.
+# `server` installs both packages and runs server/tests/, the database
+# migrations across the previous version and the interface's screens in
+# jsdom. `audit` checks what both packages pull in, on its own.
+#
 # Запуск интерфейса стоит отдельным шагом не для симметрии. Его поломки не
 # ловятся чтением файлов: страница загружается, навигация рисуется, а первого
 # экрана нет — и выглядит это как повисший сервис. Пятнадцать секунд в jsdom
 # закрывают этот класс целиком.
-#
-# Там же гоняются клиенты для чужих наборов (npm-пакет и файл для JVM): в
-# питоновской работе нет ни node, ни java, и их проверки там пропускались бы —
-# то есть были бы зелёными, ничего не проверив.
 
 name: CI
 
@@ -28,12 +32,13 @@ jobs:
   # does not need the server: the core, the library, snapshot naming, the
   # warp and the frozen corpus.
   #
-  # Plus test_wheel_ui.py, which needs no [server] here: it builds the wheel
-  # from a copy of the sources and installs it with its `server` extra into a
-  # venv of its own, then starts `vistest serve` from an empty directory and
-  # asks for /ui/. That is the install a Windows user does, and the one place
-  # the wheel's Scripts\vistest.exe and its copy of the UI are exercised.
-  # It downloads the server's dependencies: about a minute.
+  # Plus server/tests/test_wheel_ui.py, which needs neither package installed
+  # here: it builds both wheels (the library's and the server's, server/) from
+  # a copy of the sources and installs them into a venv of its own, then
+  # starts `vistest serve` from an empty directory and asks for /ui/. That is
+  # the install a Windows user does, and the one place the wheel's
+  # Scripts\vistest.exe and its copy of the UI are exercised. It downloads the
+  # server's dependencies: about a minute.
   windows:
     runs-on: windows-latest
     strategy:
@@ -64,7 +69,9 @@ jobs:
           tests/test_naming.py
           tests/test_warp.py
           tests/test_corpus_frozen.py
-          tests/test_wheel_ui.py
+
+      - name: Both wheels on Windows
+        run: python -m pytest -q server/tests/test_wheel_ui.py
 
   # The job the comment above `dependencies` in pyproject.toml describes.
   # The base dependencies carry upper bounds by major version; this job
@@ -98,7 +105,11 @@ jobs:
           tests/test_naming.py
           tests/test_warp.py
           tests/test_corpus_frozen.py
-  python:
+
+  # The library, the way it is installed from the index: `vistest` with its
+  # extras and nothing of the server. tests/test_tests_boundary.py keeps the
+  # server out of tests/; this job is where its absence is real.
+  library:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -114,23 +125,146 @@ jobs:
           cache: pip
 
       - name: Install
-        # Без браузерных зависимостей: e2e исключены ниже, а всё остальное
-        # обходится ядром и сервисом.
-        run: pip install -e ".[server,dev]" numpy opencv-python-headless pillow
+        # Without the [browser] extra, as the job before the split ran: with
+        # Playwright installed and no browser downloaded, two tests whose
+        # "no Chromium here" check predates the library's install hint fail
+        # instead of skipping (report o1c). The library with its browser is
+        # what the Install check workflow checks (scripts/check_install.py).
+        run: pip install -e ".[report,dev]"
+
+      - name: The server is not here
+        run: |
+          python -c "import vistest_server" 2>/dev/null && exit 1
+          python -c "import fastapi" 2>/dev/null && exit 1
+          echo "no vistest_server, no fastapi"
 
       - name: Lint
-        run: ruff check vistest/ tests/
+        # The whole tree, the server's code included: ruff reads files and
+        # needs neither package installed (src = [".", "server"]).
+        run: ruff check vistest/ server/ tests/ docs/server/examples/
 
       - name: Tests
-        # e2e поднимают настоящий браузер и живут в отдельной работе ниже;
         # benchmark меряет скорость и в проверке мержа не участвует.
         run: >
           pytest tests/ -q
-          --ignore=tests/e2e
           --ignore=tests/test_benchmark.py
 
+  # The server, with the library it stands on. Everything that needs
+  # vistest-server is here: its tests, its database across versions and its
+  # interface in jsdom.
+  server:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The migrations step opens the previous commit as a worktree.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install
+        # [ai], not [full]: [full] brings Playwright, and with Playwright but
+        # no firefox the multi-browser tests answer "firefox is not installed"
+        # where they expect the run to go through (report o1c). The browsers
+        # are the e2e job's, which installs [full].
+        run: |
+          pip install -e ".[dev]" -e "./server[ai]"
+          npm install --no-save jsdom
+
+      - name: Tests
+        # e2e поднимают настоящий браузер и живут в отдельной работе ниже.
+        # The clients for foreign suites (npm and JVM) run here: this job has
+        # node, and java comes with the runner image.
+        run: >
+          python -m pytest server/tests/ -q
+          --ignore=server/tests/e2e
+
+      # Миграции на базе ПРОШЛОЙ версии.
+      #
+      # Схема догоняется списком `MIGRATIONS`, и до появления `PRAGMA user_version`
+      # проверить это было нечем: тесты всегда создают базу с нуля, то есть путь
+      # обновления не проходил вообще никогда. А ломается именно он — на
+      # инсталляции, которая работает полгода.
+      - name: База прошлого релиза открывается этим кодом
+        run: |
+          set -e
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-parse HEAD~1)
+          echo "Предыдущая версия: $PREV"
+          git worktree add /tmp/prev "$PREV"
+          # Базу создаёт СТАРЫЙ код — иначе мы бы снова проверяли создание с нуля.
+          # The old code may hold the server in either place (before o1a it is
+          # vistest.api, after it server/vistest_server), so both are on the
+          # path, the old name is tried first, and the module must come from
+          # /tmp/prev: otherwise the installed new server would answer, and the
+          # check would quietly compare the new code with itself.
+          PYTHONPATH=/tmp/prev:/tmp/prev/server python -c "
+          try:
+              from vistest.api.db import Database
+          except ImportError:
+              from vistest_server.api.db import Database
+          import sys; m = sys.modules[Database.__module__]
+          assert m.__file__.startswith('/tmp/prev/'), m.__file__
+          db = Database('/tmp/old.db')
+          db.execute(\"INSERT INTO project(name) VALUES('shop')\")
+          print('старая база создана', m.__file__)
+          "
+          # А открывает — новый, вместе с миграциями.
+          python -c "
+          from vistest_server.api.db import Database, SCHEMA_VERSION
+          db = Database('/tmp/old.db')
+          assert db.schema_version() == SCHEMA_VERSION, db.schema_version()
+          assert db.one(\"SELECT name FROM project WHERE name='shop'\")
+          print('миграции применились, данные на месте')
+          "
+
+      # Циклом, а не строкой на файл. Список по одному рос и отставал:
+      # экран добавляли, строку в CI забывали — и проверка, написанная ради
+      # него же, молча не гонялась. Каталог не забывает.
+      - name: Экраны интерфейса в jsdom
+        run: |
+          set -e
+          for f in server/tests/ui/*.mjs; do
+            echo "── $f"
+            node "$f" server/frontend
+          done
+
+  # Уязвимости в зависимостях обоих пакетов. Отдельной работой, а не шагом в
+  # основной: красный `pip-audit` — это «есть CVE», а не «код сломан», и
+  # смешивать эти два сигнала в одном статусе значит однажды перестать
+  # смотреть на оба. Audited in an environment of their own, so the list is
+  # what `vistest` and `vistest-server` pull in, not a job's test tools.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Известные уязвимости в зависимостях
+        run: |
+          python -m venv "$RUNNER_TEMP/audit-env"
+          "$RUNNER_TEMP/audit-env/bin/pip" install -c constraints-service.txt . ./server
+          # vistest and vistest-server are not on PyPI, and --strict fails on
+          # anything it cannot look up. Audit what they pull in, not the project.
+          "$RUNNER_TEMP/audit-env/bin/pip" freeze --exclude vistest --exclude vistest-server \
+            > "$RUNNER_TEMP/audit-reqs.txt"
+          pip install pip-audit
+          pip-audit --strict --desc --no-deps --disable-pip -r "$RUNNER_TEMP/audit-reqs.txt"
+
   # The English-only ratchet. A separate job, and for the same reason as the
-  # audit below: a red ratchet means somebody wrote a Russian comment, not that
+  # audit: a red ratchet means somebody wrote a Russian comment, not that
   # the code is broken, and one status for both is how you stop reading either.
   i18n:
     runs-on: ubuntu-latest
@@ -147,68 +281,6 @@ jobs:
       - name: No new Russian text
         run: python scripts/check_i18n.py
 
-  # Уязвимости в зависимостях. Отдельной работой, а не шагом в основной:
-  # красный `pip-audit` — это «есть CVE», а не «код сломан», и смешивать эти
-  # два сигнала в одном статусе значит однажды перестать смотреть на оба.
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install
-        run: |
-          pip install -c constraints-service.txt ".[server]"
-          # vistest itself is not on PyPI, and --strict fails on anything it
-          # cannot look up. Audit what the server pulls in, not the project.
-          pip freeze --exclude vistest > "$RUNNER_TEMP/audit-reqs.txt"
-          pip install pip-audit
-      - name: Известные уязвимости в зависимостях
-        run: pip-audit --strict --desc --no-deps --disable-pip -r "$RUNNER_TEMP/audit-reqs.txt"
-
-  # Миграции на базе ПРОШЛОЙ версии.
-  #
-  # Схема догоняется списком `MIGRATIONS`, и до появления `PRAGMA user_version`
-  # проверить это было нечем: тесты всегда создают базу с нуля, то есть путь
-  # обновления не проходил вообще никогда. А ломается именно он — на
-  # инсталляции, которая работает полгода.
-  migrations:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install
-        run: pip install -e ".[server,dev]" numpy opencv-python-headless pillow
-
-      - name: База прошлого релиза открывается этим кодом
-        run: |
-          set -e
-          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-parse HEAD~1)
-          echo "Предыдущая версия: $PREV"
-          git worktree add /tmp/prev "$PREV"
-          # Базу создаёт СТАРЫЙ код — иначе мы бы снова проверяли создание с нуля.
-          PYTHONPATH=/tmp/prev python -c "
-          from vistest.api.db import Database
-          db = Database('/tmp/old.db')
-          db.execute(\"INSERT INTO project(name) VALUES('shop')\")
-          print('старая база создана')
-          "
-          # А открывает — новый, вместе с миграциями.
-          python -c "
-          from vistest.api.db import Database, SCHEMA_VERSION
-          db = Database('/tmp/old.db')
-          assert db.schema_version() == SCHEMA_VERSION, db.schema_version()
-          assert db.one(\"SELECT name FROM project WHERE name='shop'\")
-          print('миграции применились, данные на месте')
-          "
-
   # Интерфейс в настоящем браузере. Тяжелее остального, поэтому отдельно и
   # только на pull request'ах: смысл этих тестов — поймать экран, который
   # перестал рисоваться, а такое приезжает именно с правками интерфейса.
@@ -223,10 +295,10 @@ jobs:
           cache: pip
       - name: Install
         run: |
-          pip install -e ".[full,dev]"
+          pip install -e ".[dev]" -e "./server[full]"
           python -m playwright install --with-deps chromium
       - name: Интерфейс в Chromium
-        run: pytest tests/e2e -q
+        run: python -m pytest server/tests/e2e -q
 
   # Образ должен собираться и подниматься. Проверка дешёвая, а ловит целый
   # класс поломок, которых не видно из исходников: не поехал файл в COPY,
@@ -251,42 +323,3 @@ jobs:
       - name: Логи
         if: always()
         run: docker logs vistest-ci || true
-
-  interface:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Install
-        run: |
-          pip install -e ".[dev]"
-          npm install --no-save jsdom
-
-      - name: Файлы интерфейса сходятся
-        run: pytest tests/test_frontend_modules.py tests/test_frontend_defaults.py -q
-
-      # Циклом, а не строкой на файл. Список по одному рос и отставал:
-      # экран добавляли, строку в CI забывали — и проверка, написанная ради
-      # него же, молча не гонялась. Каталог не забывает.
-      - name: Экраны интерфейса в jsdom
-        run: |
-          set -e
-          for f in tests/ui/*.mjs; do
-            echo "── $f"
-            node "$f" frontend
-          done
-
-      # Клиенты для чужих наборов проверяются здесь, а не в питоновской
-      # работе: там нет ни node, ни jsdom, и обе проверки просто пропускались
-      # бы — то есть выглядели бы зелёными, ничего не проверив.
-      - name: Клиенты для чужих наборов
-        run: pytest tests/test_clients_js.py tests/test_clients_java.py -q
