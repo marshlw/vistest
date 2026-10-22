@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.13"]
+        python: ["3.11", "3.13"]
     defaults:
       run:
         # Git Bash, so the globs below expand the same way they do on Linux.
@@ -114,8 +114,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Нижняя граница из pyproject (requires-python >= 3.10) и текущая.
-        python: ["3.10", "3.12"]
+        # Нижняя граница из pyproject (requires-python >= 3.11) и текущая.
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v5
 
@@ -157,7 +157,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.12"]
+        # The same two as `library`: the lower bound of requires-python and the current.
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v5
         with:

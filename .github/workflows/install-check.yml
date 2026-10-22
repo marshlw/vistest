@@ -8,7 +8,8 @@
 #  - job `testpypi` — installs vistest==<version> from TestPyPI (dependencies
 #                     from the real PyPI) and runs the script.
 #
-# Matrix: ubuntu / windows / macos × Python 3.10–3.13 = 12 runs per job.
+# Matrix: ubuntu / windows / macos × Python 3.11–3.14 = 12 runs per job.
+# 3.11 is the lower bound of requires-python (o1p2: Pillow 13 needs it).
 
 name: Install check
 
@@ -58,7 +59,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v5          # scripts/ and examples/: the wheel does not carry them
       - uses: actions/setup-python@v6
@@ -83,7 +84,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v5          # only for scripts/ and examples/
       - uses: actions/setup-python@v6
