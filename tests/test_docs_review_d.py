@@ -17,9 +17,10 @@ run in any environment the suite runs in.
 What is checked, in README.md, README.ru.md, docs/GUIDE.md and
 examples/vistest.yaml:
 
-* every `--vistest-*` flag exists in the pytest plugin or its server half;
+* every `--vistest-*` flag exists in the library's pytest plugin;
 * every `section.key` of vistest.yaml exists in the config;
-* every `vistest COMMAND` and `python -m vistest.cli COMMAND` exists in the CLI;
+* every `vistest COMMAND` and `python -m vistest.cli COMMAND` exists in the
+  library's CLI;
 * every key the library reads (`LIBRARY_READS`) is described in the guide;
 * the test the README shows is `examples/test_library.py`, line for line;
 * `engine=` of `vistest.compare` is not documented (phase 6 takes it away);
@@ -29,6 +30,13 @@ And every link between the repository's markdown files — relative, or
 absolute to this repository on GitHub — points to a file that exists and, with
 an anchor, to a heading that exists. The development journal is left out: it
 moved to docs/dev/ word for word, and its history is not rewritten.
+
+Since o1d2 this is the library's half, and it reads only the open repository
+(`tests/open_paths.py`): the documents are the open ones, the code side is the
+library's, and a link from an open document must lead to an open file — the
+server, its guide and its flags are not there for the reader to follow. The
+server's half — its flags and commands, `docs/server/`, the root
+`vistest.yaml` — is `server/tests/test_docs_review_d_server.py`.
 """
 
 from __future__ import annotations
@@ -39,6 +47,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from .open_paths import is_open
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ("README.md", "README.ru.md", "docs/GUIDE.md", "examples/vistest.yaml")
@@ -71,23 +81,28 @@ def _code(text: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 #  What the code has
 # --------------------------------------------------------------------------- #
+def _flags_in(source: str) -> set[str]:
+    return set(re.findall(r'addoption\(\s*"(--vistest-[a-z-]+)"', source))
+
+
 def _code_flags() -> set[str]:
-    flags = set()
-    for rel in ("vistest/pytest_plugin.py", "server/vistest_server/pytest_server.py"):
-        flags |= set(re.findall(r'addoption\(\s*"(--vistest-[a-z-]+)"', _read(rel)))
-    return flags
+    """The library's pytest plugin: the flags a reader of the open documents has."""
+    return _flags_in(_read("vistest/pytest_plugin.py"))
 
 
-def _code_commands() -> set[str]:
+def _commands_in(source: str) -> set[str]:
     """`compare`, `check`, … and the nested ones: `project add`, `baselines export`."""
-    #  The library's commands and the server's (o1).
-    source = _read("vistest/cli.py") + _read("server/vistest_server/cli.py")
     parent = {"sub": "", "pr_sub": "project ", "u_sub": "user ", "bl_sub": "baselines "}
     found = set()
     for var, name in re.findall(r'(\w+)\.add_parser\(\s*"([\w-]+)"', source):
         if var in parent:
             found.add(parent[var] + name)
     return found
+
+
+def _code_commands() -> set[str]:
+    """The library's CLI (o1: the server's commands come with its package)."""
+    return _commands_in(_read("vistest/cli.py"))
 
 
 def _config_keys() -> set[str]:
@@ -110,9 +125,9 @@ def _config_keys() -> set[str]:
 def test_the_code_side_is_read():
     """A regex that stopped matching the source would make every test below vacuous."""
     assert {"--vistest-update", "--vistest-baselines", "--vistest-platform",
-            "--vistest-report", "--vistest-config", "--vistest-api"} <= _code_flags()
+            "--vistest-report", "--vistest-config"} <= _code_flags()
     assert {"compare", "check", "bench", "doctor", "baselines export",
-            "baselines import", "project add", "user add", "serve"} <= _code_commands()
+            "baselines import"} <= _code_commands()
     assert {"diff.fail_severity", "capture.keep_pointer", "paths.root",
             "service.api_url"} <= _config_keys()
 
@@ -186,9 +201,13 @@ def test_every_key_of_the_example_config_is_read_by_the_library():
 
 @pytest.mark.parametrize("doc", DOCS[:3])
 def test_every_command_named_exists(doc):
-    commands = _code_commands()
+    missing = _commands_named(_read(doc)) - _code_commands()
+    assert not missing, f"{doc} names commands the CLI does not have: {sorted(missing)}"
+
+
+def _commands_named(text: str) -> set[str]:
     named = set()
-    for span in _code(_read(doc)):
+    for span in _code(text):
         for m in re.finditer(
                 r"(?:^|[\s(])(?<!from )(?:vistest|python -m vistest\.cli) ([a-z][a-z-]*)"
                 r"(?: ([a-z][a-z|-]*))?", span):
@@ -198,8 +217,7 @@ def test_every_command_named_exists(doc):
                     named.add(f"{top} {one}")
             else:
                 named.add(top)
-    missing = named - commands
-    assert not missing, f"{doc} names commands the CLI does not have: {sorted(missing)}"
+    return named
 
 
 def test_every_key_the_library_reads_is_in_the_guide():
@@ -233,8 +251,7 @@ def test_the_readme_test_is_the_example(doc):
     assert "expect_screenshot" in block
 
 
-@pytest.mark.parametrize("doc", [*DOCS, "CHANGELOG.md", "docs/server/GUIDE.ru.md",
-                                 "docs/server/LICENSING.md", ".gitlab-ci.example.yml"])
+@pytest.mark.parametrize("doc", [*DOCS, "CHANGELOG.md", ".gitlab-ci.example.yml"])
 def test_compare_engine_is_not_documented(doc):
     assert "engine=" not in _read(doc)
 
@@ -249,11 +266,6 @@ def test_the_ci_examples_pin_playwright_to_their_image():
     readme = _read("README.md")
     assert re.search(r"runs-on: ubuntu-\d\d\.\d\d\n", readme), "the runner's system is pinned"
     assert re.search(r'pip install "vistest\[browser\]" "playwright==\d+\.\d+\.\d+"', readme)
-
-
-def test_the_root_config_says_it_is_not_a_template():
-    first = _read("vistest.yaml").splitlines()[0]
-    assert first == "# not a template — for a project, start from examples/vistest.yaml"
 
 
 # --------------------------------------------------------------------------- #
@@ -286,13 +298,15 @@ def _markdown_files() -> list[str]:
     except (OSError, subprocess.CalledProcessError):
         listed = [str(p.relative_to(ROOT)) for p in ROOT.rglob("*.md")]
     skip = ("node_modules", "docs/dev/journal.md")
-    return [f for f in listed if not any(s in f for s in skip) and (ROOT / f).is_file()]
+    return [f for f in listed if not any(s in f for s in skip) and (ROOT / f).is_file()
+            and is_open(Path(f).as_posix())]
 
 
 def test_the_markdown_files_are_found():
     files = _markdown_files()
-    assert {"README.md", "README.ru.md", "docs/GUIDE.md",
-            "docs/server/GUIDE.ru.md"} <= set(files)
+    assert {"README.md", "README.ru.md", "docs/GUIDE.md", "docs/ARCHITECTURE.ru.md",
+            "CONTRIBUTORS.md"} <= set(files)
+    assert all(is_open(f) for f in files)
 
 
 @pytest.mark.parametrize("doc", _markdown_files())
@@ -312,6 +326,10 @@ def test_links_between_the_documents_lead_somewhere(doc):
         else:
             file, _, anchor = target.partition("#")
             where = (path.parent / file) if file else path
+        inside = where.resolve().is_relative_to(ROOT.resolve())
+        if inside and not is_open(where.resolve().relative_to(ROOT.resolve()).as_posix()):
+            broken.append(f"{target} (not in the open repository)")
+            continue
         if not where.exists():
             shown = where.relative_to(ROOT) if where.is_relative_to(ROOT) else where
             broken.append(f"{target} (no {shown})")

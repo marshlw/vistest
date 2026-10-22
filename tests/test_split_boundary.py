@@ -64,8 +64,11 @@ def _names_the_server(path: Path) -> list[str]:
 
 
 def test_the_library_is_where_it_is_expected():
+    #  That SERVER is the name the server's package really has — so the check
+    #  below looks for the right word — is asserted on the server's side,
+    #  server/tests/test_split_server.py: this half cannot see the package (o1d2).
     assert len(_modules()) > 50
-    assert (ROOT / "server" / SERVER / "__init__.py").is_file()
+    assert SERVER == "vistest_server"
 
 
 @pytest.mark.parametrize("path", _modules(), ids=lambda p: str(p.relative_to(ROOT)))

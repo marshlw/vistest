@@ -6,9 +6,9 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 10643 lines in 217 files.
+# 10615 lines in 216 files.
 
-52	.github/workflows/ci.yml
+43	.github/workflows/ci.yml
 7	.vistest/secrets.env.example
 1	README.md
 27	clients/cypress.mjs
@@ -202,7 +202,6 @@
 55	tests/synthetic.py
 7	tests/test_backend_debts_library.py
 39	tests/test_benchmark.py
-19	tests/test_cli_ci_library.py
 31	tests/test_doctor.py
 24	tests/test_engine.py
 7	tests/test_engine_missing_library.py

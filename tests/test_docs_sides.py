@@ -26,6 +26,14 @@ Since o1p2 the minimum is Python 3.11 (Pillow 13, which carries the security
 fixes, needs it). In the same places, in both `pyproject.toml` and in the
 changelog's Unreleased section, 3.10 is not named as a version that works.
 The changelog's sections of past releases are records, like the journal.
+
+Since o1d2 this file is the library's half of these checks and reads only the
+open repository (`tests/open_paths.py`): its READMEs, docs, examples and
+scripts. The server's half — the launchers, `docker/`, `deploy/`,
+`docs/server/`, the server's `pyproject.toml`, and the paths of the tests that
+moved, which only the server's side can list — is
+`server/tests/test_docs_sides_server.py`. The open documents do not name the
+server's tests at all, moved or not: they name no `server/` path.
 """
 
 from __future__ import annotations
@@ -36,12 +44,20 @@ from pathlib import Path
 
 import pytest
 
+from .open_paths import is_open
+
 ROOT = Path(__file__).resolve().parents[1]
 
-PLACES = ["README.md", "README.ru.md", "CONTRIBUTORS.md", "run.py", "run.ps1", "run.sh",
-          "docs", "examples", "scripts", "docker", "deploy"]
+#  What a person reads or runs, of the open repository; a directory is read
+#  file by file, the open files only.
+PLACES = ["README.md", "README.ru.md", "CONTRIBUTORS.md", "docs", "examples", "scripts"]
 #  Records, left as they were written.
 RECORDS = {"docs/dev/journal.md", "docs/dev/dependencies.md"}
+#  Not a text a person reads: the ledger of `scripts/check_i18n.py` lists every
+#  file with Russian text in it, the server's included, until the open
+#  repository's first commit rewrites it (`check_i18n.py --update`, o1e). The
+#  gone extras are still checked in it here, the moved test paths in server/tests.
+LEDGERS = {"scripts/i18n_debt.txt"}
 GONE_EXTRAS = ("server", "full", "ai", "ldap")
 
 #  `vistest[server]`, `vistest[browser,full]` — but not `vistest-server[full]`.
@@ -50,17 +66,6 @@ _LIBRARY_EXTRA = re.compile(
 #  `".[server,dev]"`, `.[full]` — but not `./server[full]`.
 _LOCAL_EXTRA = re.compile(
     r"(?<![\w/.])\.\[[^\]\n]*\b(" + "|".join(GONE_EXTRAS) + r")\b[^\]\n]*\]")
-
-
-def _moved_tests() -> list[str]:
-    """Paths under tests/ that are server/tests/ now: the four directories, and
-    every file of server/tests that has no namesake left in tests/."""
-    server = ROOT / "server" / "tests"
-    dirs = [f"tests/{d.name}" for d in sorted(server.iterdir())
-            if d.is_dir() and d.name != "__pycache__"]
-    files = [f"tests/{p.name}" for p in sorted(server.glob("test_*.py"))
-             if not (ROOT / "tests" / p.name).exists()]
-    return dirs + files
 
 
 def _texts() -> list[Path]:
@@ -72,7 +77,8 @@ def _texts() -> list[Path]:
         elif path.is_dir():
             out += [p for p in sorted(path.rglob("*")) if p.is_file()
                     and "__pycache__" not in p.parts and "node_modules" not in p.parts]
-    return [p for p in out if p.relative_to(ROOT).as_posix() not in RECORDS]
+    return [p for p in out if p.relative_to(ROOT).as_posix() not in RECORDS
+            and is_open(p.relative_to(ROOT).as_posix())]
 
 
 def _read(path: Path) -> str | None:
@@ -80,6 +86,17 @@ def _read(path: Path) -> str | None:
         return path.read_text("utf-8")
     except (UnicodeDecodeError, OSError):
         return None
+
+
+#  A path of the server's half: `server/tests/api`, `./server[full]`,
+#  `server/pyproject.toml`, `docs/server/GUIDE.ru.md`. The open documents name
+#  none — the reader has no such directory.
+_SERVER_PATH = re.compile(r"(?<![\w-])(?:\./)?(?:docs/)?server(?:/|\[)")
+
+
+def _server_paths(text: str) -> list[str]:
+    return [f"line {n}: {m.group(0)}…" for n, line in enumerate(text.splitlines(), 1)
+            for m in _SERVER_PATH.finditer(line)]
 
 
 def _old_spellings(text: str, moved: list[str]) -> list[str]:
@@ -95,18 +112,24 @@ def _old_spellings(text: str, moved: list[str]) -> list[str]:
 
 
 def test_the_places_are_where_they_are_expected():
-    assert len(_texts()) > 30
-    moved = _moved_tests()
-    assert "tests/api" in moved and "tests/test_wheel_ui.py" in moved
-    assert "tests/test_naming.py" not in moved        # split: both halves exist
+    texts = {p.relative_to(ROOT).as_posix() for p in _texts()}
+    #  Over 30 before o1d2, with the launchers, docker/ and docs/server/ in it.
+    assert len(texts) > 20
+    assert {"README.md", "docs/GUIDE.md", "scripts/check_install.py"} <= texts
+    assert all(is_open(t) for t in texts)
 
 
 @pytest.mark.parametrize("path", _texts(), ids=lambda p: p.relative_to(ROOT).as_posix())
-def test_no_gone_extra_and_no_moved_test_path(path):
+def test_no_gone_extra_and_no_server_path(path):
+    """No extra of the library that is gone (o1b), and no path of the server's
+    half — which covers every test path that moved to server/tests (o1c) and
+    every other: in the open repository there is no `server/` to point at."""
     text = _read(path)
     if text is None:
         pytest.skip("not text")
-    assert _old_spellings(text, _moved_tests()) == []
+    assert _old_spellings(text, []) == []
+    if path.relative_to(ROOT).as_posix() not in LEDGERS:
+        assert _server_paths(text) == []
 
 
 def test_the_audit_record_says_the_extras_moved():
@@ -114,12 +137,26 @@ def test_the_audit_record_says_the_extras_moved():
     assert any("vistest-server" in line and "extras" in line for line in head), head
 
 
-def test_the_contributing_section_says_how_to_run_both_halves():
+def test_the_contributing_section_says_how_to_run_the_suite():
+    """The library's half, in the environment its users have. The server's half
+    is said in the server's own contributing notes (server/tests checks them)."""
     text = (ROOT / "CONTRIBUTORS.md").read_text("utf-8")
     assert 'pip install -e ".[browser,report,dev]"' in text
     assert "python -m pytest tests" in text
-    assert 'pip install -e ".[dev]" -e "./server[full]"' in text
-    assert "python -m pytest server/tests" in text
+    assert "ruff check vistest/ tests/" in text
+
+
+def test_the_server_path_check_sees_what_it_is_meant_to():
+    bad = ('pip install -e ".[dev]" -e "./server[full]"\n'
+           "python -m pytest server/tests -n auto\n"
+           "see docs/server/GUIDE.ru.md\n"
+           "ruff check vistest/ server/ tests/\n")
+    assert len(_server_paths(bad)) == 4, _server_paths(bad)
+    good = ('pip install "vistest[browser]"\n'
+            "a server for teams — a commercial product\n"
+            "the vistest-server/ package, VISTEST_SERVER/x, vistest_server\n"
+            "python -m pytest tests -n auto\n")
+    assert _server_paths(good) == [], _server_paths(good)
 
 
 def test_the_check_sees_what_it_is_meant_to():
@@ -173,8 +210,9 @@ def test_python_3_10_is_not_named_as_supported(path):
     assert _old_python(text) == []
 
 
-def test_both_packages_ask_for_python_3_11():
-    for path in ("pyproject.toml", "server/pyproject.toml"):
+def test_the_library_asks_for_python_3_11():
+    """The server's `pyproject.toml` is held to the same in server/tests."""
+    for path in ("pyproject.toml",):
         raw = (ROOT / path).read_text("utf-8")
         project = tomllib.loads(raw)["project"]
         assert project["requires-python"] == ">=3.11", path

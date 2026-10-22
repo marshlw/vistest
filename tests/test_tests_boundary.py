@@ -78,8 +78,11 @@ def _imports_the_server(path: Path) -> list[str]:
 
 
 def test_the_library_tests_are_where_they_are_expected():
+    #  That the server's tests are elsewhere, in server/tests/, and that SERVER
+    #  names their package, is asserted on the server's side,
+    #  server/tests/test_split_server.py (o1d2).
     assert len(_files()) > 50
-    assert (ROOT / "server" / "tests" / "conftest.py").is_file()
+    assert SERVER == "vistest_server"
 
 
 @pytest.mark.parametrize("path", _files(), ids=lambda p: str(p.relative_to(ROOT)))

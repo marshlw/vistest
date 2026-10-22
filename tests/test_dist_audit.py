@@ -151,7 +151,5 @@ def test_the_browser_extra_brings_what_the_readme_example_needs():
                            )["project"]["optional-dependencies"]
     names = {re.split(r"[<>=!~\[ ;]", d, maxsplit=1)[0].lower() for d in extras["browser"]}
     assert {"playwright", "pytest", "pytest-playwright"} <= names
-    #  The server's `full`, which the images install, takes the same extra.
-    server = tomllib.loads((ROOT / "server" / "pyproject.toml").read_text("utf-8")
-                           )["project"]["optional-dependencies"]
-    assert any(re.match(r"vistest\[[^\]]*\bbrowser\b", d) for d in server["full"])
+    #  The server's `full`, which the images install, takes the same extra:
+    #  checked on its side, server/tests/test_split_server.py (o1d2).

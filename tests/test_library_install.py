@@ -90,15 +90,13 @@ def test_the_base_install_declares_only_the_engine_dependencies():
 
 
 def test_the_server_lives_in_its_own_package():
-    """No extra of the library pulls in the web stack; the server's package
-    does (o1b: `vistest[server]` became `vistest-server`)."""
+    """No extra of the library pulls in the web stack (o1b: `vistest[server]`
+    became `vistest-server`). That the server's package does is checked on its
+    side, server/tests/test_split_server.py (o1d2)."""
     extras = _pyproject()["project"]["optional-dependencies"]
     assert "server" not in extras and "full" not in extras
     for name, reqs in extras.items():
         assert not {"fastapi", "uvicorn"} & {_name_of(r) for r in reqs}, name
-    server = _pyproject("server/pyproject.toml")
-    names = {_name_of(r) for r in server["project"]["dependencies"]}
-    assert {"vistest", "fastapi", "uvicorn"} <= names
 
 
 def test_the_pytest_plugin_is_declared_as_an_entry_point():
