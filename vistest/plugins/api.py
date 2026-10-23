@@ -1,10 +1,10 @@
-# VisTest - self-hosted visual regression testing.
-# Copyright (C) 2026 Kirill Kulagin
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# VisTest - visual regression testing for Python and Playwright.
+# Copyright 2026 Kirill Kulagin
+# SPDX-License-Identifier: Apache-2.0
 #
-# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
-# the trademark and commercial-licensing terms. Removing this header does not
-# remove those obligations.
+# This file is part of VisTest, licensed under the Apache License, Version 2.0.
+# You may not use it except in compliance with the License. See LICENSE for
+# the terms and NOTICE for attribution and the trademark.
 
 """The public plugin contract. Version 1.
 

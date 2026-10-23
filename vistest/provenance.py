@@ -1,10 +1,10 @@
-# VisTest - self-hosted visual regression testing.
-# Copyright (C) 2026 Kirill Kulagin
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# VisTest - visual regression testing for Python and Playwright.
+# Copyright 2026 Kirill Kulagin
+# SPDX-License-Identifier: Apache-2.0
 #
-# This file is part of VisTest. See LICENSE for the full terms and NOTICE for
-# the trademark and commercial-licensing terms. Removing this header does not
-# remove those obligations.
+# This file is part of VisTest, licensed under the Apache License, Version 2.0.
+# You may not use it except in compliance with the License. See LICENSE for
+# the terms and NOTICE for attribution and the trademark.
 
 """Provenance markers.
 
@@ -13,12 +13,12 @@ comments, JSON artifacts -- carries a line saying what produced it and under
 which licence.
 
 What this is for, stated plainly: it does not stop anyone from copying the
-code. AGPL section 13 and the trademark terms in NOTICE are what actually
-constrain a fork; this module only makes the origin of an artifact checkable
-after the fact. If someone rebrands VisTest and ships it, the reports their
-build produces will still carry `MARK` unless they went and removed it -- and
-having removed it is itself a deliberate act, which is a very different thing
-to argue about than a coincidence.
+code -- the Apache License allows that. The license's attribution terms
+(keep LICENSE and NOTICE) and the trademark note in NOTICE are what a fork has
+to respect; this module only makes the origin of an artifact checkable after
+the fact. If someone rebrands VisTest and ships it, the reports their build
+produces will still carry `MARK` unless they went and removed it -- and having
+removed it is itself a deliberate act.
 
 Nothing here calls home. There is no telemetry, no identifier tied to the
 machine, no network access. The marker is a constant compiled into the source.
@@ -30,8 +30,8 @@ import hashlib
 
 PROJECT = "VisTest"
 AUTHOR = "Kirill Kulagin"
-LICENSE = "AGPL-3.0-or-later"
-HOMEPAGE = "https://github.com/marshlw/visual-testing"
+LICENSE = "Apache-2.0"
+HOMEPAGE = "https://github.com/marshlw/vistest"
 
 #: Stable provenance identifier. Derived once, from constants only, so that it
 #: is identical in every build and greppable in any artifact that came out of

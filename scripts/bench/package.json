@@ -2,7 +2,7 @@
   "name": "vistest-bench-native",
   "private": true,
   "description": "Pinned third-party tools for tests/benchmark.py --native. Installed with `npm ci --prefix scripts/bench`; nothing here is configured, every tool runs with its own defaults.",
-  "license": "AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18"
   },
