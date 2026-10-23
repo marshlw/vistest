@@ -204,7 +204,11 @@ def test_frames_and_time_to_stability_go_into_the_report_row(ctx):
     accept(ctx, page)
     captured = rows(ctx)[-1]["capture"]
     assert captured["frames"] == 4 and captured["stable"] is True
-    assert captured["elapsed_ms"] >= 350 and captured["timeout_ms"] == 5000
+    #  The pauses before frames 2, 3 and 4 are 0 + 100 + 250 = 350 ms of real
+    #  sleep. On Windows a sleep may wake up to one timer tick (~15.6 ms)
+    #  early against the monotonic clock: CI there measured 344. The row
+    #  must carry the time the loop took, not beat the OS clock.
+    assert captured["elapsed_ms"] >= 350 - 20 and captured["timeout_ms"] == 5000
     assert captured["scale"] == "css"
 
 
