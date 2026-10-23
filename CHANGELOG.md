@@ -6,6 +6,14 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+### License
+
+- **VisTest is licensed under Apache-2.0** from this release on (was
+  AGPL-3.0-or-later). You can use, change and ship it in open or closed code;
+  keep LICENSE and NOTICE with what you distribute. The versions already
+  published (0.2.0.dev1–0.2.0.dev3 on TestPyPI) stay under AGPL-3.0-or-later,
+  as they were published.
+
 ### Security
 
 - **Pillow 13 is allowed** (`pillow>=10.0,<14`, was `<13`): Pillow 13.0.0
@@ -14,31 +22,19 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ### Breaking
 
-- **Python 3.11 or newer is required**, for `vistest` and `vistest-server`
-  alike (`requires-python = ">=3.11"`; 3.10 is no longer supported). The
-  reason is Pillow 13 and its security fixes: Pillow 13 does not install on
+- **Python 3.11 or newer is required** (`requires-python = ">=3.11"`; 3.10
+  is no longer supported). The reason is Pillow 13 and its security fixes: Pillow 13 does not install on
   3.10, and there pip would have stayed on Pillow 12.x with the CVEs above.
   On 3.10 pip now refuses the package with a message about `requires-python`
   instead of installing it.
 
-- **The images with a browser are on Playwright 1.56.0 and Ubuntu 24.04**
-  (`docker/Dockerfile.full`, `docker/Dockerfile.runner`, the team compose
-  file: `mcr.microsoft.com/playwright/python:v1.56.0-noble`, was
-  `v1.47.0-jammy`, whose Python is too old for VisTest now). A newer
-  Playwright brings a newer Chromium, which draws some pixels differently:
-  baselines taken in the old image (the `docker-chromium-…` platform key) are
-  to be taken again in the new one and looked at before they are accepted.
-
-- **The server is a package of its own, `vistest-server`.** `vistest` is the
-  library: the engine, `expect_screenshot`, the pytest plugin and the
-  library's commands. Its extras are `browser`, `report` and `dev`; `server`,
-  `full`, `ai` and `ldap` are gone from it and are `vistest-server`'s now.
+- **The server is a separate product, `vistest-server`**, under a commercial
+  license, outside this repository. `vistest` is the library: the engine,
+  `expect_screenshot`, the pytest plugin and the library's commands. Its
+  extras are `browser`, `report` and `dev`; `server`, `full`, `ai` and `ldap`
+  are gone from it.
   - the library, as before: `pip install "vistest[browser]"`;
-  - the server, the review interface and its commands (`vistest serve`,
-    `gate`, `comment`, `snap`, `matrix`, …): `pip install vistest-server`,
-    with `vistest-server[ai]`, `[ldap]` or `[full]` for what those extras
-    brought; it installs the matching `vistest` itself;
-  - from a checkout: `pip install -e ".[browser,report]" -e "./server[full]"`.
+  - from a checkout: `pip install -e ".[browser,report,dev]"`.
 
   Without the server, `vistest --help` says so in one line, and a server
   command exits with code 2 and the same line.

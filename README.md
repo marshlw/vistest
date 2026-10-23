@@ -357,12 +357,8 @@ Report (Sharma et al., 2005).
 
 # License
 
-AGPL-3.0-or-later. See [LICENSE](https://github.com/marshlw/vistest/blob/main/LICENSE) and [NOTICE](https://github.com/marshlw/vistest/blob/main/NOTICE).
+Apache-2.0. See [LICENSE](https://github.com/marshlw/vistest/blob/main/LICENSE) and [NOTICE](https://github.com/marshlw/vistest/blob/main/NOTICE).
 
-If you run a modified version of VisTest as a network service, the AGPL
-requires you to offer the complete corresponding source of your modified
-version to its users. A commercial license without that obligation is
-available — see [NOTICE](https://github.com/marshlw/vistest/blob/main/NOTICE) for contact details.
-
-"VisTest" and the VisTest logo are trademarks of the project author and are not
-covered by the AGPL grant. Forks must be renamed and rebranded.
+Use it, change it and ship it, in open or closed code; keep LICENSE and NOTICE
+with what you distribute. The license does not cover the VisTest name: a
+modified version you distribute goes under a name of its own.

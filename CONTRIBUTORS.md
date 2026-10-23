@@ -13,17 +13,12 @@ Contributions are welcome. A few things to know before you open a pull request.
 
 ### Licensing of contributions
 
-This project is dual-licensed: AGPL-3.0-or-later for everyone, and a commercial
-license for those who need one (see [NOTICE](NOTICE)).
+VisTest is licensed under Apache-2.0 (see [LICENSE](LICENSE)). As section 5 of
+the license says, a contribution you submit is under the same license, with no
+further terms.
 
-By submitting a pull request you confirm that:
-
-1. you wrote the contribution yourself, or have the right to submit it;
-2. you grant the copyright holder the right to distribute your contribution
-   under **both** the AGPL and the commercial license.
-
-If you cannot agree to that, open an issue describing the change instead — the
-idea is still welcome, it just cannot be merged as your code.
+By submitting a pull request you confirm that you wrote the contribution
+yourself, or have the right to submit it under Apache-2.0.
 
 ### What makes a good pull request
 
