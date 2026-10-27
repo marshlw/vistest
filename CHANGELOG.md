@@ -6,6 +6,14 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.2.0a1
+
+The first release on PyPI (`pip install "vistest[browser]"`), an alpha: the
+public surface may still change between releases, and every change is
+listed here with what to change in your tests.
+
 ### License
 
 - **VisTest is licensed under Apache-2.0** from this release on (was

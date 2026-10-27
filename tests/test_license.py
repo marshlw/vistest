@@ -9,7 +9,7 @@
 """One license, said the same way everywhere (o2).
 
 The library moved from its earlier copyleft license to Apache-2.0 (CHANGELOG,
-"Unreleased"). A license is stated in
+0.2.0a1). A license is stated in
 several places that nothing else ties together: the LICENSE text, the package
 metadata, the provenance line in every report, the file headers, the bench
 package. These tests keep them one answer.

@@ -1,0 +1,67 @@
+# Publish: the library to PyPI, from a tag, with no token anywhere.
+#
+# A tag v<version> on main builds the sdist and the wheel, checks them the
+# same way the Install check does, and uploads them through PyPI's trusted
+# publishing: PyPI trusts this workflow in this repository, GitHub hands the
+# job a short-lived identity, and there is no API token to store or leak.
+#
+# Set up once (by the owner):
+#  - PyPI → Your projects → Publishing → Add a pending publisher:
+#      project vistest, owner marshlw, repository vistest,
+#      workflow publish.yml, environment pypi;
+#  - GitHub → Settings → Environments → New environment "pypi"
+#      (with yourself as a required reviewer: an upload waits for a click).
+#
+# Release: the version in vistest/__init__.py, CHANGELOG, merge to main, then
+#   git tag v0.2.0 && git push origin v0.2.0
+# The build job refuses a tag that is not the package's version.
+
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build, twine check, audit of the archives
+        run: |
+          python -m pip install build twine "readme_renderer[md]"
+          python -m build --outdir dist
+          twine check --strict dist/*
+          python scripts/audit_dist.py dist
+      - name: The tag is the package's version
+        shell: bash
+        run: |
+          version=$(python -c "import re,pathlib;print(re.search(r'__version__\s*=\s*\"([^\"]+)\"',pathlib.Path('vistest/__init__.py').read_text()).group(1))")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, package $version"; exit 1; }
+          ls dist/vistest-"$version"-py3-none-any.whl dist/vistest-"$version".tar.gz
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/vistest/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

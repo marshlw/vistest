@@ -24,7 +24,8 @@ moved. And the contributing section says how to run the two halves.
 
 Since o1p2 the minimum is Python 3.11 (Pillow 13, which carries the security
 fixes, needs it). In the same places, in both `pyproject.toml` and in the
-changelog's Unreleased section, 3.10 is not named as a version that works.
+section of the release that dropped it (0.2.0a1), 3.10 is not named as a version
+that works.
 The changelog's sections of past releases are records, like the journal.
 
 Since o1d2 this file is the library's half of these checks and reads only the
@@ -195,10 +196,11 @@ def _old_python(text: str) -> list[str]:
             for m in _OLD_PYTHON.finditer(line)]
 
 
-def _unreleased(changelog: str) -> str:
-    """The changelog down to its first released version: what is still news."""
-    head, _, rest = changelog.partition("## Unreleased")
-    assert rest, "CHANGELOG.md has no Unreleased section"
+def _release(changelog: str, version: str) -> str:
+    """One release's section of the changelog, below an Unreleased one."""
+    assert "\n## Unreleased\n" in changelog, "CHANGELOG.md has no Unreleased section"
+    head, _, rest = changelog.partition(f"\n## {version}\n")
+    assert rest, f"CHANGELOG.md has no section {version}"
     return re.split(r"(?m)^## (?!#)", rest, maxsplit=1)[0]
 
 
@@ -228,9 +230,9 @@ def test_the_library_asks_for_python_3_11():
 
 
 def test_the_changelog_says_3_10_is_gone_and_names_it_nowhere_else():
-    unreleased = _unreleased((ROOT / "CHANGELOG.md").read_text("utf-8"))
-    assert _old_python(unreleased) == []
-    breaking = unreleased.split("### Breaking", 1)[1]
+    section = _release((ROOT / "CHANGELOG.md").read_text("utf-8"), "0.2.0a1")
+    assert _old_python(section) == []
+    breaking = section.split("### Breaking", 1)[1]
     assert "Python 3.11" in breaking and "Pillow 13" in breaking
 
 

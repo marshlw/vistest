@@ -346,8 +346,8 @@ meaningfully change but produced a red test.
 
 ### Figures
 
-The comparison with other tools on real browser renders is published with the
-first release on PyPI, with the conditions of the run written down before it.
+The comparison with other tools on real browser renders is published in a
+later release, with the conditions of the run written down before it.
 Until then this page carries no figures.
 
 ΔE00 is separately verified against the reference pairs from the CIE Technical
