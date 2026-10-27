@@ -58,6 +58,7 @@ from .errors import (
     BaselineMissing,
     CaptureError,
     ScreenshotMismatch,
+    UniformBaseline,
     VisTestWarning,
     VisualCheckError,
     hide_for_verdicts,
@@ -124,6 +125,7 @@ def expect_screenshot(
     keep_pointer: bool | None = None,
     blur_focus: bool | None = None,
     timeout_ms: int | None = None,
+    allow_uniform_baseline: bool | None = None,
 ) -> CompareResult:
     """Compare `target` against the baseline stored under `name`.
 
@@ -201,6 +203,15 @@ def expect_screenshot(
     the window's scroll for a picture of the window
     (`capture.match_baseline_scroll`, on by default).
 
+    A picture of a page (or an element) that is one color — the background
+    of an application whose script did not load — is not written as the
+    baseline: the check raises `UniformBaseline`, which says the color and
+    how much of the picture it is, and the baseline stays as it was.
+    `allow_uniform_baseline=True` writes it — for a picture that is one color
+    on purpose. A page that shows nothing but its background is waited for,
+    within `capture.ready_timeout_ms`; one that never shows anything is still
+    photographed, and its message says so.
+
     `scale` is `"css"` (the default: one picture pixel
     per CSS pixel on any screen) or `"device"` (the screen's own pixels); the
     platform directory carries the scale of the picture, so the two never
@@ -225,9 +236,25 @@ def expect_screenshot(
             return _check(ctx, target, name, started=started, call_patch=call_patch,
                           wait=wait, ready_wait=ready_wait, platform=platform,
                           mask=mask, full_page=full_page, store=store, scale=scale,
-                          keep_pointer=keep_pointer, blur_focus=blur_focus)
+                          keep_pointer=keep_pointer, blur_focus=blur_focus,
+                          allow_uniform=_allow_uniform(ctx, allow_uniform_baseline))
     except CaptureError as e:
         raise CaptureError(f"vistest: could not check {name!r}: {e}") from None
+
+
+def _allow_uniform(ctx, value) -> bool:
+    """`allow_uniform_baseline`: the call's, else the config's, else off.
+
+    The config is read by name and may not have the key: `CaptureConfig`
+    lives in core/settings.py, and until it carries `allow_uniform_baseline`
+    the switch is the call's alone.
+    """
+    if value is None:
+        return bool(getattr(ctx.config.capture, "allow_uniform_baseline", False))
+    if not isinstance(value, bool):
+        raise TypeError(f"expect_screenshot: allow_uniform_baseline is True or False, "
+                        f"not {value!r}")
+    return value
 
 
 def _deadline(capture, timeout_ms) -> tuple[int, int, int]:
@@ -251,7 +278,8 @@ def _deadline(capture, timeout_ms) -> tuple[int, int, int]:
 
 def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
            wait: int, ready_wait: int, platform: str | None, mask, full_page,
-           store, scale: str, keep_pointer, blur_focus) -> CompareResult:
+           store, scale: str, keep_pointer, blur_focus,
+           allow_uniform: bool = False) -> CompareResult:
     """`expect_screenshot` once its arguments are read: inside the check's deadline."""
     scale = _targets.check_scale(scale)
     away, blur = _targets.pointer_plan(ctx.config.capture, keep_pointer, blur_focus)
@@ -311,9 +339,13 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                 raise BaselineMissing.build(
                     name=_shown(key), asked=_asked(key), platform=platform,
                     baseline=baseline_path, actual=actual_path,
-                    elsewhere=platforms_with(store, key), accept=ctx.accept_with)
+                    elsewhere=platforms_with(store, key), accept=ctx.accept_with,
+                    notes=_blank_notes(shot))
 
             _refuse_too_large(ctx, shot.png, key)
+            _refuse_uniform(shot, shot.png, key, target=target, platform=platform,
+                            baseline=baseline_path, actual=actual_path,
+                            allow=allow_uniform)
             _warn_unsettled_accept(shot, key)
             run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
             _canary_row(captured, run_canary)
@@ -446,6 +478,9 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         if mode == "all" or (mode == "changed" and failed):
             _refuse_too_large(ctx, final_png, key)
             if _sha_of(final_png) != _sha_of(baseline):
+                _refuse_uniform(shot, final_png, key, target=target, platform=platform,
+                                baseline=baseline_path, actual=actual_path,
+                                allow=allow_uniform, existing=True)
                 _warn_unsettled_accept(shot, key)
             if run_canary is _fingerprint.NOT_DRAWN:
                 this_run()              # writing a baseline: its sha is kept
@@ -744,6 +779,14 @@ NEAR_PX = 16
 _WHOLE_PAGE = {"html", "body", "#root", "#app", "#__next", "#__nuxt", "#app-root", "#main"}
 #: A box this much of the picture, in both directions, is a full-window container.
 _WHOLE_SHARE = 0.9
+#: A failing region is about the element under the pointer or in focus only
+#: when it is not much bigger than the element with its `NEAR_PX` margin: at
+#: most this many times its area. A focus ring, an underline, a hover colour
+#: stay inside that box (1x); a tooltip or a menu the hover opens is about as
+#: big again or a little more; 4x leaves room for one three times the
+#: element. A changed background is a region tens or hundreds of times the
+#: element, and it «overlaps» every element on the page.
+NEAR_AREA_RATIO = 4
 
 
 def _concrete(item: dict, size: tuple[int, int] | None) -> bool:
@@ -793,7 +836,7 @@ def _failure_hints(shot, result, live, passport, away: bool, blur: bool,
             continue
         x, y, w, h = item.get("box") or (0, 0, 0, 0)
         near = (x - NEAR_PX, y - NEAR_PX, w + 2 * NEAR_PX, h + 2 * NEAR_PX)
-        if any(_overlaps(near, (r.x, r.y, r.w, r.h)) for r in regions):
+        if any(_about(near, (r.x, r.y, r.w, r.h), size) for r in regions):
             out.append(f"the change is at {item['sel']}, which {words}: {switch}")
     #  Only for a page that did change after the picture (the second look says
     #  so, or the frames never held): an unrelated beacon that ended after the
@@ -840,6 +883,19 @@ def _failure_hints(shot, result, live, passport, away: bool, blur: bool,
                                     < CAPTURE_VERSION):
         out.append(old_way(accept, CAPTURE_VERSION))
     return out
+
+
+def _about(near, region, size) -> bool:
+    """A failing region that is about the element whose box (with its margin) is
+    `near`: it overlaps it, it is at most `NEAR_AREA_RATIO` times its area, and
+    it is not the whole picture."""
+    if not _overlaps(near, region):
+        return False
+    _, _, rw, rh = region
+    if size and size[0] > 0 and size[1] > 0 and \
+            rw >= _WHOLE_SHARE * size[0] and rh >= _WHOLE_SHARE * size[1]:
+        return False
+    return rw * rh <= NEAR_AREA_RATIO * max(1, near[2] * near[3])
 
 
 def _overlaps(a, b) -> bool:
@@ -891,6 +947,83 @@ def _warn_unsettled_accept(shot, key: SnapshotKey) -> None:
                       "finished is what every later check will be held to. Wait for "
                       "the page in the test (or raise capture.ready_timeout_ms) and "
                       "accept again.", VisTestWarning, stacklevel=4)
+
+
+def _blank_notes(shot) -> list[tuple[str, str]]:
+    """The capture's line for a page that showed nothing, for a message that has no
+    other capture lines (a missing baseline)."""
+    return [("capture", _targets.BLANK_LINE)] if shot.blank else []
+
+
+#: A picture is one color when every pixel but a few is within this much of
+#: one color, on each of R, G and B (0–255). Two levels: what a renderer's
+#: dithering of a flat fill can give; antialiased text, an icon, a border, a
+#: shadow are tens of levels off it.
+UNIFORM_TOLERANCE = 2
+#: The pixels that may be off that color: a stray dot, never a word. At most
+#: 16 — less than one glyph of the smallest text a page sets — and at most one
+#: in ten thousand of the picture, so a small element's picture with a dot of
+#: content in it is not one color.
+UNIFORM_STRAY_PX = 16
+UNIFORM_STRAY_SHARE = 0.0001
+
+
+def uniform(png: bytes) -> tuple[str, int, int] | None:
+    """('#f5f7fb', pixels off that color, all pixels) for a picture of one color, else None."""
+    import numpy as np
+
+    rgb = pngio.decode(png, source="the picture to be written")
+    flat = rgb.reshape(-1, rgb.shape[-1])[:, :3].astype(np.int16)
+    total = int(flat.shape[0])
+    if total == 0:
+        return None
+    allowed = min(UNIFORM_STRAY_PX, int(total * UNIFORM_STRAY_SHARE))
+    #  The most common color is the median of each channel when nearly all of
+    #  the picture is it; a quick look at the range first spares the median
+    #  on any ordinary picture.
+    lo, hi = flat.min(axis=0), flat.max(axis=0)
+    if int((hi - lo).max()) > 2 * UNIFORM_TOLERANCE and allowed == 0:
+        return None
+    sample = flat[::max(1, total // 10_000)]
+    color = np.median(sample, axis=0).round().astype(np.int16)
+    off = int((np.abs(flat - color).max(axis=1) > UNIFORM_TOLERANCE).sum())
+    if off > allowed:
+        return None
+    r, g, b = (int(v) for v in color)
+    return f"#{r:02x}{g:02x}{b:02x}", off, total
+
+
+def _share(off: int, total: int) -> str:
+    if off == 0:
+        return "100%"
+    pct = 100.0 * (total - off) / total
+    return f"{pct:.3f}%".rstrip("0").rstrip(".") + f" ({off} pixels apart)"
+
+
+def _refuse_uniform(shot, png: bytes, key: SnapshotKey, *, target, platform: str,
+                    baseline: Path, actual: Path | None, allow: bool,
+                    existing: bool = False) -> None:
+    """A picture of a live page or element that is one color is not written as the baseline.
+
+    A page whose bundle did not load is its background and nothing else, and
+    `--vistest-update` used to write it without a word: every later blank page
+    passed against it. A picture handed in (bytes, a file, an array) is the
+    caller's own and is written as it is; so is the picture of an object that
+    photographs itself but did not answer the page's questions (`shot.facts`
+    empty: a page wrapper with no `evaluate`, a test's stand-in) — nothing is
+    known of what it shows, and a page in a browser always answers them.
+    """
+    if allow or shot.retake is None or not shot.facts:
+        return
+    found = uniform(png)
+    if found is None:
+        return
+    color, off, total = found
+    what = "page" if _targets.is_page_like(target) else "element"
+    raise UniformBaseline.build(
+        name=_shown(key), asked=_asked(key), platform=platform, what=what,
+        color=color, share=_share(off, total), baseline=baseline, actual=actual,
+        notes=_blank_notes(shot), existing=existing)
 
 
 def _refuse_too_large(ctx, png: bytes, key: SnapshotKey) -> None:

@@ -6,7 +6,28 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **A blank page is no longer accepted as the baseline in silence.** A
+  picture of a page or element that is one color (every pixel within 2
+  levels of one color, at most 16 pixels apart) is not written by
+  `--vistest-update`: the check fails with `UniformBaseline`, which says the
+  color and its share of the picture, and the baseline stays as it was. A
+  picture that is one color on purpose: `expect_screenshot(...,
+  allow_uniform_baseline=True)`. Pictures handed in (bytes, files, arrays)
+  are written as before.
+- **A page that shows nothing but its background is waited for.** An
+  application whose script has not run yet (an empty `<div id="root">`)
+  passed every readiness step and was photographed blank. The check now
+  waits, within `capture.ready_timeout_ms`, for something to be drawn in the
+  window; when nothing comes, the picture is taken, and the failure or the
+  missing-baseline message says `the page showed nothing but its background
+  when the picture was taken`.
+- **The hint about the focus or the pointer is given only for a change at
+  that element.** A background that changed on the whole picture used to
+  name the button in focus and advise `blur_focus=True`; the hint now needs
+  a failing region at most 4 times the element's area (with its 16 px
+  margin) and not the whole picture.
 
 ## 0.2.0a1
 

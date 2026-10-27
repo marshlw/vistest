@@ -86,7 +86,7 @@ sync API. With an async page, take the picture yourself:
 expect_screenshot(target, name, *, platform=None, fail_severity=None,
                   max_changed_area_pct=None, mask=None, full_page=None,
                   store=None, scale="css", keep_pointer=None, blur_focus=None,
-                  timeout_ms=None) -> CompareResult
+                  timeout_ms=None, allow_uniform_baseline=None) -> CompareResult
 ```
 
 | Parameter | What it is |
@@ -103,6 +103,7 @@ expect_screenshot(target, name, *, platform=None, fail_severity=None,
 | `keep_pointer` | `True` keeps the pointer where the test left it — for a hover captured on purpose. By default it is moved off the page |
 | `blur_focus` | `True` takes the focus off whatever has it. By default the focus is left alone |
 | `timeout_ms` | how long the whole check may spend on the page; see [`timeout_ms`](#timeout_ms-and-what-a-hung-page-costs) |
+| `allow_uniform_baseline` | `True` writes a picture of a page or element that is one color as its baseline. By default such a picture is refused at the accept (`UniformBaseline`): it is what a page whose script did not load looks like |
 
 `fail_severity`, `max_changed_area_pct`, `keep_pointer`, `blur_focus` and the
 two capture limits have the same names in `vistest.yaml`; the call is the
@@ -118,7 +119,8 @@ regions, the changed area and the timings.
 | `BaselineMissing` | there is no baseline for this name and platform yet. An `AssertionError` |
 | `ScreenshotMismatch` | the picture differs beyond what the engine explains and the thresholds allow. An `AssertionError` |
 | `CaptureError` | the page is closed, crashed, or did not answer in time. A `RuntimeError` |
-| `VisualCheckError` | the base class of the two `AssertionError`s above |
+| `UniformBaseline` | at an accept (`--vistest-update`): the picture of a page or element to be written as the baseline is one color, and nothing was written. An `AssertionError`, in `vistest.library.errors` |
+| `VisualCheckError` | the base class of the `AssertionError`s above |
 
 Both `AssertionError`s name every file involved: the baseline, the picture
 taken, the diff, the report. `VisTestWarning` is the category of the library's
@@ -343,6 +345,21 @@ still in flight after 5000 ms (a request the page never waits for, like a long
 poll, goes into capture.ignore_requests) — it was photographed as it was` —
 and the picture is taken anyway. A request is named by its method and path,
 never by its query string: tokens live there.
+
+**A page that shows nothing.** A single-page application whose script did not
+load, or has not run yet, is an empty `<div id="root">`: loaded, quiet, no
+loader — ready by every step above, and nothing on it but its background. So
+a picture of the window (or of the whole page) is also asked whether anything
+in it draws — text, a picture, a form control, a box with a colour, a border
+or a shadow of its own — and a page that draws nothing is waited for, within
+what is left of the same `capture.ready_timeout_ms`. One that never shows
+anything is still photographed and compared; the failure, or the message of a
+missing baseline, says `the page showed nothing but its background when the
+picture was taken`. Such a picture is one color, and an accept does not write
+a picture of one color as the baseline unless the call says it is meant
+(`allow_uniform_baseline=True`): every later blank page would pass against it.
+One color is every pixel within 2 levels of R, G and B of one color, but at
+most 16 pixels (and at most one in ten thousand).
 
 **Requests in flight.** From inside a check, a request the page started
 before the check cannot be seen. So the count has to run from the moment the

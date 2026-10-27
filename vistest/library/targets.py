@@ -159,6 +159,9 @@ class Capture:
     late: Callable[[], list[str]] | None = field(default=None, compare=False, repr=False)
     #  The element was put back where its baseline had it.
     placed: bool = False
+    #  The page showed nothing but its background when the picture was taken
+    #  (`BLANK_JS`): True; it showed something: False; not asked: None.
+    blank: bool | None = None
 
     def was_ready(self) -> bool | None:
         """Ready and held still: True; not ready or never still: False; unknown: None."""
@@ -519,6 +522,28 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
                                     bool(options.get("full_page")),
                                     _within_deadline(ready_timeout_ms),
                                     quiet_ms, tuple(ignore_requests))
+        blank = None
+        if readiness is not None and not element:
+            #  A page that is ready by every step and still shows nothing — an
+            #  application whose script did not load or has not run yet, an
+            #  empty `<div id="root">` — is waited for, within what is left of
+            #  the same limit: the readiness, this wait and the readiness again
+            #  share one `ready_timeout_ms`, so the check's deadline
+            #  (`_js.budget_ms`) is what it was.
+            left = ready_timeout_ms - int(readiness.ms or 0)
+            #  Asked once at least, even when the readiness used up the limit.
+            blank, waited_ms = _wait_content(page, bool(options.get("full_page")),
+                                             _within_deadline(max(1, left)))
+            left -= waited_ms
+            if blank is False and waited_ms > 0 and left > 0:
+                #  It arrived while we waited: what came with it may still be
+                #  on its way (its images, its fonts, its data).
+                readiness = _wait_ready(target, page, painted, boxes,
+                                        bool(options.get("full_page")),
+                                        _within_deadline(left),
+                                        quiet_ms, tuple(ignore_requests))
+            if blank:
+                notes.append(BLANK_LINE)
         if set_window is not None:
             #  Once the page has arrived: set the window to where the baseline's
             #  was, and look again — what is in the new view may still be on its way.
@@ -635,6 +660,7 @@ def capture(target: Any, *, mask: Sequence[Any] | None = None,
         calm=calm,
         late=late,
         placed=bool(prepared.get("placed")),
+        blank=blank,
     )
 
 
@@ -896,6 +922,116 @@ def _wait_ready(target: Any, page: Any, painted: list, boxes: list, full_page: b
     return _ready.wait(probe, inflight=held,
                        quiet_ms=_ready.DEFAULT_QUIET_MS if quiet_ms is None else quiet_ms,
                        limit_ms=limit_ms, sleep=sleep)
+
+
+#: The words for a page that had nothing on it but its background: said in the
+#: failure, in the message of a missing baseline and in the report.
+BLANK_LINE = "the page showed nothing but its background when the picture was taken"
+
+#: Does the page show anything but its background in the photographed area?
+#: Asked of the DOM, not of the picture, and cheaply: the first element that
+#: draws something ends the walk, so on an ordinary page it stops in the first
+#: few elements. Something drawn is: text, a replaced element (a picture, an
+#: svg, a canvas, a video, a frame, a form control), an element with a shadow
+#: root (a web component draws there), a background colour or image, a border,
+#: an outline or a shadow on a box that does not cover the whole area (one that
+#: does is the background itself, like a `#root` with the page's colour), and
+#: a `::before`/`::after` with content. `<html>` and `<body>` colour the
+#: canvas: their background is the background. Hidden and transparent boxes do
+#: not count. Past `BLANK_WALK_MAX` elements the answer is «not blank»: a page
+#: that big is not an empty shell, and the walk must stay cheap.
+BLANK_WALK_MAX = 3000
+BLANK_JS = r"""
+(a) => {
+  const W = window, d = document.documentElement, b = document.body;
+  if (!b) return { blank: true, looked: 0 };
+  const area = a.fullPage
+    ? [-W.scrollX, -W.scrollY, Math.max(d.scrollWidth, innerWidth) - W.scrollX,
+       Math.max(d.scrollHeight, innerHeight) - W.scrollY]
+    : [0, 0, innerWidth, innerHeight];
+  const hits = (r) => r.width > 0 && r.height > 0
+    && r.right > area[0] && r.left < area[2] && r.bottom > area[1] && r.top < area[3];
+  const covers = (r) => r.left <= area[0] + 1 && r.top <= area[1] + 1
+    && r.right >= area[2] - 1 && r.bottom >= area[3] - 1;
+  const clear = (c) => !c || c === 'transparent' || /^rgba\(.*,\s*0\)$/.test(c);
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|TITLE|BASE)$/;
+  const DRAWN = new RegExp('^(IMG|SVG|CANVAS|VIDEO|IFRAME|OBJECT|EMBED|INPUT|TEXTAREA'
+                           + '|SELECT|BUTTON|PROGRESS|METER|PICTURE|MATH)$');
+  const SIDES = ['Top', 'Right', 'Bottom', 'Left'];
+  const pseudo = (n, p) => {
+    const c = getComputedStyle(n, p).content;
+    return c && c !== 'none' && c !== 'normal' && c !== '""' && c !== "''";
+  };
+  const draws = (n) => {
+    const tag = n.tagName.toUpperCase();
+    if (SKIP.test(tag)) return false;
+    const r = n.getBoundingClientRect();
+    if (!hits(r)) return false;
+    const cs = getComputedStyle(n);
+    if (cs.visibility === 'hidden' || Number(cs.opacity) === 0) return false;
+    if (n.shadowRoot || DRAWN.test(tag)) return true;
+    for (const c of n.childNodes) {
+      if (c.nodeType === 3 && /\S/.test(c.nodeValue)) return true;
+    }
+    const page = n === b || n === d;
+    if (!page && !covers(r)) {
+      if (!clear(cs.backgroundColor) || cs.backgroundImage !== 'none') return true;
+      if (cs.boxShadow !== 'none') return true;
+      if (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0
+          && !clear(cs.outlineColor)) return true;
+    }
+    for (const s of SIDES) {
+      if (cs['border' + s + 'Style'] !== 'none' && parseFloat(cs['border' + s + 'Width']) > 0
+          && !clear(cs['border' + s + 'Color'])) return true;
+    }
+    return pseudo(n, '::before') || pseudo(n, '::after');
+  };
+  let looked = 0;
+  if (draws(b)) return { blank: false, looked: 1 };
+  for (const n of b.querySelectorAll('*')) {
+    if (++looked > a.max) return { blank: false, looked };
+    if (draws(n)) return { blank: false, looked };
+  }
+  return { blank: true, looked };
+}
+"""
+
+#: How often a page that shows nothing is asked again.
+BLANK_POLL_MS = 50
+
+
+def _wait_content(page: Any, full_page: bool, limit_ms: int) -> tuple[bool | None, int]:
+    """Wait, at most `limit_ms`, for the page to show something besides its background.
+
+    (blank at the end — None when the page could not be asked —, ms waited:
+    0 when the first answer was not blank, however long the asking took).
+    """
+    if limit_ms <= 0 or not callable(getattr(page, "evaluate", None)):
+        return None, 0
+    arg = {"fullPage": full_page, "max": BLANK_WALK_MAX}
+    started = time.monotonic()
+    pause = getattr(page, "wait_for_timeout", None)
+    slept = False
+    while True:
+        try:
+            got = _js.call(page, BLANK_JS, arg,
+                           what="asking whether the page shows anything")
+        except CaptureError:
+            raise
+        except Exception:  # noqa: BLE001 - help, not the verdict: not asked
+            return None, int((time.monotonic() - started) * 1000)
+        waited = int((time.monotonic() - started) * 1000)
+        if not isinstance(got, dict):
+            return None, waited
+        if not got.get("blank"):
+            return False, waited if slept else 0
+        if waited + BLANK_POLL_MS > limit_ms:
+            return True, waited
+        if callable(pause):
+            pause(BLANK_POLL_MS)
+        else:
+            time.sleep(BLANK_POLL_MS / 1000)
+        slept = True
 
 
 #: The readiness wait asks once more after its limit; it stops this long

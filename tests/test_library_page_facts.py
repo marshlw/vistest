@@ -380,7 +380,8 @@ def test_a_failed_check_leaves_the_scrolling_too_and_still_names_what_moves(ctx,
 def test_a_page_is_not_scrolled_by_its_own_picture(ctx, page):
     page.set_content(STILL)
     before = leave_scrolled(page, x=30, y=400, top=40)
-    accept(ctx, page, "page.png")
+    #  The window shows an empty stretch of the page: one color, on purpose (rl1).
+    accept(ctx, page, "page.png", allow_uniform_baseline=True)
     expect_screenshot(page, "page.png")
     assert scroll_of(page) == before
 
@@ -528,7 +529,8 @@ def test_a_full_page_picture_is_not_scrolled(ctx, page):
 
 def test_the_device_scale_factor_is_in_the_passport(ctx, page):
     page.set_content(SCROLLED)
-    accept(ctx, page, "dpr.png")
+    #  The window shows the empty gap above the card: one color, on purpose (rl1).
+    accept(ctx, page, "dpr.png", allow_uniform_baseline=True)
     assert json.loads(passport(ctx, "dpr.png").read_text())["capture"][
         "device_scale_factor"] == 1.0
 

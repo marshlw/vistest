@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-__all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "VisTestWarning",
-           "VisualCheckError", "hide_for_verdicts"]
+__all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "UniformBaseline",
+           "VisTestWarning", "VisualCheckError", "hide_for_verdicts"]
 
 
 
@@ -129,11 +129,16 @@ class BaselineMissing(VisualCheckError):
     @classmethod
     def build(cls, *, name: str, platform: str, baseline: Path,
               actual: Path | None, elsewhere: list[str] | None = None,
-              accept: str = "pytest --vistest-update", asked: str = ""):
+              accept: str = "pytest --vistest-update", asked: str = "",
+              notes=()):
         from . import words
 
-        lines = [f"vistest: no baseline for {name!r}" + _where(platform, asked),
-                 _path("expected", baseline)]
+        lines = [f"vistest: no baseline for {name!r}" + _where(platform, asked)]
+        #  What the capture has to say that changes what the picture is worth
+        #  as a baseline: a page that showed nothing but its background.
+        for label, text in notes:
+            lines += words.labelled(label, text)
+        lines.append(_path("expected", baseline))
         if actual is not None:
             lines.append(_path("captured", actual))
         if elsewhere:
@@ -150,6 +155,40 @@ class BaselineMissing(VisualCheckError):
         lines += words.command("create it", accept)
         lines += words.labelled("", "then commit the file — in CI the baseline has to come "
                                     "from the repository, not from the run")
+        return cls(words.console("\n".join(lines)),
+                   artifacts={"baseline": str(baseline),
+                              "actual": str(actual) if actual else ""})
+
+
+class UniformBaseline(VisualCheckError):
+    """A picture of one color was about to become the baseline, and was not written.
+
+    A page whose script did not load is its background and nothing else; taken
+    as the baseline, it passes against every later blank page and says nothing
+    about the page. The picture taken is kept as `actual`; a baseline that is
+    one color on purpose is written with `allow_uniform_baseline=True`.
+    """
+
+    @classmethod
+    def build(cls, *, name: str, platform: str, what: str, color: str, share: str,
+              baseline: Path, actual: Path | None, notes=(), asked: str = "",
+              existing: bool = False):
+        from . import words
+
+        lines = [f"vistest: {name!r} was not written as the baseline"
+                 + _where(platform, asked)
+                 + ("; the baseline there is kept as it was" if existing else "")]
+        lines += words.labelled(
+            "reason", f"the picture is one color, {color}, on {share} of it: the {what} "
+                      "looks like it was not drawn — its script did not load, or the "
+                      "check ran before it rendered")
+        for label, text in notes:
+            lines += words.labelled(label, text)
+        lines.append(_path("baseline", baseline))
+        if actual is not None:
+            lines.append(_path("captured", actual))
+        lines += words.command("on purpose",
+                               "expect_screenshot(..., allow_uniform_baseline=True)")
         return cls(words.console("\n".join(lines)),
                    artifacts={"baseline": str(baseline),
                               "actual": str(actual) if actual else ""})
