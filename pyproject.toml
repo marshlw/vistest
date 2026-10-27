@@ -15,7 +15,13 @@ keywords = ["visual-regression", "screenshot-testing", "playwright", "pytest", "
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Framework :: Pytest",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Testing",
     "Topic :: Software Development :: Quality Assurance",
 ]
@@ -69,13 +75,13 @@ browser = ["playwright>=1.47,<2", "pytest>=7.4", "pytest-playwright>=0.4"]
 # reports through allure. The server is not an extra: it is a package of its
 # own (o1).
 report  = ["allure-pytest>=2.13"]
-dev     = ["pytest>=7.4", "pytest-cov", "pytest-xdist>=3.5", "ruff",
-           "httpx>=0.27"]
+dev     = ["pytest>=7.4", "pytest-cov", "pytest-xdist>=3.5", "ruff"]
 
 [project.urls]
 Homepage = "https://github.com/marshlw/vistest"
 Source = "https://github.com/marshlw/vistest"
 Issues = "https://github.com/marshlw/vistest/issues"
+Changelog = "https://github.com/marshlw/vistest/blob/main/CHANGELOG.md"
 
 [project.scripts]
 vistest = "vistest.cli:main"
