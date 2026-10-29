@@ -11,11 +11,13 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 - **What was set aside is on the diff picture.** The differences the engine
   did not count — explained as rendering noise (`suppressed`) or below a
   threshold you set (`below_threshold`) — are drawn on `.vistest/diff/…png`
-  and in `vistest compare` pictures as thin grey dashed frames, with the
-  reason in a small grey caption (`antialias`, `below threshold`), under the
-  colored boxes of what failed; at most 40, the largest, and `+N more set
-  aside` for the rest. The failure message says where to look: `also: …
-  (dashed grey on the diff picture)`, when the picture was written.
+  and in `vistest compare` pictures as thin grey dashed frames without
+  captions, under the colored boxes of what failed; at most 40, the largest.
+  One grey legend in a corner free of the colored boxes says what they are:
+  `set aside: 35 subpixel shift; 2 too small`, at most three reasons and
+  `+N other`, and `(40 of 45 drawn)` when not all are drawn. The failure
+  message says where to look: `also: … (dashed grey on the diff picture)`,
+  when the picture was written.
 
 ### Fixed
 

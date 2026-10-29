@@ -143,11 +143,13 @@ def draw_boxes(base_rgb, regions, *, label: bool = True,
 
     `set_aside` — the differences the engine did not count: `suppressed`
     (each with its `suppressed_by`) and `below_threshold`. They are drawn
-    muted and first: a 1 px dashed neutral grey frame, no fill, the dimmed
-    background left dimmed, a short grey caption with the reason only. The
-    real regions are drawn over them, so where the two overlap the real one
-    reads whole. Without `set_aside` the picture is what it always was, byte
-    for byte.
+    muted and first: a 1 px dashed neutral grey frame, no fill, no caption,
+    the dimmed background left dimmed — and one legend in a corner that
+    meets no real region says what they are (`set_aside_legend`), whatever
+    `label` is: it is the key to the picture, not a caption. The real
+    regions are drawn over them, so where the two overlap the real one reads
+    whole. Without `set_aside` the picture is what it always was, byte for
+    byte.
     """
     img = base_rgb.copy()
     if cv2 is None:
@@ -163,7 +165,7 @@ def draw_boxes(base_rgb, regions, *, label: bool = True,
     cv2.addWeighted(overlay, 0.18, out, 0.82, 0, out)
 
     if set_aside:
-        _draw_set_aside(out, list(set_aside), label=label)
+        _draw_set_aside(out, list(set_aside), regions)
 
     for r in regions:
         c = region_color(r)
@@ -190,15 +192,28 @@ def draw_boxes(base_rgb, regions, *, label: bool = True,
 
 
 #: At most this many set-aside differences are drawn, the largest first; the
-#: rest are counted in one line in the bottom corner.
+#: legend says how many of how many.
 SET_ASIDE_DRAWN = 40
 #: Neutral grey (R = G = B), lighter than anything the dimmed background can be
 #: (at most 255 * 0.55 + 28 ≈ 168), so it shows on a light page and a dark one,
 #: and never reads as one of the kind colors of a real change.
 SET_ASIDE_GREY = (225, 225, 225)
-#: The backing of a set-aside caption: dark grey, not a color.
-_SET_ASIDE_BACK = (64, 64, 64)
+#: The backing of the legend: dark grey, not a color, laid over at this opacity.
+_LEGEND_BACK = (40, 40, 40)
+_LEGEND_ALPHA = 0.8
+#: At most this many reasons are named in the legend; the rest are "+N other".
+LEGEND_GROUPS = 3
 _DASH, _GAP = 4, 3
+
+#: The short word for a reason on the picture, by the name the engine files it
+#: under. The one place these words live; a reason not here is shown as it is.
+SET_ASIDE_WORD = {
+    "page-shift": "subpixel shift",
+    "min-size": "too small",
+    "rerender": "re-render noise",
+    "antialias": "antialiasing",
+    "below threshold": "below threshold",
+}
 
 
 def set_aside_reason(region) -> str:
@@ -212,27 +227,101 @@ def set_aside_reason(region) -> str:
     return said.split(":", 1)[0].strip() or "below threshold"
 
 
-def _draw_set_aside(out, regions, *, label: bool = True) -> None:
-    """The muted frames of what the engine set aside, in place. See `draw_boxes`."""
+def set_aside_word(region) -> str:
+    """The reason in the legend's words: 'subpixel shift', 'too small'…"""
+    reason = set_aside_reason(region)
+    return SET_ASIDE_WORD.get(reason, reason)
+
+
+def set_aside_legend(set_aside, drawn: int | None = None) -> str:
+    """'set aside: 35 subpixel shift; 2 too small' — the key to the grey frames.
+
+    One group per reason, the most frequent first, at most `LEGEND_GROUPS`,
+    the rest '+N other'. When fewer frames were drawn than were set aside,
+    '(40 of 45 drawn)' at the end. `drawn` defaults to what `draw_boxes`
+    draws: at most `SET_ASIDE_DRAWN`.
+    """
+    regions = list(set_aside)
+    if not regions:
+        return ""
+    counts: dict[str, int] = {}
+    for r in regions:
+        word = set_aside_word(r)
+        counts[word] = counts.get(word, 0) + 1
+    #  Most frequent first; on a tie, the one met first (dicts keep order).
+    order = sorted(counts.items(), key=lambda kv: -kv[1])
+    parts = [f"{n} {word}" for word, n in order[:LEGEND_GROUPS]]
+    other = sum(n for _, n in order[LEGEND_GROUPS:])
+    if other:
+        parts.append(f"+{other} other")
+    text = "set aside: " + "; ".join(parts)
+    total = len(regions)
+    shown = min(total, SET_ASIDE_DRAWN) if drawn is None else drawn
+    if shown < total:
+        text += f" ({shown} of {total} drawn)"
+    return text
+
+
+def _draw_set_aside(out, regions, real=()) -> None:
+    """The muted frames of what the engine set aside, and their legend, in
+    place. See `draw_boxes`. No caption at a frame: one legend says them all."""
     h, w = out.shape[:2]
     regions = sorted(regions, key=lambda r: -int(getattr(r, "pixel_count", 0) or 0))
-    drawn, more = regions[:SET_ASIDE_DRAWN], len(regions) - SET_ASIDE_DRAWN
+    drawn = regions[:SET_ASIDE_DRAWN]
     for r in drawn:
         x0, y0 = max(0, int(r.x)), max(0, int(r.y))
         x1, y1 = min(w - 1, int(r.x + r.w)), min(h - 1, int(r.y + r.h))
         if x1 < x0 or y1 < y0:
             continue
         _dashed_rect(out, x0, y0, x1, y1, SET_ASIDE_GREY)
-    if label:
-        #  Captions after every frame, so no frame is drawn through a caption.
-        for r in drawn:
-            _quiet_label(out, set_aside_reason(r), int(r.x), int(r.y))
-    if more > 0:
-        text = f"+{more} more set aside"
-        (tw, th), _ = cv2.getTextSize(text, _FONT, 0.4, 1)
-        x, y = 6, h - 8
-        cv2.rectangle(out, (x - 4, y - th - 5), (x + tw + 4, y + 4), _SET_ASIDE_BACK, -1)
-        cv2.putText(out, text, (x, y), _FONT, 0.4, SET_ASIDE_GREY, 1, cv2.LINE_AA)
+    _set_aside_key(out, set_aside_legend(regions, len(drawn)), list(real))
+
+
+_LEGEND_SCALE = 0.4
+_SAMPLE_W = 18          # the dashed sample before the text
+_PAD = 5
+_MARGIN = 6             # from the picture's edge
+
+
+def legend_box(shape, text: str, real=()) -> tuple[int, int, int, int]:
+    """(x0, y0, x1, y1) of the legend: bottom left, else bottom right, else top
+    left — the first corner that meets no real region (its frame and caption
+    with it); none free, bottom left."""
+    h, w = shape[:2]
+    (tw, th), base = cv2.getTextSize(text, _FONT, _LEGEND_SCALE, 1)
+    bw = min(w - 1, _PAD + _SAMPLE_W + _PAD + tw + _PAD)
+    bh = th + base + 2 * _PAD
+    left, right = _MARGIN, max(0, w - _MARGIN - bw)
+    bottom, top = max(0, h - _MARGIN - bh), _MARGIN
+    corners = [(left, bottom), (right, bottom), (left, top)]
+
+    def meets(x, y) -> bool:
+        for r in real:
+            #  The frame is up to 3 px thick, its caption up to ~22 px above.
+            rx0, ry0 = int(r.x) - 4, int(r.y) - 24
+            rx1, ry1 = int(r.x + r.w) + 4, int(r.y + r.h) + 4
+            if x < rx1 and rx0 < x + bw and y < ry1 and ry0 < y + bh:
+                return True
+        return False
+
+    x, y = next(((x, y) for x, y in corners if not meets(x, y)), corners[0])
+    return x, y, x + bw, y + bh
+
+
+def _set_aside_key(out, text: str, real) -> None:
+    if not text:
+        return
+    x0, y0, x1, y1 = legend_box(out.shape, text, real)
+    patch = out[y0:y1, x0:x1].astype(np.float32)
+    back = np.array(_LEGEND_BACK, np.float32)
+    out[y0:y1, x0:x1] = (patch * (1 - _LEGEND_ALPHA) + back * _LEGEND_ALPHA).astype(np.uint8)
+    mid = (y0 + y1) // 2
+    sx0 = x0 + _PAD
+    _dashed_rect(out, sx0, mid - 4, sx0 + _SAMPLE_W - 1, mid + 4, SET_ASIDE_GREY)
+    (_, th), base = cv2.getTextSize(text, _FONT, _LEGEND_SCALE, 1)
+    ty = y0 + _PAD + th
+    cv2.putText(out, text, (sx0 + _SAMPLE_W + _PAD, ty), _FONT, _LEGEND_SCALE,
+                SET_ASIDE_GREY, 1, cv2.LINE_AA)
 
 
 def _dashed_rect(img, x0, y0, x1, y1, color) -> None:
@@ -248,15 +337,6 @@ def _dashed_rect(img, x0, y0, x1, y1, color) -> None:
     img[y1, xs] = color
     img[ys, x0] = color
     img[ys, x1] = color
-
-
-def _quiet_label(img, text, x, y, scale: float = 0.35) -> None:
-    """A set-aside caption: small, grey, on a dark grey backing."""
-    (tw, th), _ = cv2.getTextSize(text, _FONT, scale, 1)
-    ly = y - 4 if y - th - 6 >= 0 else y + th + 6
-    lx = min(max(0, x), max(0, img.shape[1] - tw - 6))
-    cv2.rectangle(img, (lx, ly - th - 3), (lx + tw + 5, ly + 3), _SET_ASIDE_BACK, -1)
-    cv2.putText(img, text, (lx + 3, ly), _FONT, scale, SET_ASIDE_GREY, 1, cv2.LINE_AA)
 
 
 def draw_heatmap(base_rgb, de_map, *, max_de: float = 25.0) -> np.ndarray:

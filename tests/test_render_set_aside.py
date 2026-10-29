@@ -34,7 +34,10 @@ from vistest.render.artifacts import (
     SET_ASIDE_DRAWN,
     SET_ASIDE_GREY,
     draw_boxes,
+    legend_box,
+    set_aside_legend,
     set_aside_reason,
+    set_aside_word,
 )
 
 cv2 = pytest.importorskip("cv2")
@@ -168,31 +171,35 @@ def test_a_set_aside_region_is_a_dashed_grey_frame_over_the_dimmed_page(picture)
     #  Thin: one pixel, nothing drawn just outside the frame or just inside it.
     assert np.array_equal(drawn[y0 - 1, x0:x1], plain[y0 - 1, x0:x1])
     assert np.array_equal(drawn[y0 + 1, x0 + 1:x1], plain[y0 + 1, x0 + 1:x1])
-    #  Nothing else changed: no caption asked for, no count.
+    #  Nothing else changed but the legend: no caption at the frame.
+    lx0, ly0, lx1, ly1 = legend_box(drawn.shape, set_aside_legend([region]))
     outside = np.ones(drawn.shape[:2], bool)
     outside[y0:y1 + 1, x0:x1 + 1] = False
+    outside[ly0:ly1, lx0:lx1] = False
     assert np.array_equal(drawn[outside], plain[outside])
 
 
-def test_the_caption_is_the_reason_only_and_grey():
-    base = _light()
-    region = _quiet(60, 150, 150, 40,
-                    by="antialias: the baseline moved +0.25,+0.00 px reproduces 94%")
-    drawn = draw_boxes(base, [], set_aside=[region], label=True)
-    bare = draw_boxes(base, [], set_aside=[region], label=False)
-    changed = np.any(drawn != bare, axis=-1)
-    assert changed.any(), "no caption drawn"
-    ys, xs = np.nonzero(changed)
-    #  Above the frame, small.
-    assert ys.max() < region.y and region.y - ys.min() <= 18
-    #  Grey only: every pixel of the caption is neutral.
-    px = drawn[changed].astype(int)
-    assert np.all(px[:, 0] == px[:, 1]) and np.all(px[:, 1] == px[:, 2])
-
+def test_the_reason_is_read_from_suppressed_by():
+    region = _quiet(0, 0, 4, 4, by="antialias: the baseline moved +0.25,+0.00 px")
     assert set_aside_reason(region) == "antialias"
     assert set_aside_reason(_quiet(0, 0, 4, 4, by="min-size: 1 px < 4 px")) == "min-size"
     #  Below a threshold a person set: no `suppressed_by`.
     assert set_aside_reason(_quiet(0, 0, 4, 4, by=None)) == "below threshold"
+
+
+# --------------------------------------------------------------------------- #
+#  rl2b 4.1 No caption at a frame: above it, the dimmed page
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("label", [True, False])
+@pytest.mark.parametrize("picture", [_light, _dark, _noisy], ids=["light", "dark", "noisy"])
+def test_no_caption_is_drawn_at_a_set_aside_frame(picture, label):
+    base = picture()
+    region = _quiet(60, 70, 150, 40, by="page-shift: the page moved by (+0.375, +0.25) px")
+    plain = draw_boxes(base, [], label=label)
+    drawn = draw_boxes(base, [], set_aside=[region], label=label)
+    #  Where the caption stood (up to 18 px above the frame, as wide as it).
+    above = (slice(region.y - 20, region.y), slice(region.x, region.x + region.w + 1))
+    assert np.array_equal(drawn[above], plain[above])
 
 
 # --------------------------------------------------------------------------- #
@@ -217,8 +224,53 @@ def test_a_real_region_is_drawn_over_what_was_set_aside(picture, regions):
 
 
 # --------------------------------------------------------------------------- #
-#  4.4 At most 40, the largest, and the rest counted
+#  4.4 At most 40, the largest; rl2b 4.2 the legend
 # --------------------------------------------------------------------------- #
+def test_the_legend_says_the_reasons_in_human_words_most_frequent_first():
+    shift = "page-shift: the page moved by (+0.375, +0.25) px"
+    small = "min-size: 1 px < 4 px (v2.min_region_px)"
+    quiet = [_quiet(0, 0, 4, 4, by=small) for _ in range(2)]
+    quiet += [_quiet(0, 0, 4, 4, by=shift) for _ in range(35)]
+    assert set_aside_legend(quiet) == "set aside: 35 subpixel shift; 2 too small"
+
+
+def test_the_legend_words_come_from_one_dictionary():
+    words = {"page-shift: x": "subpixel shift", "min-size: x": "too small",
+             "rerender: x": "re-render noise", "antialias: x": "antialiasing",
+             None: "below threshold", "scrollbar: x": "scrollbar"}
+    for by, word in words.items():
+        assert set_aside_word(_quiet(0, 0, 4, 4, by=by)) == word, by
+
+
+def test_the_legend_names_three_reasons_and_counts_the_rest():
+    by = (["page-shift: a"] * 5 + ["min-size: a"] * 4 + ["antialias: a"] * 3
+          + ["rerender: a"] * 2 + ["scrollbar: a"])
+    quiet = [_quiet(0, 0, 4, 4, by=b) for b in by]
+    assert set_aside_legend(quiet) == ("set aside: 5 subpixel shift; 4 too small; "
+                                       "3 antialiasing; +3 other")
+
+
+def test_forty_five_set_aside_draw_forty_and_the_legend_says_so():
+    base = np.full((400, 600, 3), 240, np.uint8)
+    #  A grid of 45, each bigger than the one before.
+    quiet = [_quiet(10 + (i % 9) * 64, 10 + (i // 9) * 64, 40, 40, px=100 + i)
+             for i in range(45)]
+    drawn = draw_boxes(base, [], set_aside=quiet, label=False)
+
+    framed = [r for r in quiet if np.all(drawn[r.y, r.x] == SET_ASIDE_GREY)]
+    assert len(framed) == SET_ASIDE_DRAWN == 40
+    #  The five left out are the five smallest.
+    assert {r.pixel_count for r in quiet if r not in framed} == {100, 101, 102, 103, 104}
+    text = set_aside_legend(quiet)
+    assert text == "set aside: 45 antialiasing (40 of 45 drawn)"
+
+
+def test_forty_set_aside_the_legend_says_nothing_of_drawn():
+    quiet = [_quiet(0, 0, 4, 4) for _ in range(40)]
+    assert set_aside_legend(quiet) == "set aside: 40 antialiasing"
+    assert set_aside_legend([]) == ""
+
+
 class _Texts:
     """cv2, with every text drawn written down."""
 
@@ -233,29 +285,54 @@ class _Texts:
         return getattr(cv2, name)
 
 
-def test_forty_five_set_aside_draw_forty_and_count_five(monkeypatch):
-    base = np.full((400, 600, 3), 240, np.uint8)
-    #  A grid of 45, each bigger than the one before.
-    quiet = [_quiet(10 + (i % 9) * 64, 10 + (i // 9) * 64, 40, 40, px=100 + i)
-             for i in range(45)]
+@pytest.mark.parametrize("label", [True, False])
+def test_the_legend_is_the_only_text_and_is_drawn_whatever_label_is(monkeypatch, label):
+    base = _light()
+    quiet = [_quiet(60, 150, 50, 20, by="page-shift: a"),
+             _quiet(150, 150, 50, 20, by="min-size: a")]
     texts = _Texts()
     monkeypatch.setattr(artifacts, "cv2", texts)
-    drawn = draw_boxes(base, [], set_aside=quiet, label=False)
+    drawn = draw_boxes(base, [], set_aside=quiet, label=label)
+    assert texts.said == ["set aside: 1 subpixel shift; 1 too small"]
+    #  Neutral: every pixel of the legend is grey.
+    x0, y0, x1, y1 = legend_box(drawn.shape, texts.said[0])
+    px = drawn[y0:y1, x0:x1].reshape(-1, 3).astype(int)
+    assert np.all(px[:, 0] == px[:, 1]) and np.all(px[:, 1] == px[:, 2])
+    #  Bottom left, the corner nothing real is in.
+    assert x0 < 20 and y1 > drawn.shape[0] - 20
 
-    framed = [r for r in quiet if np.all(drawn[r.y, r.x] == SET_ASIDE_GREY)]
-    assert len(framed) == SET_ASIDE_DRAWN == 40
-    #  The five left out are the five smallest.
-    assert {r.pixel_count for r in quiet if r not in framed} == {100, 101, 102, 103, 104}
-    assert texts.said == ["+5 more set aside"]
+
+# --------------------------------------------------------------------------- #
+#  rl2b 4.3 The legend keeps out of the real regions
+# --------------------------------------------------------------------------- #
+_BL = DiffRegion(0, 190, 120, 49, kind=ChangeKind.COLOR, severity=70, pixel_count=900)
+_BR = DiffRegion(200, 190, 119, 49, kind=ChangeKind.TEXT, severity=40, pixel_count=900)
+_TOP = DiffRegion(0, 0, 319, 40, kind=ChangeKind.ADDED, severity=90, pixel_count=900)
 
 
-def test_forty_set_aside_draw_forty_and_count_none(monkeypatch):
-    base = np.full((400, 600, 3), 240, np.uint8)
-    quiet = [_quiet(10 + (i % 9) * 64, 10 + (i // 9) * 64, 40, 40) for i in range(40)]
-    texts = _Texts()
-    monkeypatch.setattr(artifacts, "cv2", texts)
-    draw_boxes(base, [], set_aside=quiet, label=False)
-    assert texts.said == []
+@pytest.mark.parametrize("real,corner", [
+    ([], "bottom left"),
+    ([_BL], "bottom right"),
+    ([_BL, _BR], "top left"),
+    ([_BL, _BR, _TOP], "bottom left"),
+], ids=["free", "bottom-left-taken", "both-bottom-taken", "all-taken"])
+def test_the_legend_moves_away_from_a_real_region(real, corner):
+    base = _light()
+    quiet = [_quiet(140, 80, 40, 30, by="page-shift: a")]
+    plain = draw_boxes(base, real)
+    drawn = draw_boxes(base, real, set_aside=quiet)
+    h, w = base.shape[:2]
+    x0, y0, x1, y1 = legend_box(base.shape, set_aside_legend(quiet), real)
+    where = {"bottom left": x0 < 20 and y1 > h - 20,
+             "bottom right": x1 > w - 20 and y1 > h - 20,
+             "top left": x0 < 20 and y0 < 20}
+    assert where[corner], (corner, (x0, y0, x1, y1))
+    #  Drawn where legend_box says: there the picture changed.
+    assert not np.array_equal(drawn[y0:y1, x0:x1], plain[y0:y1, x0:x1])
+    #  The real regions read whole, as without anything set aside.
+    for r in real:
+        zone = (slice(r.y, r.y + r.h + 1), slice(r.x, r.x + r.w + 1))
+        assert np.array_equal(drawn[zone], plain[zone]), r
 
 
 # --------------------------------------------------------------------------- #
