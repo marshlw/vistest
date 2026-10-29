@@ -1,0 +1,12 @@
+vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
+  1 change not explained as rendering noise · worst 92/100 · no threshold set, so any change fails · 0.50% of the frame
+  reason:      fill in 1; worst 112x48 at (522, 418)
+  second look: the second picture is the same as the first, so the change is real, not motion
+  renderer:    same as the baseline's
+  baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  changed:     112x48 at (522, 418): fill: #3478f6 → #1d4ed8, color difference 14.5
+               (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
+  diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
+  report:      .vistest/report/index.html
+  accept it:   pytest --vistest-update
