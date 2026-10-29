@@ -385,9 +385,88 @@ meaningfully change but produced a red test.
 
 ### Figures
 
-The comparison with other tools on real browser renders is published in a
-later release, with the conditions of the run written down before it.
-Until then this page carries no figures.
+One run, with its conditions written down before it: engine v2 against
+Playwright's own comparator on **held-out-2**, a sealed half of the browser
+corpus — two page templates (`dashboard`, `settings`) drawn by Chromium and
+never used to choose any threshold or rule of the engine. 106 pairs, all
+drawn by the baseline's renderer: 92 real changes (SIGNAL), 6 rendering
+noise (NOISE), 8 disputed changes of ΔE00 ≈ 2 (DISPUTED, printed, not
+counted). Run once, on 2026-10-01, OpenCV 4.13.0; the run is recorded in the
+[development journal](https://github.com/marshlw/vistest/blob/main/docs/dev/journal.md)
+(f5, step D).
+
+| tool | false failures (NOISE failed) | misses (SIGNAL passed) | DISPUTED failed |
+|---|---|---|---|
+| VisTest v2 | 2/6 | 0/92 | 8/8 |
+| Playwright, threshold 0.2, maxDiffPixels 0 (its default) | 4/6 | 36/92 | 2/8 |
+| Playwright, threshold 0.05, maxDiffPixels 0 | 4/6 | 5/92 | 2/8 |
+
+What these figures support, and what they do not:
+
+- **Same renderer: VisTest catches what Playwright misses, with no more false
+  failures.** It missed none of the 92 changes; Playwright missed 36 at its
+  default and 5 at threshold 0.05. It failed 2 of the 6 noise pairs where
+  Playwright failed 4. The target written before the run asked for at most a
+  third of Playwright's false failures — at most 1 of 6 — and **it was not
+  met**: both false failures are a page moved by a fraction of a pixel
+  (`shift_0.25px`, `shift_0.5px`), the known limit described in the
+  [guide](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#what-engine-v2-does-not-tell-apart).
+- **Another renderer: no figures here.** held-out-2 has no pair drawn by
+  another renderer, so this run says nothing about how VisTest does when the
+  browser, the fonts or the machine change. What the library does in that
+  case — the `renderer:` line of the message, the canaries kept with the
+  baselines — is a description of its behaviour, not a measured result.
+
+To run it again (Node.js ≥ 18; this runs the sealed half):
+
+```bash
+npm ci --prefix scripts/bench
+mkdir -p bench_out
+node scripts/bench_playwright_grid.mjs --final > bench_out/native_final.json
+python tests/benchmark.py --corpus browser --final --no-timing --engine both \
+    --native bench_out/native_final.json
+```
+
+#### What these numbers don't say
+
+- **Six noise pairs is a small sample.** 2/6 against 4/6 is two pairs. It
+  supports «no more false failures», not «fewer».
+- **The price of catching everything is in the last column.** Changes of
+  ΔE00 about 2 — a color a person may or may not notice — failed 8 of 8
+  under VisTest and 2 of 8 under Playwright. They are not counted as errors
+  either way, but if such changes are noise in your project, VisTest will
+  fail on them.
+- **We wrote the corpus.** Two templates, one browser (Chromium 141, headless
+  shell, through Playwright 1.56.0), one Linux machine, 1280×800 at scale 1.
+  Real applications have more kinds of noise than our families.
+- **Ready frames, not captures.** Playwright's comparator gets the same PNGs;
+  the capture stabilisation of `toHaveScreenshot()` (animations off, caret
+  hidden, repeated frames) and VisTest's own (readiness wait, second look)
+  take no part.
+- **The run is of the engine of 2026-10-01 on OpenCV 4.13.0.** The engine
+  has changed since in ways checked to give the same output on the rest of
+  the corpus; the sealed half was not run again.
+- **Applitools, Percy and other hosted services are not in it**: their
+  comparison cannot be run on our corpus and published.
+
+#### Your own failures: `vistest bench`
+
+These are our pictures. To see the engine on yours, point `vistest bench` at
+a Playwright `test-results` folder, or at a project after a VisTest run:
+
+```bash
+vistest bench test-results     # Playwright's test-results
+vistest bench .                # a project with a VisTest run (.vistest/actual/)
+```
+
+Every pair goes through engine v2 and through Playwright's own comparator
+(threshold 0.2 and 0.05, maxDiffPixels 0); the pairs on which they disagree
+are collected in `vistest-bench-out/` — `report.html`, and `labels.csv` with
+an empty `label` column. Fill it in (SIGNAL, NOISE or unsure) and hand it back
+with `--labels labels.csv`, and you get each tool's false failures and misses
+on your own pairs. Nothing leaves the machine. Playwright's columns need
+`@playwright/test` where Node finds it (or `--playwright DIR`); without it,
+`--no-playwright` leaves them empty.
 
 ΔE00 is separately verified against the reference pairs from the CIE Technical
 Report (Sharma et al., 2005).
