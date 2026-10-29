@@ -1116,7 +1116,11 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
     try:
         from ..render.artifacts import draw_boxes
 
-        drawn = draw_boxes(actual_rgb, result.regions)
+        #  What was set aside is on the picture too, muted: the message says
+        #  «also: … suppressed», and a person looks for where.
+        set_aside = [*(getattr(result, "suppressed", None) or ()),
+                     *(getattr(result, "below_threshold", None) or ())]
+        drawn = draw_boxes(actual_rgb, result.regions, set_aside=set_aside)
         return atomic.write_bytes(ctx.artifact_path("diff", key),
                                   pngio.encode(drawn))
     except Exception as e:  # pragma: no cover - drawing must not hide the diff

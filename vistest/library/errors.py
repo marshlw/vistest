@@ -34,6 +34,8 @@ __all__ = ["BaselineMissing", "CaptureError", "ScreenshotMismatch", "UniformBase
 SUPPRESSED_SHOWN = 3
 #: Changes that count, said in words in a failure message; the rest are counted.
 CHANGED_SHOWN = 3
+#: Where what was set aside is on the diff picture (render/artifacts.py).
+ON_THE_DIFF = "dashed grey on the diff picture"
 
 
 def description(r) -> str:
@@ -234,13 +236,18 @@ class ScreenshotMismatch(VisualCheckError):
         if len(said) > CHANGED_SHOWN:
             lines += words.labelled("", f"... and {len(said) - CHANGED_SHOWN} more in the "
                                         "report")
+        suppressed = list(getattr(result, "suppressed", None) or ())
+        #  Where the set-aside is on the picture, said once, on the first line
+        #  that lists it — and only when the picture was written: it is drawn
+        #  there muted, and a person reading «also: …» looks for where.
+        on_picture = f" ({ON_THE_DIFF})" if diff is not None else ""
         #  What a threshold a person set let through: said, never dropped.
         if below := words.below(result):
             shown.append(below)
-            lines += words.labelled("let through", below)
+            lines += words.labelled("let through",
+                                    below + ("" if suppressed else on_picture))
         if scale := words.scale_for(shown):
             lines += words.labelled("", f"({scale})")
-        suppressed = list(getattr(result, "suppressed", None) or ())
         if suppressed:
             from ..plugins.runtime import count_suppressed, say_suppressed
 
@@ -248,7 +255,8 @@ class ScreenshotMismatch(VisualCheckError):
             #  differently from one that does not. Where each one is, and
             #  why, in short; the engine's measurements are in the report.
             lines += words.labelled(
-                "also", "; ".join(say_suppressed(count_suppressed(suppressed))))
+                "also", "; ".join(say_suppressed(count_suppressed(suppressed)))
+                + on_picture)
             for r in suppressed[:SUPPRESSED_SHOWN]:
                 lines += words.labelled("", words.suppressed(r))
             if len(suppressed) > SUPPRESSED_SHOWN:

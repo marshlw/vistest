@@ -272,6 +272,12 @@ Without a `tests/` folder the baselines go to `__vistest__/` at the project's
 root; a folder is not made just to hold them. `--vistest-baselines` or
 `vistest_baselines` names another place.
 
+**Reading the diff picture.** The colored boxes are what failed the check,
+each with its kind and severity. The grey dashed frames are what the engine
+set aside, with the reason in a small grey caption: rendering noise it
+explained, or a change below a threshold you set. They are the places the
+message lists under `also:` and `let through:`; at most 40 are drawn.
+
 **The platform.** The directory is named by the operating system, the browser,
 the picture's scale and the window size: `linux-chromium-1x-1440x900`,
 `win-chromium-1x-1280x800`. Text is drawn differently on Linux, Windows and

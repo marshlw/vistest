@@ -74,7 +74,8 @@ def render_all(
         except Exception:  # noqa: BLE001 — the artifact is decorative, we swallow this deliberately
             pass
 
-    boxes_img = draw_boxes(act, res.regions, label=cfg.label_regions)
+    boxes_img = draw_boxes(act, res.regions, label=cfg.label_regions,
+                           set_aside=_set_aside(res))
     if cfg.boxes:
         _try("boxes", lambda: _save(out / "boxes.png", boxes_img, cfg.max_artifact_width))
 
@@ -124,14 +125,29 @@ def render_all(
     return paths
 
 
+def _set_aside(res) -> list:
+    """What the engine did not count: suppressed, then below the threshold."""
+    return [*(getattr(res, "suppressed", None) or ()),
+            *(getattr(res, "below_threshold", None) or ())]
+
+
 # --------------------------------------------------------------------------- #
 #  Individual views
 # --------------------------------------------------------------------------- #
-def draw_boxes(base_rgb, regions, *, label: bool = True) -> np.ndarray:
+def draw_boxes(base_rgb, regions, *, label: bool = True,
+               set_aside=()) -> np.ndarray:
     """Box + semi-transparent fill + label with class and severity.
 
     The background is dimmed to 55% brightness so the boxes are readable on any
     page — on a light theme a thin colored box would otherwise get lost.
+
+    `set_aside` — the differences the engine did not count: `suppressed`
+    (each with its `suppressed_by`) and `below_threshold`. They are drawn
+    muted and first: a 1 px dashed neutral grey frame, no fill, the dimmed
+    background left dimmed, a short grey caption with the reason only. The
+    real regions are drawn over them, so where the two overlap the real one
+    reads whole. Without `set_aside` the picture is what it always was, byte
+    for byte.
     """
     img = base_rgb.copy()
     if cv2 is None:
@@ -145,6 +161,9 @@ def draw_boxes(base_rgb, regions, *, label: bool = True) -> np.ndarray:
         c = region_color(r)
         cv2.rectangle(overlay, (r.x, r.y), (r.x + r.w, r.y + r.h), c, -1)
     cv2.addWeighted(overlay, 0.18, out, 0.82, 0, out)
+
+    if set_aside:
+        _draw_set_aside(out, list(set_aside), label=label)
 
     for r in regions:
         c = region_color(r)
@@ -168,6 +187,76 @@ def draw_boxes(base_rgb, regions, *, label: bool = True) -> np.ndarray:
             _label(out, r.selector[:52], r.x, r.y + r.h + 20, (60, 60, 60), scale=0.4)
 
     return out
+
+
+#: At most this many set-aside differences are drawn, the largest first; the
+#: rest are counted in one line in the bottom corner.
+SET_ASIDE_DRAWN = 40
+#: Neutral grey (R = G = B), lighter than anything the dimmed background can be
+#: (at most 255 * 0.55 + 28 ≈ 168), so it shows on a light page and a dark one,
+#: and never reads as one of the kind colors of a real change.
+SET_ASIDE_GREY = (225, 225, 225)
+#: The backing of a set-aside caption: dark grey, not a color.
+_SET_ASIDE_BACK = (64, 64, 64)
+_DASH, _GAP = 4, 3
+
+
+def set_aside_reason(region) -> str:
+    """'antialias', 'page-shift', 'min-size'… — or 'below threshold'.
+
+    The part of `suppressed_by` before its colon: the reason without the
+    details, which are in the message and the report. A region with no
+    `suppressed_by` is one a threshold a person set let through.
+    """
+    said = getattr(region, "suppressed_by", None) or ""
+    return said.split(":", 1)[0].strip() or "below threshold"
+
+
+def _draw_set_aside(out, regions, *, label: bool = True) -> None:
+    """The muted frames of what the engine set aside, in place. See `draw_boxes`."""
+    h, w = out.shape[:2]
+    regions = sorted(regions, key=lambda r: -int(getattr(r, "pixel_count", 0) or 0))
+    drawn, more = regions[:SET_ASIDE_DRAWN], len(regions) - SET_ASIDE_DRAWN
+    for r in drawn:
+        x0, y0 = max(0, int(r.x)), max(0, int(r.y))
+        x1, y1 = min(w - 1, int(r.x + r.w)), min(h - 1, int(r.y + r.h))
+        if x1 < x0 or y1 < y0:
+            continue
+        _dashed_rect(out, x0, y0, x1, y1, SET_ASIDE_GREY)
+    if label:
+        #  Captions after every frame, so no frame is drawn through a caption.
+        for r in drawn:
+            _quiet_label(out, set_aside_reason(r), int(r.x), int(r.y))
+    if more > 0:
+        text = f"+{more} more set aside"
+        (tw, th), _ = cv2.getTextSize(text, _FONT, 0.4, 1)
+        x, y = 6, h - 8
+        cv2.rectangle(out, (x - 4, y - th - 5), (x + tw + 4, y + 4), _SET_ASIDE_BACK, -1)
+        cv2.putText(out, text, (x, y), _FONT, 0.4, SET_ASIDE_GREY, 1, cv2.LINE_AA)
+
+
+def _dashed_rect(img, x0, y0, x1, y1, color) -> None:
+    """A 1 px dashed rectangle with corners at (x0, y0) and (x1, y1), inclusive."""
+    period = _DASH + _GAP
+
+    def on(n: int) -> np.ndarray:
+        return (np.arange(n) % period) < _DASH
+
+    xs = np.arange(x0, x1 + 1)[on(x1 - x0 + 1)]
+    ys = np.arange(y0, y1 + 1)[on(y1 - y0 + 1)]
+    img[y0, xs] = color
+    img[y1, xs] = color
+    img[ys, x0] = color
+    img[ys, x1] = color
+
+
+def _quiet_label(img, text, x, y, scale: float = 0.35) -> None:
+    """A set-aside caption: small, grey, on a dark grey backing."""
+    (tw, th), _ = cv2.getTextSize(text, _FONT, scale, 1)
+    ly = y - 4 if y - th - 6 >= 0 else y + th + 6
+    lx = min(max(0, x), max(0, img.shape[1] - tw - 6))
+    cv2.rectangle(img, (lx, ly - th - 3), (lx + tw + 5, ly + 3), _SET_ASIDE_BACK, -1)
+    cv2.putText(img, text, (lx + 3, ly), _FONT, scale, SET_ASIDE_GREY, 1, cv2.LINE_AA)
 
 
 def draw_heatmap(base_rgb, de_map, *, max_de: float = 25.0) -> np.ndarray:
