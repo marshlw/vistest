@@ -6,6 +6,12 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+## 0.2.0a2
+
+What the first check of 0.2.0a1 on a real application showed, fixed; and
+what the engine set aside is now visible on the diff picture. No change to
+the comparison itself: the same pairs give the same verdicts as in 0.2.0a1.
+
 ### Added
 
 - **What was set aside is on the diff picture.** The differences the engine
