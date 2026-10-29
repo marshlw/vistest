@@ -11,8 +11,10 @@
 The message says «also: 35 differences suppressed as rendering noise», and a
 person looks at the picture for where. These are drawn there now: a 1 px
 dashed neutral grey frame, no fill, the background left dimmed, under the
-real regions, at most `SET_ASIDE_DRAWN` of them. Without `set_aside` the
-picture is the one drawn before, byte for byte — the old function is kept
+real regions, at most `SET_ASIDE_DRAWN` of them. Their legend is a strip
+under the screenshot, not laid over it (rl3): above the strip the picture is
+what it would be without a legend. Without `set_aside` the picture is the one
+drawn before, the screenshot's size, byte for byte — the old function is kept
 below, verbatim, as the reference.
 """
 
@@ -34,7 +36,6 @@ from vistest.render.artifacts import (
     SET_ASIDE_DRAWN,
     SET_ASIDE_GREY,
     draw_boxes,
-    legend_box,
     set_aside_legend,
     set_aside_reason,
     set_aside_word,
@@ -171,12 +172,13 @@ def test_a_set_aside_region_is_a_dashed_grey_frame_over_the_dimmed_page(picture)
     #  Thin: one pixel, nothing drawn just outside the frame or just inside it.
     assert np.array_equal(drawn[y0 - 1, x0:x1], plain[y0 - 1, x0:x1])
     assert np.array_equal(drawn[y0 + 1, x0 + 1:x1], plain[y0 + 1, x0 + 1:x1])
-    #  Nothing else changed but the legend: no caption at the frame.
-    lx0, ly0, lx1, ly1 = legend_box(drawn.shape, set_aside_legend([region]))
-    outside = np.ones(drawn.shape[:2], bool)
+    #  Nothing else changed: no caption at the frame, and the legend is
+    #  under the screenshot, not on it.
+    h = base.shape[0]
+    shot = drawn[:h]
+    outside = np.ones(shot.shape[:2], bool)
     outside[y0:y1 + 1, x0:x1 + 1] = False
-    outside[ly0:ly1, lx0:lx1] = False
-    assert np.array_equal(drawn[outside], plain[outside])
+    assert np.array_equal(shot[outside], plain[outside])
 
 
 def test_the_reason_is_read_from_suppressed_by():
@@ -302,45 +304,96 @@ def test_the_legend_is_the_only_text_and_is_drawn_whatever_label_is(monkeypatch,
     monkeypatch.setattr(artifacts, "cv2", texts)
     drawn = draw_boxes(base, [], set_aside=quiet, label=label)
     assert texts.said == ["set aside: 1 subpixel shift; 1 too small"]
-    #  Neutral: every pixel of the legend is grey.
-    x0, y0, x1, y1 = legend_box(drawn.shape, texts.said[0])
-    px = drawn[y0:y1, x0:x1].reshape(-1, 3).astype(int)
+    #  Neutral: every pixel of the legend strip is grey.
+    _assert_neutral(drawn[base.shape[0]:])
+
+
+# --------------------------------------------------------------------------- #
+#  rl3 The legend is a strip under the picture, not laid over it
+# --------------------------------------------------------------------------- #
+def _assert_neutral(pixels) -> None:
+    px = np.asarray(pixels).reshape(-1, 3).astype(int)
+    assert px.size, "no strip under the picture"
     assert np.all(px[:, 0] == px[:, 1]) and np.all(px[:, 1] == px[:, 2])
-    #  Bottom left, the corner nothing real is in.
-    assert x0 < 20 and y1 > drawn.shape[0] - 20
 
 
-# --------------------------------------------------------------------------- #
-#  rl2b 4.3 The legend keeps out of the real regions
-# --------------------------------------------------------------------------- #
+def _without_legend(monkeypatch, base, real, quiet, **kw) -> np.ndarray:
+    """The same picture drawn by the same code with an empty legend."""
+    with monkeypatch.context() as m:
+        m.setattr(artifacts, "set_aside_legend", lambda *_a, **_kw: "")
+        return draw_boxes(base, real, set_aside=quiet, **kw)
+
+
 _BL = DiffRegion(0, 190, 120, 49, kind=ChangeKind.COLOR, severity=70, pixel_count=900)
 _BR = DiffRegion(200, 190, 119, 49, kind=ChangeKind.TEXT, severity=40, pixel_count=900)
 _TOP = DiffRegion(0, 0, 319, 40, kind=ChangeKind.ADDED, severity=90, pixel_count=900)
 
 
-@pytest.mark.parametrize("real,corner", [
-    ([], "bottom left"),
-    ([_BL], "bottom right"),
-    ([_BL, _BR], "top left"),
-    ([_BL, _BR, _TOP], "bottom left"),
-], ids=["free", "bottom-left-taken", "both-bottom-taken", "all-taken"])
-def test_the_legend_moves_away_from_a_real_region(real, corner):
+@pytest.mark.parametrize("real", [[], [_BL], [_BL, _BR], [_BL, _BR, _TOP]],
+                         ids=["free", "bottom-left", "both-bottom", "all-corners"])
+def test_the_legend_is_under_the_screenshot_and_covers_none_of_it(monkeypatch, real):
     base = _light()
     quiet = [_quiet(140, 80, 40, 30, by="page-shift: a")]
-    plain = draw_boxes(base, real)
     drawn = draw_boxes(base, real, set_aside=quiet)
+    bare = _without_legend(monkeypatch, base, real, quiet)
     h, w = base.shape[:2]
-    x0, y0, x1, y1 = legend_box(base.shape, set_aside_legend(quiet), real)
-    where = {"bottom left": x0 < 20 and y1 > h - 20,
-             "bottom right": x1 > w - 20 and y1 > h - 20,
-             "top left": x0 < 20 and y0 < 20}
-    assert where[corner], (corner, (x0, y0, x1, y1))
-    #  Drawn where legend_box says: there the picture changed.
-    assert not np.array_equal(drawn[y0:y1, x0:x1], plain[y0:y1, x0:x1])
-    #  The real regions read whole, as without anything set aside.
-    for r in real:
-        zone = (slice(r.y, r.y + r.h + 1), slice(r.x, r.x + r.w + 1))
-        assert np.array_equal(drawn[zone], plain[zone]), r
+    #  Taller than the screenshot, as wide.
+    assert drawn.shape[0] > h and drawn.shape[1] == w
+    #  Above the strip, pixel for pixel the picture without a legend: no
+    #  corner is covered, a real region in any of them reads whole.
+    assert bare.shape == base.shape
+    assert np.array_equal(drawn[:h], bare)
+
+
+@pytest.mark.parametrize("picture", [_light, _dark, _noisy], ids=["light", "dark", "noisy"])
+def test_the_strip_is_neutral_and_says_the_legend(monkeypatch, picture):
+    base = picture()
+    quiet = [_quiet(60, 50, 50, 20, by="page-shift: a"),
+             _quiet(150, 50, 50, 20, by="min-size: a"),
+             _quiet(150, 90, 50, 20, by="min-size: a")]
+    texts = _Texts()
+    monkeypatch.setattr(artifacts, "cv2", texts)
+    drawn = draw_boxes(base, [], set_aside=quiet, label=False)
+    strip = drawn[base.shape[0]:]
+    _assert_neutral(strip)
+    #  Dark grey behind, the grey of the frames in it (the sample, the text).
+    assert np.all(strip[0] == strip[0, 0]) and strip[0, 0, 0] < 80
+    assert np.any(np.all(strip == SET_ASIDE_GREY, axis=-1))
+    #  The text is the legend's, unchanged.
+    assert " ".join(texts.said) == set_aside_legend(quiet) == \
+        "set aside: 2 too small; 1 subpixel shift"
+
+
+def test_a_narrow_picture_wraps_the_legend_by_groups_and_keeps_it_inside(monkeypatch):
+    base = np.full((120, 200, 3), 235, np.uint8)
+    by = (["page-shift: a"] * 5 + ["min-size: a"] * 4 + ["antialias: a"] * 3
+          + ["rerender: a"] * 2 + ["scrollbar: a"])
+    quiet = [_quiet(10 + 12 * i, 20, 8, 8, by=b) for i, b in enumerate(by)]
+    texts = _Texts()
+    monkeypatch.setattr(artifacts, "cv2", texts)
+    drawn = draw_boxes(base, [], set_aside=quiet, label=False)
+    monkeypatch.undo()
+
+    legend = set_aside_legend(quiet)
+    assert len(texts.said) > 1, "one line on a 200 px picture"
+    #  Not cut, not reworded: the lines are the legend.
+    assert " ".join(texts.said) == legend
+    #  Broken between groups, a group whole on its line.
+    for line in texts.said:
+        assert not line.startswith(";")
+    for group in legend.removeprefix("set aside: ").split("; "):
+        assert any(group in line for line in texts.said), group
+    #  None wider than the picture, in the legend's font, not a smaller one.
+    for line in texts.said:
+        (tw, _), _ = cv2.getTextSize(line, 0, 0.4, 1)
+        assert artifacts._text_x() + tw <= base.shape[1], line
+    strip = drawn[base.shape[0]:]
+    _assert_neutral(strip)
+    #  The right edge of the strip is the strip's grey: no text ran into it.
+    assert np.all(strip[:, -3:] == strip[0, 0])
+    #  Lines one under another: the strip is taller than one line's.
+    one = artifacts.legend_strip(2000, legend)
+    assert strip.shape[0] > one.shape[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -360,6 +413,10 @@ def test_render_all_draws_the_suppressed_and_the_below_threshold(tmp_path):
     boxes = pngio.read(paths["boxes"])
     for r in (*res.suppressed, *res.below_threshold):
         assert np.all(boxes[r.y, r.x] == SET_ASIDE_GREY), r
+    #  The legend under it; the triptych takes the tallest panel whole.
+    assert boxes.shape[0] > base.shape[0]
+    tri = pngio.read(paths["side_by_side"])
+    assert tri.shape[0] >= boxes.shape[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -455,3 +512,38 @@ def test_below_threshold_alone_is_pointed_at_on_its_own_line(tmp_path):
     assert ON_THE_DIFF in " ".join(built[tmp_path / "d.png"].split())
     assert "let through:" in with_picture
     assert ON_THE_DIFF not in built[None]
+
+
+# --------------------------------------------------------------------------- #
+#  rl3 4.5 The report shows the diff whole, the strip under it
+# --------------------------------------------------------------------------- #
+def test_the_report_shows_a_diff_taller_than_the_screenshot_whole(ctx, tmp_path):
+    import base64
+    import re
+
+    from vistest.report import library as report
+
+    expected, actual = _noisy_pair()
+    error = _fail(ctx, expected, actual)
+    diff = pngio.read(error.artifacts["diff"])
+    assert diff.shape[0] > actual.shape[0], "the diff has no strip under it"
+
+    out = tmp_path / "report.html"
+    report.build(ctx.parts_dir, out)
+    body = out.read_text("utf-8")
+    #  The diff pane: the picture itself, embedded, at its own height.
+    tag = re.search(r'<img alt="diff" data-pic="diff" src="data:image/png;base64,([^"]+)"',
+                    body)
+    assert tag, "no diff picture in the report"
+    embedded = pngio.decode(base64.b64decode(tag.group(1)))
+    assert embedded.shape[:2] == diff.shape[:2]
+    #  Nothing squeezes it to the screenshot's height: no height, no
+    #  object-fit on the pictures the diff is shown in, no inline style on it.
+    whole = re.search(r'<img alt="diff" data-pic="diff"[^>]*>', body).group(0)
+    assert "style=" not in whole and "height" not in whole
+    for rule in re.findall(r"([^{}]*img[^{}]*)\{([^}]*)\}", body):
+        selector, props = rule
+        if ".cmp" in selector:   # the slider: baseline and actual, never the diff
+            continue
+        assert "max-height" not in props and "object-fit" not in props, rule
+        assert not re.search(r"(^|;)\s*height\s*:\s*(?!auto)", props), rule

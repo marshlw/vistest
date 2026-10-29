@@ -13,9 +13,13 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
   threshold you set (`below_threshold`) — are drawn on `.vistest/diff/…png`
   and in `vistest compare` pictures as thin grey dashed frames without
   captions, under the colored boxes of what failed; at most 40, the largest.
-  One grey legend in a corner free of the colored boxes says what they are:
-  `set aside: 35 subpixel shift; 2 too small`, at most three reasons and
-  `+N other`, and `(40 of 45 drawn)` when not all are drawn. The failure
+  One grey legend says what they are: `set aside: 35 subpixel shift; 2 too
+  small`, at most three reasons and `+N other`, and `(40 of 45 drawn)` when
+  not all are drawn. It is a dark grey strip under the screenshot, not laid
+  over it — on an element screenshot a corner legend covered half a button —
+  so the diff picture is taller by the strip, and on a narrow picture the
+  legend wraps between reasons onto more lines. Without anything set aside
+  there is no strip and the picture is the screenshot's size. The failure
   message says where to look: `also: … (dashed grey on the diff picture)`,
   when the picture was written.
 

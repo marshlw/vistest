@@ -144,12 +144,15 @@ def draw_boxes(base_rgb, regions, *, label: bool = True,
     `set_aside` — the differences the engine did not count: `suppressed`
     (each with its `suppressed_by`) and `below_threshold`. They are drawn
     muted and first: a 1 px dashed neutral grey frame, no fill, no caption,
-    the dimmed background left dimmed — and one legend in a corner that
-    meets no real region says what they are (`set_aside_legend`), whatever
-    `label` is: it is the key to the picture, not a caption. The real
-    regions are drawn over them, so where the two overlap the real one reads
-    whole. Without `set_aside` the picture is what it always was, byte for
-    byte.
+    the dimmed background left dimmed. The real regions are drawn over them,
+    so where the two overlap the real one reads whole. One legend says what
+    the grey frames are (`set_aside_legend`), whatever `label` is: it is the
+    key to the picture, not a caption. It is not laid over the screenshot —
+    it is a dark grey strip added under it (`legend_strip`), so the picture
+    is taller than the screenshot by the strip, and above the strip it is,
+    pixel for pixel, what it would be without the legend. Without
+    `set_aside` the picture is what it always was: the screenshot's size,
+    byte for byte.
     """
     img = base_rgb.copy()
     if cv2 is None:
@@ -164,8 +167,7 @@ def draw_boxes(base_rgb, regions, *, label: bool = True,
         cv2.rectangle(overlay, (r.x, r.y), (r.x + r.w, r.y + r.h), c, -1)
     cv2.addWeighted(overlay, 0.18, out, 0.82, 0, out)
 
-    if set_aside:
-        _draw_set_aside(out, list(set_aside), regions)
+    legend = _draw_set_aside(out, list(set_aside)) if set_aside else ""
 
     for r in regions:
         c = region_color(r)
@@ -188,6 +190,10 @@ def draw_boxes(base_rgb, regions, *, label: bool = True,
         if r.selector:
             _label(out, r.selector[:52], r.x, r.y + r.h + 20, (60, 60, 60), scale=0.4)
 
+    if legend:
+        #  Under the screenshot, never over it: a corner of a small element
+        #  is half of it, and the legend there covered what was to be seen.
+        out = np.vstack([out, legend_strip(out.shape[1], legend)])
     return out
 
 
@@ -198,9 +204,8 @@ SET_ASIDE_DRAWN = 40
 #: (at most 255 * 0.55 + 28 ≈ 168), so it shows on a light page and a dark one,
 #: and never reads as one of the kind colors of a real change.
 SET_ASIDE_GREY = (225, 225, 225)
-#: The backing of the legend: dark grey, not a color, laid over at this opacity.
+#: The legend strip under the picture: dark grey, not a color.
 _LEGEND_BACK = (40, 40, 40)
-_LEGEND_ALPHA = 0.8
 #: At most this many reasons are named in the legend; the rest are "+N other".
 LEGEND_GROUPS = 3
 _DASH, _GAP = 4, 3
@@ -263,9 +268,10 @@ def set_aside_legend(set_aside, drawn: int | None = None) -> str:
     return text
 
 
-def _draw_set_aside(out, regions, real=()) -> None:
-    """The muted frames of what the engine set aside, and their legend, in
-    place. See `draw_boxes`. No caption at a frame: one legend says them all."""
+def _draw_set_aside(out, regions) -> str:
+    """The muted frames of what the engine set aside, in place; returns their
+    legend, which `draw_boxes` puts under the picture. See `draw_boxes`. No
+    caption at a frame: one legend says them all."""
     h, w = out.shape[:2]
     regions = sorted(regions, key=lambda r: -int(getattr(r, "pixel_count", 0) or 0))
     drawn = regions[:SET_ASIDE_DRAWN]
@@ -275,54 +281,78 @@ def _draw_set_aside(out, regions, real=()) -> None:
         if x1 < x0 or y1 < y0:
             continue
         _dashed_rect(out, x0, y0, x1, y1, SET_ASIDE_GREY)
-    _set_aside_key(out, set_aside_legend(regions, len(drawn)), list(real))
+    return set_aside_legend(regions, len(drawn))
 
 
 _LEGEND_SCALE = 0.4
 _SAMPLE_W = 18          # the dashed sample before the text
-_PAD = 5
-_MARGIN = 6             # from the picture's edge
+_PAD = 5                # above the first line, under the last, around the sample
+_MARGIN = 6             # from the picture's left and right edges
+_LINE_GAP = 4           # between the lines of a legend that wrapped
+#: As tall as a line of the legend can be: a capital, a descender, a bracket.
+_LINE_PROBE = "Ag(|)"
 
 
-def legend_box(shape, text: str, real=()) -> tuple[int, int, int, int]:
-    """(x0, y0, x1, y1) of the legend: bottom left, else bottom right, else top
-    left — the first corner that meets no real region (its frame and caption
-    with it); none free, bottom left."""
-    h, w = shape[:2]
-    (tw, th), base = cv2.getTextSize(text, _FONT, _LEGEND_SCALE, 1)
-    bw = min(w - 1, _PAD + _SAMPLE_W + _PAD + tw + _PAD)
-    bh = th + base + 2 * _PAD
-    left, right = _MARGIN, max(0, w - _MARGIN - bw)
-    bottom, top = max(0, h - _MARGIN - bh), _MARGIN
-    corners = [(left, bottom), (right, bottom), (left, top)]
-
-    def meets(x, y) -> bool:
-        for r in real:
-            #  The frame is up to 3 px thick, its caption up to ~22 px above.
-            rx0, ry0 = int(r.x) - 4, int(r.y) - 24
-            rx1, ry1 = int(r.x + r.w) + 4, int(r.y + r.h) + 4
-            if x < rx1 and rx0 < x + bw and y < ry1 and ry0 < y + bh:
-                return True
-        return False
-
-    x, y = next(((x, y) for x, y in corners if not meets(x, y)), corners[0])
-    return x, y, x + bw, y + bh
+def _text_x() -> int:
+    return _MARGIN + _SAMPLE_W + _PAD
 
 
-def _set_aside_key(out, text: str, real) -> None:
+def legend_lines(text: str, width: int) -> list[str]:
+    """The legend broken into the lines of a strip `width` px wide.
+
+    It breaks after each group ('35 subpixel shift;') and before
+    '(40 of 45 drawn)', never inside a group while a group fits; a group
+    wider than the line alone is broken between its words. The font is the
+    legend's own, never smaller. The lines joined with one space are the
+    text.
+    """
     if not text:
-        return
-    x0, y0, x1, y1 = legend_box(out.shape, text, real)
-    patch = out[y0:y1, x0:x1].astype(np.float32)
-    back = np.array(_LEGEND_BACK, np.float32)
-    out[y0:y1, x0:x1] = (patch * (1 - _LEGEND_ALPHA) + back * _LEGEND_ALPHA).astype(np.uint8)
-    mid = (y0 + y1) // 2
-    sx0 = x0 + _PAD
-    _dashed_rect(out, sx0, mid - 4, sx0 + _SAMPLE_W - 1, mid + 4, SET_ASIDE_GREY)
-    (_, th), base = cv2.getTextSize(text, _FONT, _LEGEND_SCALE, 1)
-    ty = y0 + _PAD + th
-    cv2.putText(out, text, (sx0 + _SAMPLE_W + _PAD, ty), _FONT, _LEGEND_SCALE,
-                SET_ASIDE_GREY, 1, cv2.LINE_AA)
+        return []
+    room = max(1, width - _text_x() - _MARGIN)
+
+    def wide(s: str) -> int:
+        return cv2.getTextSize(s, _FONT, _LEGEND_SCALE, 1)[0][0]
+
+    head, sep, tail = text.rpartition(" (")
+    if not (sep and tail.endswith(" drawn)")):
+        head, sep, tail = text, "", ""
+    groups = head.split("; ")
+    pieces = [g + ";" for g in groups[:-1]] + [groups[-1]]
+    if sep:
+        pieces.append("(" + tail)
+    words: list[str] = []
+    for piece in pieces:
+        words.extend([piece] if wide(piece) <= room else piece.split(" "))
+
+    lines: list[str] = []
+    for word in words:
+        if lines and wide(lines[-1] + " " + word) <= room:
+            lines[-1] += " " + word
+        else:
+            lines.append(word)
+    return lines
+
+
+def legend_strip(width: int, text: str) -> np.ndarray:
+    """The legend as a strip `width` px wide to go under the picture: dark
+    grey, the dashed sample on the left, the text after it, in as many lines
+    as it takes (`legend_lines`). Only neutral pixels: R = G = B."""
+    lines = legend_lines(text, width)
+    (_, th), base = cv2.getTextSize(_LINE_PROBE, _FONT, _LEGEND_SCALE, 1)
+    lh = th + base
+    height = 2 * _PAD + len(lines) * lh + (len(lines) - 1) * _LINE_GAP
+    strip = np.empty((height, width, 3), np.uint8)
+    strip[:] = _LEGEND_BACK
+    #  The sample stands by the first line, as it stood by the one line.
+    mid = _PAD + lh // 2
+    sx1 = min(width - 1, _MARGIN + _SAMPLE_W - 1)
+    if sx1 > _MARGIN:
+        _dashed_rect(strip, _MARGIN, mid - 4, sx1, mid + 4, SET_ASIDE_GREY)
+    for i, line in enumerate(lines):
+        ty = _PAD + th + i * (lh + _LINE_GAP)
+        cv2.putText(strip, line, (_text_x(), ty), _FONT, _LEGEND_SCALE,
+                    SET_ASIDE_GREY, 1, cv2.LINE_AA)
+    return strip
 
 
 def _dashed_rect(img, x0, y0, x1, y1, color) -> None:

@@ -275,11 +275,14 @@ root; a folder is not made just to hold them. `--vistest-baselines` or
 **Reading the diff picture.** The colored boxes are what failed the check,
 each with its kind and severity. The grey dashed frames are what the engine
 set aside: rendering noise it explained, or a change below a threshold you
-set. They have no captions; one grey legend in a corner says what they are,
+set. They have no captions; one grey legend says what they are,
 `set aside: 35 subpixel shift; 2 too small`, and `(40 of 45 drawn)` when
-there are more than the 40 it draws. The legend keeps out of the colored
-boxes: bottom left, else bottom right, else top left. The frames are the
-places the message lists under `also:` and `let through:`.
+there are more than the 40 it draws. The legend is a dark grey strip under
+the screenshot, not on it, so the diff picture is that much taller than the
+screenshot and nothing of the screenshot is covered; on a narrow element it
+takes as many lines as it needs. Without anything set aside there is no
+strip, and the picture is the screenshot's size. The frames are the places
+the message lists under `also:` and `let through:`.
 
 **The platform.** The directory is named by the operating system, the browser,
 the picture's scale and the window size: `linux-chromium-1x-1440x900`,
