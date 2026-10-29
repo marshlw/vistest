@@ -211,6 +211,7 @@ SET_ASIDE_WORD = {
     "page-shift": "subpixel shift",
     "min-size": "too small",
     "rerender": "re-render noise",
+    "rerender-text": "re-render noise",
     "antialias": "antialiasing",
     "below threshold": "below threshold",
 }

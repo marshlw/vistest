@@ -242,6 +242,14 @@ def test_the_legend_words_come_from_one_dictionary():
         assert set_aside_word(_quiet(0, 0, 4, 4, by=by)) == word, by
 
 
+def test_the_rules_engine_v2_writes_have_a_word():
+    """The legend names what v2 itself writes into `suppressed_by`, not a raw rule name."""
+    from vistest.core.v2 import pageshift, rerender
+
+    for rule in (pageshift.RULE, rerender.RULE):
+        assert set_aside_word(_quiet(0, 0, 4, 4, by=f"{rule}: x")) != rule, rule
+
+
 def test_the_legend_names_three_reasons_and_counts_the_rest():
     by = (["page-shift: a"] * 5 + ["min-size: a"] * 4 + ["antialias: a"] * 3
           + ["rerender: a"] * 2 + ["scrollbar: a"])
