@@ -1,29 +1,68 @@
 # VisTest
 
-**Визуальное регресс-тестирование для pytest и Playwright, которое объясняет,
-почему проверка упала.** Одна функция, `expect_screenshot`, эталоны лежат в
-вашем репозитории, и больше ничего нигде не запущено. Упавшая проверка
-называет, что изменилось — «recolored: #1f2937 → #4d5666», «block moved by
-+1 px along y», — а не печатает процент. Есть и сервер для команд —
-коммерческий продукт.
+**Визуальное регресс-тестирование для pytest и Playwright, которое объясняет, почему проверка упала.**
 
-*Read in English: [README.md](README.md)*
-
----
-
-## Установка
+*Read in English: [README.md](https://github.com/marshlw/vistest/blob/main/README.md)*
 
 ```bash
 pip install "vistest[browser]"
 playwright install chromium
 ```
 
+```python
+from vistest import expect_screenshot
+
+
+def test_home(page):
+    page.goto("http://localhost:8000")
+    expect_screenshot(page, "home.png")
+```
+
+Первый прогон красный, потому что эталона ещё нет: `pytest --vistest-update`
+записывает его в `tests/__vistest__/`, вы смотрите на него и коммитите, и
+дальше каждый прогон сравнивает с ним.
+
+Когда страница меняется, проверка падает и говорит, что изменилось. Здесь это
+[демо-страница](https://github.com/marshlw/vistest/blob/main/examples/demo_page.html)
+из репозитория, у которой перекрашена одна кнопка:
+
+![Картинка diff упавшей проверки: страница приглушена, изменённая кнопка в жёлтой рамке с подписью FILL 92, замаскированные области пурпурные](https://raw.githubusercontent.com/marshlw/vistest/main/docs/img/failure.png)
+
+```
+vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
+  1 change not explained as rendering noise · worst 92/100 · no threshold set, so any change fails · 0.50% of the frame
+  reason:      fill in 1; worst 112x48 at (522, 418)
+  second look: the second picture is the same as the first, so the change is real, not motion
+  renderer:    same as the baseline's
+  baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  changed:     112x48 at (522, 418): fill: #3478f6 → #1d4ed8, color difference 14.5
+               (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
+  diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
+  report:      .vistest/report/index.html
+  accept it:   pytest --vistest-update
+```
+
+(Пути укорочены до корня проекта; в сообщении они полные. Сообщения VisTest
+только на английском.)
+
+---
+
+## Что это
+
+Одна функция, `expect_screenshot`, эталоны лежат в вашем репозитории, и
+больше ничего нигде не запущено. Упавшая проверка называет, что изменилось —
+«fill: #3478f6 → #1d4ed8», «block moved by +1 px along y», — а не печатает
+процент. Есть и сервер для команд — коммерческий продукт.
+
+## Установка подробнее
+
 `[browser]` приносит Playwright и `pytest-playwright` — он и даёт тестам
 фикстуру `page`; вторая строка скачивает браузер. Нужен Python 3.11 или новее.
 Без `[browser]` пакет сравнивает картинки, которые ему передали, и браузер не
 открывает.
 
-## Первый тест
+## Пример подробнее
 
 ```python
 from pathlib import Path
@@ -57,7 +96,7 @@ def test_pricing_cards(demo):
     expect_screenshot(demo.locator("#pricing"), "pricing.png")
 ```
 
-Это [`examples/test_library.py`](examples/test_library.py) из репозитория без
+Это [`examples/test_library.py`](https://github.com/marshlw/vistest/blob/main/examples/test_library.py) из репозитория без
 третьего теста и строки, которая пропускает файл, когда Playwright не
 установлен; страница, которую он открывает, `demo_page.html`, лежит рядом.
 Попробовать как есть:
@@ -111,11 +150,10 @@ PNG быстро раздувают репозиторий, поэтому эт�
 
 ## Когда проверка падает
 
-Измените страницу — здесь шрифт цены уменьшен с 34 до 30 px, — и проверка
-скажет, что изменилось и где что лежит. Образец сообщения и разбор каждой его
-строки — в английском README, раздел
-[«When a check fails»](README.md#when-a-check-fails): сообщения VisTest только
-на английском.
+Изменение, которое сдвигает всё под собой, даёт сообщение длиннее — например,
+если на той же странице шрифт цены уменьшить с 34 до 30 px. Образец такого
+сообщения и разбор каждой его строки — в английском README, раздел
+[«When a check fails»](https://github.com/marshlw/vistest/blob/main/README.md#when-a-check-fails).
 
 Если изменение и было задумано, примите его `pytest --vistest-update` и
 закоммитьте новый эталон. Отчёт, `.vistest/report/index.html`, — один файл,
@@ -149,7 +187,7 @@ jobs:
         with: { name: vistest, path: .vistest/ }
 ```
 
-Для GitLab — [`.gitlab-ci.example.yml`](.gitlab-ci.example.yml), в образе
+Для GitLab — [`.gitlab-ci.example.yml`](https://github.com/marshlw/vistest/blob/main/.gitlab-ci.example.yml), в образе
 Playwright той же версии. Набор для CI в первый раз берётся из самого CI:
 прогон падает с «no baseline», вы скачиваете `.vistest/actual/`, смотрите
 картинки, кладёте их в `tests/__vistest__/` и коммитите. Новый Playwright
@@ -179,7 +217,7 @@ Playwright той же версии. Набор для CI в первый раз
 окружение, потом файл — `vistest.yaml`, а для флагов `pyproject.toml`, —
 потом умолчание.** У порога есть ещё слой между вызовом и окружением: паспорт
 самого снимка (`.json` рядом с эталоном). Таблица всех настроек — в английском
-README, раздел [«Settings»](README.md#settings).
+README, раздел [«Settings»](https://github.com/marshlw/vistest/blob/main/README.md#settings).
 
 `VISTEST_UPDATE_BASELINES` — единственное исключение, и намеренное: под pytest
 эталоны в репозиторий пишет только командная строка — переменная, которую
@@ -199,11 +237,11 @@ expect_screenshot(
 )
 ```
 
-`vistest.yaml` необязателен; в [`examples/vistest.yaml`](examples/vistest.yaml)
+`vistest.yaml` необязателен; в [`examples/vistest.yaml`](https://github.com/marshlw/vistest/blob/main/examples/vistest.yaml)
 перечислены все ключи, которые читает библиотека, и что каждый делает. Ключ,
 который библиотека не читает, называется в одном предупреждении за прогон, а не
 молча ничего не меняет. Все параметры, ключи и шаги — в
-[гайде](docs/GUIDE.md) (на английском).
+[гайде](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md) (на английском).
 
 ## Где что лежит
 
@@ -256,10 +294,10 @@ vistest check checkout.png shots/checkout.png --json
 
 ## Дальше
 
-- [docs/GUIDE.md](docs/GUIDE.md) — библиотека целиком, на английском: все
+- [docs/GUIDE.md](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md) — библиотека целиком, на английском: все
   параметры, ожидание готовности и второй взгляд, маски, движок и то, чего он
   не различает.
-- [CHANGELOG.md](CHANGELOG.md) — что изменилось и что поменять в своих тестах.
+- [CHANGELOG.md](https://github.com/marshlw/vistest/blob/main/CHANGELOG.md) — что изменилось и что поменять в своих тестах.
 
 ---
 
@@ -304,7 +342,7 @@ python tests/benchmark.py --compare --native docs/benchmark_native.json \
 
 # Лицензия
 
-Apache-2.0. См. [LICENSE](LICENSE) и [NOTICE](NOTICE).
+Apache-2.0. См. [LICENSE](https://github.com/marshlw/vistest/blob/main/LICENSE) и [NOTICE](https://github.com/marshlw/vistest/blob/main/NOTICE).
 
 Используйте, меняйте и распространяйте — в открытом или закрытом коде; LICENSE
 и NOTICE должны идти вместе с тем, что вы распространяете. Имя VisTest лицензия

@@ -1,29 +1,68 @@
 # VisTest
 
-**Visual regression testing for pytest and Playwright that says why a check
-failed.** One function, `expect_screenshot`, with the baselines in your
-repository and nothing running anywhere else. A check that fails names what
-changed — «recolored: #1f2937 → #4d5666», «block moved by +1 px along y» —
-instead of printing a percentage. There is also a server for teams — a
-commercial product.
+**Visual regression testing for pytest and Playwright that says why a check failed.**
 
 *Читать по-русски: [README.ru.md](https://github.com/marshlw/vistest/blob/main/README.ru.md)*
-
----
-
-## Install
 
 ```bash
 pip install "vistest[browser]"
 playwright install chromium
 ```
 
+```python
+from vistest import expect_screenshot
+
+
+def test_home(page):
+    page.goto("http://localhost:8000")
+    expect_screenshot(page, "home.png")
+```
+
+The first run is red, because there is no baseline yet: `pytest --vistest-update`
+writes it to `tests/__vistest__/`, you look at it and commit it, and every run
+after compares against it.
+
+When the page changes, the check fails and says what changed. Here the page
+is this repository's [demo page](https://github.com/marshlw/vistest/blob/main/examples/demo_page.html)
+with one button's color changed:
+
+![The diff picture of a failed check: the page dimmed, the changed button in a yellow frame labelled FILL 92, the masked areas in magenta](https://raw.githubusercontent.com/marshlw/vistest/main/docs/img/failure.png)
+
+```
+vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)
+  1 change not explained as rendering noise · worst 92/100 · no threshold set, so any change fails · 0.50% of the frame
+  reason:      fill in 1; worst 112x48 at (522, 418)
+  second look: the second picture is the same as the first, so the change is real, not motion
+  renderer:    same as the baseline's
+  baseline:    tests/__vistest__/linux-chromium-1x-1280x800/landing.png
+  actual:      .vistest/actual/linux-chromium-1x-1280x800/landing.png
+  changed:     112x48 at (522, 418): fill: #3478f6 → #1d4ed8, color difference 14.5
+               (color difference is ΔE00 (CIEDE2000): 1 ≈ barely visible, 10 and more is plainly another color)
+  diff:        .vistest/diff/linux-chromium-1x-1280x800/landing.png
+  report:      .vistest/report/index.html
+  accept it:   pytest --vistest-update
+```
+
+(Paths are shortened to the project's root; the message prints them in full.)
+
+---
+
+## What it is
+
+One function, `expect_screenshot`, with the baselines in your repository and
+nothing running anywhere else. A check that fails names what changed —
+«fill: #3478f6 → #1d4ed8», «block moved by +1 px along y» — instead of
+printing a percentage. There is also a server for teams — a commercial
+product.
+
+## Install, in more detail
+
 `[browser]` brings Playwright and `pytest-playwright`, which gives your tests
 the `page` fixture; the second line downloads the browser. Python 3.11 or newer.
 Without `[browser]` the package compares pictures you hand it and opens no
 browser.
 
-## A first test
+## A fuller example
 
 ```python
 from pathlib import Path
@@ -112,8 +151,8 @@ PNGs grow a repository quickly, so baselines are usually better off in LFS:
 
 ## When a check fails
 
-Change the page — here the price's font cut from 34 to 30 px — and the check
-says what changed and where everything is:
+A change that moves what is under it says more. Here the price's font is cut
+from 34 to 30 px on the same page:
 
 ```
 vistest: 'landing.png' differs from the baseline (linux-chromium-1x-1280x800)

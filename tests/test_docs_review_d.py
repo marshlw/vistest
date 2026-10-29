@@ -22,7 +22,7 @@ examples/vistest.yaml:
 * every `vistest COMMAND` and `python -m vistest.cli COMMAND` exists in the
   library's CLI;
 * every key the library reads (`LIBRARY_READS`) is described in the guide;
-* the test the README shows is `examples/test_library.py`, line for line;
+* the fuller example the README shows is `examples/test_library.py`, line for line;
 * `engine=` of `vistest.compare` is not documented (phase 6 takes it away);
 * the CI examples pin Playwright to the version of their image.
 
@@ -232,8 +232,13 @@ def test_every_key_the_library_reads_is_in_the_guide():
 
 @pytest.mark.parametrize("doc", ["README.md", "README.ru.md"])
 def test_the_readme_test_is_the_example(doc):
-    """Its first Python block is examples/test_library.py, in order, nothing added."""
-    block = re.search(r"```python\n(.*?)```", _read(doc), re.S).group(1)
+    """Its fuller example — the first Python block with a fixture in it — is
+    examples/test_library.py, in order, nothing added. (The first block of all
+    is the six-line test at the top: `tests/test_readme_top.py` runs it.)"""
+    blocks = [b for b in re.findall(r"```python\n(.*?)```", _read(doc), re.S)
+              if "@pytest.fixture" in b]
+    assert blocks, f"{doc}: no Python block with a fixture — the example is gone"
+    block = blocks[0]
 
     def lines(text):
         return [re.sub(r"\s+# noqa: \w+$", "", ln.rstrip())
