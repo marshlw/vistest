@@ -6,6 +6,18 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+### Fixed
+
+- **A description names a color the picture has.** The ink color in
+  `recolored: …`, `edges redrawn …` and `shape changed: …; color …` was read
+  channel by channel over the region's neighbourhood; with two inks there
+  (a blue focus ring over a grey border, a link beside other text) the
+  channels came from different pixels and the color said was in neither
+  picture: `#d1d5db → #3b82db` for a ring drawn in `#3b82f6`. When that
+  reading is no pixel's color, the same reading over the changed pixels is
+  said if a pixel has it: `#d1d5db → #3b82f6`. Only the words change; no
+  verdict, region or severity does.
+
 ## 0.2.0a2
 
 What the first check of 0.2.0a1 on a real application showed, fixed; and

@@ -33,7 +33,7 @@ Each sentence is the reading of a measurement the engine already makes
 3. **a fill** — the most frequent color of the region's neighbourhood (its
    paper, `rerender.background_unchanged`) changed discernibly:
    «fill: #2563eb → #4d77ff, color difference 8.0»;
-4. **the strokes** (`rerender.ink_colour`, `rerender.shape_within`) — the same
+4. **the strokes** (`ink_named`, `rerender.shape_within`) — the same
    shapes within a pixel in a new color: «recolored: #1f2937 → #4d5666, color
    difference 14.8»; the same shapes in a color under `ink_limit` away:
    «edges redrawn within 1 px, same color (#c7ced8): the outline changed
@@ -46,6 +46,16 @@ Each sentence is the reading of a measurement the engine already makes
 
 The color difference is CIEDE2000 (ΔE00); the scale is said once where the
 sentences are read, not in each of them.
+
+A color named is one the picture has (`ink_named`). The ink is read as rule
+(a) of `rerender.py` reads it — each channel at its extreme away from the
+paper — and that reading is a pixel's color when one ink is there. With two
+inks in the region's neighbourhood the channels come from different pixels: a
+blue focus ring #3b82f6 drawn over a grey border #d1d5db reads #3b82db,
+which no pixel has (table/focus_ring/2px). Then the same reading is taken over
+the changed pixels only, and said if a pixel has it; if not, the first
+reading is kept — on text drawn again by another rasteriser no pixel is fully
+covered, and the reading over the channels is what recovers its ink.
 
 Something is always said: a region whose paper did not change has strokes in
 at least one frame — the pixels that differ from the paper are what changed.
@@ -82,6 +92,9 @@ WHATS = ("moved", "line", "fill", "color", "redrawn", "shape")
 #: Under this ΔE00 two colors are said as the same one (the hex may still
 #: differ in its last digit).
 SAME_COLOR = 0.5
+#: A color is «drawn» when a pixel has it to within this many levels in every
+#: channel — the last level of rounding, not a tolerance on the ink.
+DRAWN_LEVELS = 1
 
 
 @dataclass(frozen=True)
@@ -139,6 +152,31 @@ def line(c: _rr.Crop) -> Description | None:
                                f"{_rr._hex(colour)}")
 
 
+def _drawn(img: np.ndarray, where: np.ndarray, rgb: np.ndarray) -> bool:
+    px = img[where]
+    return bool(px.size) and bool(
+        (np.abs(px - rgb[None, :]).max(axis=1) <= DRAWN_LEVELS).any())
+
+
+def ink_named(c: _rr.Crop) -> _rr.InkColour:
+    """The ink of A and of B as colors the pictures have (module docstring).
+
+    Each frame on its own: `rerender.ink_of` over the region's footprint, if a
+    pixel of the footprint has that color; else `ink_of` over the region's
+    changed pixels, if one of them has it; else the first reading. Only the
+    words use it — rule (a) and the page-shift rule read `rerender.ink_colour`.
+    """
+    def one(img: np.ndarray, paper: np.ndarray) -> np.ndarray:
+        ink = _rr.ink_of(img, paper, c.footprint)
+        if _drawn(img, c.footprint, ink) or not c.changed.any():
+            return ink
+        own = _rr.ink_of(img, paper, c.changed)
+        return own if _drawn(img, c.changed, own) else ink
+    ia, ib = one(c.a, c.paper_a), one(c.b, c.paper_b)
+    return _rr.InkColour(delta_e=_rr.delta_e(ia, ib), ink_a=tuple(map(float, ia)),
+                         ink_b=tuple(map(float, ib)))
+
+
 def moved(forward: _rr.BlockShift, backward: _rr.BlockShift) -> bool:
     """B is A moved by (dx, dy), and A is B moved by (−dx, −dy)."""
     return (not forward.holds() and not backward.holds()
@@ -161,7 +199,7 @@ def describe(c: _rr.Crop, forward: _rr.BlockShift, backward: _rr.BlockShift, *,
     if paper.delta_e >= jnd:
         return Description("fill", "fill: " + _change(_rr._hex(c.paper_a), _rr._hex(c.paper_b),
                                                       paper.delta_e))
-    ink = _rr.ink_colour(c)
+    ink = ink_named(c)
     shape = _rr.shape_within(c)
     a, b = _rr._hex(ink.ink_a), _rr._hex(ink.ink_b)
     within = f"{_rr.SHAPE_TOLERANCE_PX} px"

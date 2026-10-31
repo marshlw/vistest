@@ -224,3 +224,57 @@ def test_the_corpus_changes_are_said_as_they_were_made(corpus, name, sentence):
     a new ink at ΔE00 15, a fill at ΔE00 8, an underline, a block moved a pixel
     down. The first region — the most severe — says it."""
     assert corpus(name)[0] == sentence
+
+
+# --------------------------------------------------------------------------- #
+#  A color named is one the picture has
+# --------------------------------------------------------------------------- #
+def _corpus_pair(name):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import browser_corpus as bc
+
+    from vistest.core import pngio
+
+    m = bc.load_manifest()
+    c = {x["name"]: x for x in m["cases"]}[name]
+    return (pngio.read(bc.CORPUS_DIR / m["templates"][c["template"]]["base"]),
+            pngio.read(bc.CORPUS_DIR / c["actual"]))
+
+
+def _rgb(hexs):
+    return np.array([int(hexs[i:i + 2], 16) for i in (1, 3, 5)])
+
+
+def _has(img, x, y, w, h, hexs, pad=3):
+    crop = img[max(0, y - pad):y + h + pad, max(0, x - pad):x + w + pad].reshape(-1, 3)
+    return bool((np.abs(crop.astype(int) - _rgb(hexs)).max(axis=1) <= 1).any())
+
+
+def test_a_focus_ring_is_said_in_the_ring_s_color():
+    """table/focus_ring/2px: a blue ring #3b82f6 over the grey border #d1d5db
+    of an input. Read channel by channel over the whole neighbourhood, B's ink
+    was #3b82db — red and green of the ring, blue of the border — a color no
+    pixel has. The color said for B is a pixel of B, and it is the ring's."""
+    import re
+
+    from vistest.core.v2 import rerender as rr
+
+    a, b = _corpus_pair("table/focus_ring/2px")
+    r = compare(a, b, engine="v2")
+    x = r.regions[0]
+    said = description(x)
+    new = re.findall(r"→ (#[0-9a-f]{6})", said)
+    assert new, said
+    assert _has(b, x.x, x.y, x.w, x.h, new[-1]), said
+    assert rr.delta_e(_rgb(new[-1]), _rgb("#3b82f6")) <= 2.0, said
+
+
+def test_one_ink_recolored_is_said_as_before():
+    """A region with one ink (table/text_color/de15: the text in a new color):
+    the reading over the channels is a pixel's color in each frame, so it is
+    the color said, as before, and the sentence does not change."""
+    a, b = _corpus_pair("table/text_color/de15")
+    x = compare(a, b, engine="v2").regions[0]
+    assert description(x) == "recolored: #1f2937 → #4d5666, color difference 14.8"
+    assert _has(a, x.x, x.y, x.w, x.h, "#1f2937")
+    assert _has(b, x.x, x.y, x.w, x.h, "#4d5666")
