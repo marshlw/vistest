@@ -208,7 +208,9 @@ class VisTestConfig:
                 raise ConfigError(f"{path}: {key}: {V1_REMOVED}")
             if key not in top:
                 raise ConfigError(f"{path}: unknown key {key!r}{_did_you_mean(key, top)}")
-        cfg = cls(source=str(path), written=_written(raw, sections))
+        written = tuple(k for k in _written(raw, sections)
+                        if k.partition(".")[2] not in _IGNORED.get(k.partition(".")[0], {}))
+        cfg = cls(source=str(path), written=written)
 
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
@@ -222,6 +224,12 @@ class VisTestConfig:
             for k, v in raw[key].items():
                 if key == "diff" and k in REMOVED_KEYS:
                     raise ConfigError(f"{path}: diff.{k}: {V1_REMOVED}")
+                if k in _IGNORED.get(key, {}):
+                    import logging
+
+                    logging.getLogger("vistest.config").warning(
+                        "%s: %s.%s is ignored: %s", path, key, k, _IGNORED[key][k])
+                    continue
                 if k in _RENAMED.get(key, {}):
                     raise ConfigError(f"{path}: {key}.{k} is called "
                                       f"{key}.{_RENAMED[key][k]} since 0.2.0.dev3")
@@ -450,6 +458,15 @@ def _did_you_mean(key: str, known, prefix: str = "") -> str:
 #: Keys of a section that were renamed before the first release: old -> new.
 #: Refused by name, so that the setting is not lost in silence.
 _RENAMED: dict[str, dict[str, str]] = {"capture": {"restore_scroll": "match_baseline_scroll"}}
+
+
+#: Keys of a section that still load and do nothing: one warning each, and
+#: the value is dropped. Unlike REMOVED_KEYS they never chose a verdict, so a
+#: vistest.yaml written for an older version keeps loading.
+_IGNORED: dict[str, dict[str, str]] = {"capture": {
+    "stability_sticky": ("no instability mask is accumulated between runs any "
+                         "more (removed after 0.2.0a3); delete the line"),
+}}
 
 
 #: Fields of a section that are derived, never written in vistest.yaml:

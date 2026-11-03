@@ -50,9 +50,14 @@ __all__ = [
 # --------------------------------------------------------------------------- #
 @dataclass
 class BaselineRecord:
+    """One baseline as the service's store holds it.
+
+    There is no instability mask here: a check's mask is that check's and is
+    stored nowhere (`stability_mask` was dropped after 0.2.0a3).
+    """
+
     name: str
     image: np.ndarray
-    stability_mask: np.ndarray | None = None
     dom: dict | None = None
     ignore_boxes: list[dict] | None = None
     version: int = 1

@@ -10,7 +10,6 @@
 
 Раскладка (baselines/<platform-key>/<project>/<name>/):
     baseline.png        эталон
-    stability.png       накопленная маска нестабильности
     dom.json            DOM-снепшот на момент апрува
     meta.json           версия, git sha, кто и когда заапрувил, ignore-боксы
     history/v3.png      предыдущие версии (для отката и «когда сломалось»)
@@ -25,6 +24,12 @@
   Проект задаётся префиксом в имени: `shop.example/login.png`.
 
 Плоские имена без проекта по-прежнему работают — старые эталоны не ломаются.
+
+No accumulated instability mask. Up to 0.2.0a3 every approve ORed the
+check's instability mask into `stability.png` here and every load handed it
+back, so a pixel that shivered once stayed masked for good. A check's mask is
+that check's now and is stored nowhere; a `stability.png` an older version
+left behind is neither read nor deleted.
 """
 
 from __future__ import annotations
@@ -40,7 +45,6 @@ from pathlib import Path
 import numpy as np
 
 from ..capture.playwright_capture import read_png
-from ..core import noise as _noise
 from ..core import pngio as _pngio
 from . import atomic as _atomic
 from .base import BaselineRecord, BaselineStore
@@ -172,7 +176,6 @@ class FileBaselineStore(BaselineStore):
         return BaselineRecord(
             name=name,
             image=read_png(img_path),
-            stability_mask=_noise.load_mask(d / "stability.png"),
             dom=dom,
             ignore_boxes=meta.get("ignore_boxes", []),
             version=int(meta.get("version", 1)),
@@ -222,13 +225,6 @@ class FileBaselineStore(BaselineStore):
                     pass
 
             _write_atomic_png(d / "baseline.png", record.image)
-
-            if record.stability_mask is not None:
-                merged = _noise.merge_masks(
-                    _noise.load_mask(d / "stability.png"), record.stability_mask,
-                    sticky=True,
-                )
-                _noise.save_mask(d / "stability.png", merged)
 
             if record.dom is not None:
                 _write_atomic_text(
@@ -433,7 +429,10 @@ class FileBaselineStore(BaselineStore):
 
     # ------------------------------------------------------------------ #
     def ignore_mask(self, name: str, shape: tuple[int, int]) -> np.ndarray | None:
-        """stability-маска + вечные ignore-зоны, приведённые к размеру кадра.
+        """Вечные ignore-зоны, приведённые к размеру кадра.
+
+        The zones only, or None when there are none: the accumulated
+        instability mask is gone, and an old `stability.png` is not applied.
 
         Текущего кадра здесь нет — значит нет и его DOM'а: зоны разрешаются по
         снепшоту ЭТАЛОНА. Для не двигавшегося элемента это тот же ответ, для
@@ -444,10 +443,9 @@ class FileBaselineStore(BaselineStore):
         rec = self.load(name)
         if rec is None:
             return None
-        mask = rec.stability_mask
-        if rec.ignore_boxes:
-            from vistest.core.regions import mask as zone_mask
+        if not rec.ignore_boxes:
+            return None
+        from vistest.core.regions import mask as zone_mask
 
-            boxes_mask, _ = zone_mask(shape, rec.ignore_boxes, baseline_dom=rec.dom)
-            mask = boxes_mask if mask is None else _noise.merge_masks(mask, boxes_mask)
-        return mask
+        boxes_mask, _ = zone_mask(shape, rec.ignore_boxes, baseline_dom=rec.dom)
+        return boxes_mask
