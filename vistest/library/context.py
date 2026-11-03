@@ -93,9 +93,15 @@ LIBRARY_READS = frozenset({
 
 
 def unread_keys(config) -> list[str]:
-    """The keys `config`'s vistest.yaml sets and the library does not read."""
+    """The keys `config`'s vistest.yaml sets and the library does not read.
+
+    Keys the loader ignores with a warning of their own are not named twice.
+    """
+    from ..config import _IGNORED
+
     return [k for k in getattr(config, "written", ())
-            if k not in LIBRARY_READS and k.split(".", 1)[0] not in LIBRARY_READS]
+            if k not in LIBRARY_READS and k.split(".", 1)[0] not in LIBRARY_READS
+            and k.partition(".")[2] not in _IGNORED.get(k.partition(".")[0], {})]
 
 
 def unread_text(config) -> str:

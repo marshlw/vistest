@@ -6,7 +6,10 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
-- **No accumulated instability mask.** `FileBaselineStore` no longer writes or reads `stability.png`, `BaselineRecord.stability_mask` is gone, and `capture.stability_sticky` in vistest.yaml loads with one warning and does nothing; an old `stability.png` is left in place and not applied.
+- **No accumulated instability mask.** `FileBaselineStore` no longer writes
+  or reads `stability.png`; `BaselineRecord.stability_mask` is accepted and
+  ignored. `capture.stability_sticky` in vistest.yaml loads with one warning
+  and does nothing. An old `stability.png` is left in place and not applied.
 
 ## 0.2.0a3
 

@@ -208,9 +208,7 @@ class VisTestConfig:
                 raise ConfigError(f"{path}: {key}: {V1_REMOVED}")
             if key not in top:
                 raise ConfigError(f"{path}: unknown key {key!r}{_did_you_mean(key, top)}")
-        written = tuple(k for k in _written(raw, sections)
-                        if k.partition(".")[2] not in _IGNORED.get(k.partition(".")[0], {}))
-        cfg = cls(source=str(path), written=written)
+        cfg = cls(source=str(path), written=_written(raw, sections))
 
         for key, klass in sections.items():
             if key not in raw or raw[key] is None:
@@ -462,7 +460,9 @@ _RENAMED: dict[str, dict[str, str]] = {"capture": {"restore_scroll": "match_base
 
 #: Keys of a section that still load and do nothing: one warning each, and
 #: the value is dropped. Unlike REMOVED_KEYS they never chose a verdict, so a
-#: vistest.yaml written for an older version keeps loading.
+#: vistest.yaml written for an older version keeps loading. They stay in
+#: `written` (the server reads it), and the library's «does not read» line
+#: leaves them out: the warning here has said it already.
 _IGNORED: dict[str, dict[str, str]] = {"capture": {
     "stability_sticky": ("no instability mask is accumulated between runs any "
                          "more (removed after 0.2.0a3); delete the line"),

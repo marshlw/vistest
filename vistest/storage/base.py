@@ -52,12 +52,14 @@ __all__ = [
 class BaselineRecord:
     """One baseline as the service's store holds it.
 
-    There is no instability mask here: a check's mask is that check's and is
-    stored nowhere (`stability_mask` was dropped after 0.2.0a3).
+    `stability_mask` is kept for compatibility: it is accepted and ignored,
+    neither stored nor applied (`FileBaselineStore` loads it as None). A
+    check's instability mask is that check's. To be removed in phase 6.
     """
 
     name: str
     image: np.ndarray
+    stability_mask: np.ndarray | None = None
     dom: dict | None = None
     ignore_boxes: list[dict] | None = None
     version: int = 1

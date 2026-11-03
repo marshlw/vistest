@@ -13,14 +13,15 @@
 pixel that shivered once stayed masked for good. The server stopped doing
 that (s1b4); this holds the library to the same rule: a check's mask is that
 check's, and it is stored nowhere. A `stability.png` an older version left
-behind is neither read nor deleted. `capture.stability_sticky`, the setting
-of that accumulation, warns once and loads.
+behind is neither read nor deleted. `BaselineRecord.stability_mask` is kept
+for the server on the pin and ignored. `capture.stability_sticky`, the
+setting of that accumulation, warns once and loads.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import fields
+from dataclasses import fields, replace
 
 import numpy as np
 
@@ -44,8 +45,16 @@ def _mask(x0: int, x1: int) -> np.ndarray:
     return m
 
 
-def test_record_has_no_stability_mask():
-    assert "stability_mask" not in {f.name for f in fields(BaselineRecord)}
+def test_stability_mask_is_accepted_and_not_stored(tmp_path):
+    """The field stays for the server on the pin: given, replaced, ignored."""
+    rec = BaselineRecord(name="page", image=np.full((20, 30, 3), 200, np.uint8),
+                         stability_mask=_mask(0, 5))
+    assert replace(rec, stability_mask=None).stability_mask is None
+    store = FileBaselineStore(tmp_path)
+    store.save(rec)
+    store.save(replace(rec, stability_mask=_mask(10, 15)))
+    assert not (store.dir_for("page") / "stability.png").exists()
+    assert store.load("page").stability_mask is None
 
 
 def test_save_save_with_different_masks_leaves_no_stability_file(tmp_path):
@@ -89,5 +98,7 @@ def test_stability_sticky_warns_once_and_loads(tmp_path, caplog):
     assert len(said) == 1, said
     assert "capture.stability_sticky" in said[0] and "ignored" in said[0]
     assert cfg.capture.stability_shots == 4
+    # The server warns on its own by `written`: the key stays there.
+    assert "capture.stability_sticky" in cfg.written
     # Said once: the «library does not read» line does not repeat it.
     assert "capture.stability_sticky" not in _context.unread_text(cfg)
