@@ -6,6 +6,14 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+## 0.2.0a3
+
+A description of a change names a color the pictures really have, and the
+README this page shows starts with a six-line test and a real failure, with
+the one comparison run the project has recorded and what it does not say.
+No change to the comparison itself: the same pairs give the same verdicts as
+in 0.2.0a2.
+
 ### Fixed
 
 - **A description names a color the picture has.** The ink color in
