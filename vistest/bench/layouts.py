@@ -41,6 +41,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..report.library import written_order
+
 __all__ = ["CANARY_SUFFIX", "Found", "LayoutError", "Pair", "discover"]
 
 PLAYWRIGHT = "Playwright test-results"
@@ -173,7 +175,7 @@ def _rows(vistest_dir: Path) -> dict[str, dict]:
         if not isinstance(row, dict) or not row.get("name"):
             continue
         rel = "/".join(filter(None, [str(row.get("platform") or ""), str(row["name"])]))
-        if rel not in out or row.get("written_at", 0) >= out[rel].get("written_at", 0):
+        if rel not in out or written_order(row) >= written_order(out[rel]):
             out[rel] = row
     return out
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import base64
 import html
+import itertools
 import json
 import time
 from dataclasses import dataclass, field
@@ -67,9 +68,17 @@ def describe(result) -> str:
 # --------------------------------------------------------------------------- #
 #  Parts
 # --------------------------------------------------------------------------- #
+#  Within one process, the order the parts were written in. `written_at` alone
+#  cannot say it: on Windows two checks a few milliseconds apart get the same
+#  `time.time()`, and then "newest wins" picked whichever part's random file
+#  name sorted last - a check that passed could show as the baseline it had
+#  just been accepted from.
+_SEQ = itertools.count(1)
+
+
 def write_part(parts_dir: str | Path, entry: dict) -> Path:
     """One check's row, written under a name no other process will pick."""
-    entry = {**entry, "written_at": time.time()}
+    entry = {**entry, "written_at": time.time(), "seq": next(_SEQ)}
     path = Path(parts_dir) / f"{uuid4().hex}.json"
     return atomic.write_json(path, entry)
 
@@ -90,6 +99,15 @@ class Parts:
     unreadable: int = 0
     #  Where the report was written, filled in by `build`.
     report: Path | None = None
+
+
+def written_order(entry: dict) -> tuple[float, int]:
+    """When a part was written: the clock, then the process's own count.
+
+    Parts without `seq` (written before it existed) count as 0, so the clock
+    alone decides between them, as it did.
+    """
+    return (float(entry.get("written_at") or 0), int(entry.get("seq") or 0))
 
 
 def read_parts(parts_dir: str | Path) -> Parts:
@@ -135,8 +153,7 @@ def read_parts(parts_dir: str | Path) -> Parts:
             writers.setdefault(key, set()).add(nodeid)
 
         previous = latest.get(key)
-        if previous is None or entry.get("written_at", 0) >= \
-                previous.get("written_at", 0):
+        if previous is None or written_order(entry) >= written_order(previous):
             latest[key] = entry
 
     collisions = {key: sorted(tests) for key, tests in writers.items()
