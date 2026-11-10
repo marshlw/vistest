@@ -57,7 +57,6 @@ RULES = (
     ".gitignore",
     ".gitattributes",
     ".gitlab-ci.example.yml",
-    ".vistest/secrets.env.example",
     ".github/workflows/ci.yml",
     ".github/workflows/install-check.yml",
 )

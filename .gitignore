@@ -35,7 +35,6 @@
 # -----------------------------------------------------------------------------
 .vistest/secrets.env
 .vistest/secrets.*
-!.vistest/secrets.env.example
 secrets.env
 .env
 .env.*
@@ -70,7 +69,7 @@ gcloud-*.json
 
 
 # -----------------------------------------------------------------------------
-#  VisTest runtime data — everything under .vistest/ except the example file.
+#  VisTest runtime data — everything under .vistest/.
 #
 #  baselines/  screenshots and DOM snapshots of the pages you captured
 #  external/   the same, for connected third-party test suites
@@ -79,11 +78,7 @@ gcloud-*.json
 #  projects.yaml   registry of connected suites: absolute paths, suite names
 #  *.db        run history and metrics, local to each machine
 # -----------------------------------------------------------------------------
-.vistest/*
-!.vistest/secrets.env.example
-# `.vistest/*` rather than `.vistest/`: git cannot re-include a file that
-# lives inside an excluded directory, so the directory itself must stay
-# visible for the exception above to work.
+.vistest/
 
 # Generated tests and page objects: they are produced from the pages you
 # captured, so their selectors, texts and URLs come from a real site.

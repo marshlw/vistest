@@ -6,9 +6,8 @@
 # `python scripts/check_i18n.py --update` records that after a file is
 # translated.
 #
-# 1500 lines in 32 files.
+# 1493 lines in 31 files.
 
-7	.vistest/secrets.env.example
 1	README.md
 154	docs/benchmark.md
 321	docs/dev/journal.md

@@ -1,5 +1,7 @@
 # VisTest
 
+[![PyPI](https://img.shields.io/pypi/v/vistest)](https://pypi.org/project/vistest/) [![Python](https://img.shields.io/pypi/pyversions/vistest)](https://pypi.org/project/vistest/) [![CI](https://github.com/marshlw/vistest/actions/workflows/ci.yml/badge.svg)](https://github.com/marshlw/vistest/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/marshlw/vistest/blob/main/LICENSE)
+
 **Визуальное регресс-тестирование для pytest и Playwright, которое объясняет, почему проверка упала.**
 
 *Read in English: [README.md](https://github.com/marshlw/vistest/blob/main/README.md)*

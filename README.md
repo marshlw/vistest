@@ -1,5 +1,7 @@
 # VisTest
 
+[![PyPI](https://img.shields.io/pypi/v/vistest)](https://pypi.org/project/vistest/) [![Python](https://img.shields.io/pypi/pyversions/vistest)](https://pypi.org/project/vistest/) [![CI](https://github.com/marshlw/vistest/actions/workflows/ci.yml/badge.svg)](https://github.com/marshlw/vistest/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/marshlw/vistest/blob/main/LICENSE)
+
 **Visual regression testing for pytest and Playwright that says why a check failed.**
 
 *Читать по-русски: [README.ru.md](https://github.com/marshlw/vistest/blob/main/README.ru.md)*

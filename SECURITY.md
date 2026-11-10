@@ -35,7 +35,8 @@ older versions would mean promising something we cannot keep.
   code.
 - **Scenario steps with a secret** (a selector or value that looks like a
   password, token or code) are masked in the step descriptions VisTest prints.
-  Values come from the environment or from `.vistest/secrets.env`.
+  Values come from the environment or from `.vistest/secrets.env`
+  (`examples/secrets.env.example` shows its form).
 
 ## What is yours to do
 
