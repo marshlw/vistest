@@ -6,6 +6,11 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+- **JSON results for CI.** `pytest --vistest-json-report PATH` writes a
+  versioned summary with the pytest exit code, run status, and snapshot
+  statuses by key and platform. A run can report an empty or incomplete result
+  alongside test failures. Local xdist workers contribute to one artifact.
+
 - **Require visual checks in a dedicated pytest job.** Add
   `--vistest-require-checks` to fail a run whose VisTest report contains no
   checks. Works with serial pytest and xdist.

@@ -30,9 +30,11 @@ kinds and the only one that makes this test runnable anywhere.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -71,7 +73,7 @@ from vistest.core import pngio
 
 def test_checkout():
     expect_screenshot(pngio.encode(np.full((60, 90, 3), 90, np.uint8)),
-                      "checkout.png")
+                      "checkout.png", platform="windows-chromium")
 '''
 
 
@@ -125,15 +127,24 @@ def run(project: Path, *args: str, state: str = "before"):
 def test_required_checks_rejects_a_green_run_with_only_stale_results(project, workers):
     if workers:
         pytest.importorskip("xdist")
-    code, output = run(project)
+    report_args = ("--vistest-json-report", "ci.json")
+    code, output = run(project, *report_args)
     assert code == pytest.ExitCode.TESTS_FAILED and "no baseline" in output, output
+    report = project / "ci.json"
+    failed = json.loads(report.read_text("utf-8"))
+    assert failed["status"] == "failed"
+    assert failed["snapshots"][0]["status"] == "missing_baseline"
     plain = project / "tests" / "test_plain.py"
     plain.write_text("def test_plain():\n    assert True\n", encoding="utf-8")
 
-    code, output = run(project, "--vistest-require-checks", *workers, str(plain))
+    code, output = run(project, "--vistest-require-checks", *report_args, *workers, str(plain))
     assert code == pytest.ExitCode.TESTS_FAILED, output
     assert "--vistest-require-checks: no visual checks recorded" in output
     assert "1 passed" in output
+    assert json.loads(report.read_text("utf-8")) == {
+        "schema_version": 1, "status": "empty", "pytest_exit_code": 1,
+        "issues": {}, "snapshots": [],
+    }
 
     code, output = run(project, str(plain))
     assert code == pytest.ExitCode.OK, output
@@ -237,19 +248,51 @@ def test_two_workers_produce_one_complete_report(project: Path):
     """
     pytest.importorskip("xdist")
     (project / "tests" / "test_second.py").write_text(SECOND_TEST_FILE, "utf-8")
+    report_args = ("--vistest-json-report", "ci.json", "--vistest-platform", "linux-chromium")
 
-    code, output = run(project, "--vistest-update", "--vistest-require-checks", "-n", "2")
+    code, output = run(project, "--vistest-update", "--vistest-require-checks", "-n", "2",
+                       *report_args)
     assert code == 0, output
 
     body = (project / ".vistest" / "report" / "index.html").read_text("utf-8")
     assert "home.png" in body and "checkout.png" in body
     assert body.count("<details") == 2
+    code, output = run(project, "-n", "2", *report_args)
+    assert code == 0, output
+    data = json.loads((project / "ci.json").read_text("utf-8"))
+    assert data == {
+        "schema_version": 1, "status": "passed", "pytest_exit_code": 0, "issues": {},
+        "snapshots": [
+            {"key": "linux-chromium/home", "name": "home.png",
+             "platform": "linux-chromium", "status": "passed",
+             "tests": ["tests/test_visual.py::test_home"]},
+            {"key": "windows-chromium/checkout", "name": "checkout.png",
+             "platform": "windows-chromium", "status": "passed",
+             "tests": ["tests/test_second.py::test_checkout"]},
+        ],
+    }
 
     #  And nothing half-written was left behind under any of them.
     for directory in ("tests/__vistest__", ".vistest"):
         leftovers = [p.name for p in (project / directory).rglob("*")
                      if p.name.endswith(".tmp")]
         assert leftovers == []
+
+
+def test_parallel_pytest_sessions_write_separate_json_reports(project: Path):
+    (project / "tests" / "test_second.py").write_text(SECOND_TEST_FILE, "utf-8")
+    jobs = {"home": "tests/test_visual.py", "checkout": "tests/test_second.py"}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = {
+            name: executor.submit(run, project, test, "--vistest-json-report", f"{name}.json",
+                                  "--vistest-report", f"{name}.html")
+            for name, test in jobs.items()
+        }
+        for name, result in results.items():
+            code, output = result.result()
+            assert code == 1, output
+            data = json.loads((project / f"{name}.json").read_text("utf-8"))
+            assert [row["name"] for row in data["snapshots"]] == [f"{name}.png"]
 
 
 # --------------------------------------------------------------------------- #
@@ -388,19 +431,18 @@ def test_home_again():
 #  A part that cannot be read
 # --------------------------------------------------------------------------- #
 BROKEN_PART_FILE = '''
-import pathlib
-
 import numpy as np
 
 from vistest import expect_screenshot
 from vistest.core import pngio
+from vistest.library.context import current
 
 
 def test_home():
     expect_screenshot(pngio.encode(np.full((40, 60, 3), 30, np.uint8)),
                       "home.png")
     #  What a worker killed mid-write leaves behind.
-    parts = pathlib.Path(".vistest") / "report" / "parts"
+    parts = current().parts_dir
     parts.mkdir(parents=True, exist_ok=True)
     (parts / "truncated.json").write_text('{"key": "home.png", "verd',
                                           encoding="utf-8")
@@ -416,12 +458,30 @@ def test_a_part_that_cannot_be_read_is_counted_out_loud(project: Path):
     """
     (project / "tests" / "test_visual.py").write_text(BROKEN_PART_FILE, "utf-8")
 
-    code, output = run(project, "--vistest-update")
+    code, output = run(project, "--vistest-update", "--vistest-json-report", "ci.json")
     assert code == 0, output
     assert "1 check could not be read into this report" in output, output
 
     body = (project / ".vistest" / "report" / "index.html").read_text("utf-8")
     assert "could not be read into this report" in body
+    data = json.loads((project / "ci.json").read_text("utf-8"))
+    assert data["status"] == "incomplete"
+    assert data["issues"] == {"unreadable_parts": 1}
+    assert data["snapshots"][0]["status"] == "baseline_created"
+    assert data["snapshots"][0]["platform"] is None
+
+
+@pytest.mark.parametrize("workers", [(), ("-n", "2")], ids=["serial", "xdist"])
+def test_json_report_is_incomplete_when_pytest_stops_early(project: Path, workers):
+    if workers:
+        pytest.importorskip("xdist")
+    code, output = run(project, "-x", "--vistest-json-report", "ci.json", *workers)
+    assert code in (pytest.ExitCode.TESTS_FAILED, pytest.ExitCode.INTERRUPTED), output
+    data = json.loads((project / "ci.json").read_text("utf-8"))
+    assert data["pytest_exit_code"] == code
+    assert data["status"] == "incomplete"
+    assert data["issues"] == {"run_stopped_early": 1}
+    assert data["snapshots"][0]["status"] == "missing_baseline"
 
 
 # --------------------------------------------------------------------------- #

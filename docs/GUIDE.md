@@ -709,6 +709,38 @@ pytest --alluredir=allure-results
 allure serve allure-results
 ```
 
+## CI JSON report
+
+Run `pytest --vistest-json-report=ci/vistest.json` and upload that file even
+when pytest fails. Relative paths resolve from pytest's project root. Use a
+distinct output path per CI job and keep your normal pytest exit-code check.
+Local xdist workers contribute to a single report. The JSON can be used
+without the HTML artifact or screenshots.
+
+The top-level `schema_version` is currently `1`. Consumers should check it
+before interpreting `status`, `pytest_exit_code`, `issues`, and `snapshots`.
+
+| Run status | Meaning |
+| --- | --- |
+| `empty` | The session ended with zero visual checks and no known reporting gaps. Check `pytest_exit_code` for pytest's own result. |
+| `incomplete` | The run stopped early, a worker or capture failed, or some snapshot results are missing, unreadable or ambiguous. The `issues` object gives counts by cause. |
+| `failed` | Visual checks were recorded and a regression, missing baseline or failed pytest session was reported. |
+| `passed` | At least one check was recorded, pytest succeeded, and all recorded checks passed or accepted baselines. |
+
+The file starts with `status: incomplete`, `issues.run_not_finished: 1` and
+a null pytest exit code. On normal shutdown VisTest atomically replaces it
+with the final result. An abrupt process termination can leave that initial
+state. A missing artifact means reporting never started or the file could
+not be written.
+
+Each snapshot row has a VisTest `key`, a `name` with the PNG extension, a
+`platform` (null for flat baselines), a `status` and a `tests` list of pytest
+node IDs. Status values are `passed`, `failed`, `error`, `missing_baseline`,
+`baseline_created`, `baseline_updated`, `baseline_unchanged`, and
+`collision`. Repeated checks keep the latest row for the key. A collision
+lists all test owners. This artifact describes the checks that ran. Validating
+a required inventory of keys and platforms needs an expected list.
+
 ## Commands
 
 The library's commands need no server:

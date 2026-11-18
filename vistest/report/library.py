@@ -132,6 +132,7 @@ def read_parts(parts_dir: str | Path) -> Parts:
         return Parts()
 
     latest: dict[str, dict] = {}
+    orders: dict[str, tuple[float, int]] = {}
     writers: dict[str, set[str]] = {}
     unreadable = 0
 
@@ -140,10 +141,10 @@ def read_parts(parts_dir: str | Path) -> Parts:
             continue
         try:
             entry = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            unreadable += 1
-            continue
-        if not isinstance(entry, dict):
+            if not isinstance(entry, dict):
+                raise ValueError("a report part must be an object")
+            order = written_order(entry)
+        except (OSError, ValueError, TypeError, OverflowError):
             unreadable += 1
             continue
 
@@ -152,9 +153,9 @@ def read_parts(parts_dir: str | Path) -> Parts:
         if nodeid:
             writers.setdefault(key, set()).add(nodeid)
 
-        previous = latest.get(key)
-        if previous is None or written_order(entry) >= written_order(previous):
+        if key not in orders or order >= orders[key]:
             latest[key] = entry
+            orders[key] = order
 
     collisions = {key: sorted(tests) for key, tests in writers.items()
                   if len(tests) > 1}

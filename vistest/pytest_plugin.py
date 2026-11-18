@@ -118,6 +118,8 @@ def pytest_addoption(parser, pluginmanager):
     group.addoption("--vistest-require-checks", action="store_true",
                     help="Fail the run unless the VisTest report contains at least "
                          "one visual check")
+    group.addoption("--vistest-json-report", metavar="PATH",
+                    help="Write versioned visual check results as JSON for CI")
     group.addoption("--vistest-config", default=None, metavar="PATH",
                     help="Path to vistest.yaml")
 
@@ -253,7 +255,10 @@ def pytest_configure(config):
 
         config.issue_config_time_warning(VisTestWarning(unread), stacklevel=2)
 
-    if not _is_worker(config):
+    json_report = config.getoption("--vistest-json-report")
+    if json_report is not None:
+        _configure_json_report(config, ctx, root / json_report)
+    elif not _is_worker(config):
         #  Yesterday's rows are not this run's report. Cleared here rather than
         #  at session start because under xdist the controller configures
         #  before any worker exists — clearing later would race the workers
@@ -270,6 +275,49 @@ def pytest_configure(config):
         else:
             with _advisory(f"could not clear {ctx.parts_dir}"):
                 shutil.rmtree(ctx.parts_dir, ignore_errors=True)
+
+
+def _configure_json_report(config, ctx, path: Path) -> None:
+    if _is_worker(config):
+        ctx.report_parts_dir = Path(config.workerinput["vistest_parts_dir"])
+        return
+
+    from tempfile import TemporaryDirectory
+
+    from .report import ci
+    from .report.library import Parts
+
+    try:
+        if path.resolve() == ctx.report.resolve():
+            raise pytest.UsageError("vistest: the HTML and JSON reports need different paths")
+        parts = TemporaryDirectory(prefix="vistest-pytest-")
+        config.add_cleanup(parts.cleanup)
+        ctx.report_parts_dir = Path(parts.name)
+        ci.write(path, Parts())
+    except OSError as exc:
+        raise pytest.UsageError(
+            f"vistest: could not initialize JSON report {path}: {exc}"
+        ) from exc
+    config._vistest_json_report = path
+    config._vistest_json_issues = {}
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node):
+    if hasattr(node.config, "_vistest_json_report"):
+        node.workerinput["vistest_parts_dir"] = str(node.config._vistest_context.parts_dir)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    issues = getattr(node.config, "_vistest_json_issues", None)
+    if issues is None:
+        return
+    if error is not None:
+        issues["worker_errors"] = issues.get("worker_errors", 0) + 1
+    worker_issues = getattr(node, "workeroutput", {}).get("vistest_report_issues", {})
+    for issue, count in worker_issues.items():
+        issues[issue] = issues.get(issue, 0) + count
 
 
 def pytest_collection_finish(session):
@@ -303,20 +351,51 @@ def pytest_unconfigure(config):
         _context.uninstall()
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     """Assemble the report. Once, in the process that owns the run.
 
     Report assembly is advisory by default. With --vistest-require-checks,
     a successful session needs a report containing at least one check.
     """
+    config = session.config
+    if _is_worker(config):
+        if config.getoption("--vistest-json-report") is not None:
+            config.workeroutput["vistest_report_issues"] = config._vistest_context.report_issues
+        return
     with _advisory("the report could not be assembled"):
         _finish(session, exitstatus)
-    config = session.config
-    if _is_worker(config) or not config.getoption("--vistest-require-checks"):
-        return
     parts = getattr(config, "_vistest_parts", None)
-    if parts is None or not parts.entries:
+    if config.getoption("--vistest-require-checks") and (parts is None or not parts.entries):
         config._vistest_required_checks_missing = True
+        if session.exitstatus == pytest.ExitCode.OK:
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    if hasattr(config, "_vistest_json_report"):
+        _finish_json_report(session, parts)
+
+
+def _finish_json_report(session, parts) -> None:
+    from .report import ci
+    from .report.library import read_parts
+
+    config = session.config
+    ctx = config._vistest_context
+    issues = config._vistest_json_issues
+    for issue, count in ctx.report_issues.items():
+        issues[issue] = issues.get(issue, 0) + count
+    exit_code = int(session.exitstatus)
+    if (session.shouldstop or session.shouldfail or exit_code not in (
+        pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED, pytest.ExitCode.NO_TESTS_COLLECTED
+    )):
+        issues["run_stopped_early"] = 1
+
+    path = config._vistest_json_report
+    try:
+        if parts is None:
+            parts = read_parts(ctx.parts_dir)
+        ci.write(path, parts, exit_code=exit_code, issues=issues)
+    except OSError as exc:
+        config._vistest_json_error = f"Could not finalize JSON report {path}: {exc}"
         if session.exitstatus == pytest.ExitCode.OK:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
@@ -367,10 +446,13 @@ def _summary(terminalreporter, exitstatus, config) -> None:
     parts = getattr(config, "_vistest_parts", None)
     ctx = getattr(config, "_vistest_context", None)
     missing = getattr(config, "_vistest_required_checks_missing", False)
-    if parts is None and not missing:
+    json_error = getattr(config, "_vistest_json_error", None)
+    if parts is None and not missing and not json_error:
         return
 
     terminalreporter.write_sep("-", "vistest")
+    if json_error:
+        terminalreporter.write_line(json_error, red=True, bold=True)
     if missing:
         terminalreporter.write_line(
             "--vistest-require-checks: no visual checks recorded in this run's report",

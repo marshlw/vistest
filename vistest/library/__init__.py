@@ -290,12 +290,16 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
     restore = ctx.config.capture.match_baseline_scroll
     window = (_window_from_passport(ctx, store, target, name, platform, scale)
               if restore else None)
-    shot = _targets.capture(target, mask=mask, full_page=full_page,
-                            scale=scale,
-                            stable_timeout_ms=wait, ready_timeout_ms=ready_wait,
-                            quiet_ms=ctx.config.capture.quiet_ms,
-                            ignore_requests=ctx.config.capture.ignore_requests,
-                            pointer_away=away, blur_focus=blur, place=place, window=window)
+    try:
+        shot = _targets.capture(target, mask=mask, full_page=full_page,
+                                scale=scale,
+                                stable_timeout_ms=wait, ready_timeout_ms=ready_wait,
+                                quiet_ms=ctx.config.capture.quiet_ms,
+                                ignore_requests=ctx.config.capture.ignore_requests,
+                                pointer_away=away, blur_focus=blur, place=place, window=window)
+    except Exception:
+        ctx.count_report_issue("capture_errors")
+        raise
     platform = platform if platform is not None else ctx.platform_for(shot)
     key = ctx.key(name, platform)
     #  From here on the check has a name, and it must leave a row in the
@@ -1199,6 +1203,7 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
     try:
         write_part(ctx.parts_dir, entry)
     except OSError as e:  # pragma: no cover - a report row is not the verdict
+        ctx.count_report_issue("part_write_errors")
         import warnings
 
         warnings.warn(f"vistest: could not write the report entry for "
@@ -1220,6 +1225,7 @@ def _record_error(ctx, key: SnapshotKey, exc: BaseException, *, started: float,
                 images={"actual": str(actual)} if actual is not None else {},
                 duration_ms=_ms(started), capture=capture)
     except Exception as e:  # pragma: no cover - the original error matters more
+        ctx.count_report_issue("part_write_errors")
         import warnings
 
         warnings.warn(f"vistest: could not write the report entry for "

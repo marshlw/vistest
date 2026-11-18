@@ -242,6 +242,10 @@ that must exercise visual coverage. The job fails if its VisTest report
 contains zero checks, including when everything selected was skipped.
 Use a separate checkout or workspace for each independent CI job.
 
+Write a machine-readable result with `pytest --vistest-json-report ci/vistest.json`
+and upload it even when pytest fails. The JSON includes the pytest exit code and
+the status of each snapshot and platform. See the [CI JSON format](docs/GUIDE.md#ci-json-report).
+
 ## Settings
 
 Pytest flags:
@@ -253,6 +257,7 @@ Pytest flags:
 | `--vistest-platform=NAME` | `vistest_platform` | the platform directory, e.g. `linux-chromium-1x-1440x900`; taken from the page when not set |
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
 | `--vistest-require-checks` | | fail if the current run's report has no visual checks (unreleased) |
+| `--vistest-json-report=PATH` | | write versioned results for CI (unreleased) |
 | `--vistest-config=PATH` | — | the vistest.yaml to read, when it is not the one found from the working directory up |
 
 A bare `--vistest-update` takes the next argument as its mode, so write paths

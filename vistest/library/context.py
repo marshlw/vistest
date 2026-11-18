@@ -154,6 +154,8 @@ class LibraryContext:
     #  Filled on first use; both are process-wide and neither is cheap.
     _config: Any = None
     _store: Any = None
+    report_parts_dir: Path | None = None
+    report_issues: dict[str, int] = field(default_factory=dict, init=False)
 
     # ------------------------------------------------------------------ #
     def __post_init__(self) -> None:
@@ -232,7 +234,12 @@ class LibraryContext:
 
     @property
     def parts_dir(self) -> Path:
+        if self.report_parts_dir is not None:
+            return self.report_parts_dir
         return self.artifacts_root / "report" / "parts"
+
+    def count_report_issue(self, issue: str) -> None:
+        self.report_issues[issue] = self.report_issues.get(issue, 0) + 1
 
     # ------------------------------------------------------------------ #
     def platform_for(self, shot: Capture) -> str:
