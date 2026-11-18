@@ -115,6 +115,9 @@ def pytest_addoption(parser, pluginmanager):
     group.addoption("--vistest-report", default=None, metavar="PATH",
                     help="Where to write the HTML report "
                          "(default: .vistest/report/index.html)")
+    group.addoption("--vistest-require-checks", action="store_true",
+                    help="Fail the run unless the VisTest report contains at least "
+                         "one visual check")
     group.addoption("--vistest-config", default=None, metavar="PATH",
                     help="Path to vistest.yaml")
 
@@ -256,10 +259,17 @@ def pytest_configure(config):
         #  before any worker exists — clearing later would race the workers
         #  that have already begun writing.
         #
-        #  Advisory: a directory that will not delete (a file open in a viewer,
-        #  a permission) costs a stale row in the report, not the run.
-        with _advisory(f"could not clear {ctx.parts_dir}"):
-            shutil.rmtree(ctx.parts_dir, ignore_errors=True)
+        if config.getoption("--vistest-require-checks"):
+            try:
+                if ctx.parts_dir.exists():
+                    shutil.rmtree(ctx.parts_dir)
+            except OSError as exc:
+                raise pytest.UsageError(
+                    f"vistest: could not clear previous check results in {ctx.parts_dir}: {exc}"
+                ) from None
+        else:
+            with _advisory(f"could not clear {ctx.parts_dir}"):
+                shutil.rmtree(ctx.parts_dir, ignore_errors=True)
 
 
 def pytest_collection_finish(session):
@@ -296,12 +306,19 @@ def pytest_unconfigure(config):
 def pytest_sessionfinish(session, exitstatus):
     """Assemble the report. Once, in the process that owns the run.
 
-    The whole body is advisory. It runs after the last test, so an exception
-    here loses nothing that was measured — but pytest still turns it into
-    INTERNALERROR, and a run that passed would be reported as broken.
+    Report assembly is advisory by default. With --vistest-require-checks,
+    a successful session needs a report containing at least one check.
     """
     with _advisory("the report could not be assembled"):
         _finish(session, exitstatus)
+    config = session.config
+    if _is_worker(config) or not config.getoption("--vistest-require-checks"):
+        return
+    parts = getattr(config, "_vistest_parts", None)
+    if parts is None or not parts.entries:
+        config._vistest_required_checks_missing = True
+        if session.exitstatus == pytest.ExitCode.OK:
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 def _finish(session, exitstatus) -> None:
@@ -349,10 +366,16 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 def _summary(terminalreporter, exitstatus, config) -> None:
     parts = getattr(config, "_vistest_parts", None)
     ctx = getattr(config, "_vistest_context", None)
-    if parts is None:
+    missing = getattr(config, "_vistest_required_checks_missing", False)
+    if parts is None and not missing:
         return
 
     terminalreporter.write_sep("-", "vistest")
+    if missing:
+        terminalreporter.write_line(
+            "--vistest-require-checks: no visual checks recorded in this run's report",
+            red=True, bold=True,
+        )
 
     if parts is not None:
         for key, tests in sorted(parts.collisions.items()):

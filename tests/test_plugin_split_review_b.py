@@ -9,7 +9,7 @@
 """The library's pytest plugin, and the server's half of it (review v1: R2, R6, 2.7).
 
 With `vistest` or `vistest[browser]` alone, `pytest --fixtures` and
-`pytest --help` show the library: `vistest`, `vistest_config`, and five
+`pytest --help` show the library: `vistest`, `vistest_config`, and its
 flags. The server's fixtures and flags come with `vistest-server`.
 """
 
@@ -23,7 +23,7 @@ import pytest
 from . import _no_server
 
 LIBRARY_FLAGS = ["--vistest-update", "--vistest-baselines", "--vistest-platform",
-                 "--vistest-report", "--vistest-config"]
+                 "--vistest-report", "--vistest-config", "--vistest-require-checks"]
 SERVER_FLAGS = ["--vistest-api", "--vistest-perceptual", "--vistest-fail-on"]
 SERVER_FIXTURES = ["visual", "visual_soft", "_vistest_session", "vistest_run_id"]
 
@@ -43,7 +43,7 @@ def project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_without_the_server_pytest_help_has_the_five_library_flags(project):
+def test_without_the_server_pytest_help_has_the_library_flags(project):
     done = _no_server.run("pytest", ["--help"], project)
     assert done.returncode == 0, done.stderr
     assert _flags(done.stdout) == sorted(LIBRARY_FLAGS)

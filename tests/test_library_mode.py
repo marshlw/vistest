@@ -121,6 +121,24 @@ def run(project: Path, *args: str, state: str = "before"):
     return completed.returncode, completed.stdout + completed.stderr
 
 
+@pytest.mark.parametrize("workers", [(), ("-n", "2")], ids=["serial", "xdist"])
+def test_required_checks_rejects_a_green_run_with_only_stale_results(project, workers):
+    if workers:
+        pytest.importorskip("xdist")
+    code, output = run(project)
+    assert code == pytest.ExitCode.TESTS_FAILED and "no baseline" in output, output
+    plain = project / "tests" / "test_plain.py"
+    plain.write_text("def test_plain():\n    assert True\n", encoding="utf-8")
+
+    code, output = run(project, "--vistest-require-checks", *workers, str(plain))
+    assert code == pytest.ExitCode.TESTS_FAILED, output
+    assert "--vistest-require-checks: no visual checks recorded" in output
+    assert "1 passed" in output
+
+    code, output = run(project, str(plain))
+    assert code == pytest.ExitCode.OK, output
+
+
 # --------------------------------------------------------------------------- #
 #  The scenario, in order
 # --------------------------------------------------------------------------- #
@@ -144,7 +162,7 @@ def test_the_whole_first_encounter(project: Path):
     assert (project / "tests" / "__vistest__" / "home.json").exists()
 
     # ---- 3. green ----------------------------------------------------- #
-    code, output = run(project)
+    code, output = run(project, "--vistest-require-checks")
     assert code == 0, output
 
     # ---- 4. the page changes: red, with everything named -------------- #
@@ -220,7 +238,7 @@ def test_two_workers_produce_one_complete_report(project: Path):
     pytest.importorskip("xdist")
     (project / "tests" / "test_second.py").write_text(SECOND_TEST_FILE, "utf-8")
 
-    code, output = run(project, "--vistest-update", "-n", "2")
+    code, output = run(project, "--vistest-update", "--vistest-require-checks", "-n", "2")
     assert code == 0, output
 
     body = (project / ".vistest" / "report" / "index.html").read_text("utf-8")
@@ -502,6 +520,13 @@ def test_a_report_that_cannot_be_built_does_not_kill_the_session(project: Path):
     assert code == 0, output
     assert "3 passed" in output, output
     assert "the report could not be assembled" in output, output
+
+    code, output = run(project, "--vistest-require-checks")
+    assert code == pytest.ExitCode.TESTS_FAILED, output
+    assert "INTERNALERROR" not in output, output
+    assert "3 passed" in output, output
+    assert "the report could not be assembled" in output, output
+    assert "--vistest-require-checks: no visual checks recorded" in output
 
 
 RERENDER_FILE = '''

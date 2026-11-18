@@ -6,6 +6,10 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+- **Require visual checks in a dedicated pytest job.** Add
+  `--vistest-require-checks` to fail a run whose VisTest report contains no
+  checks. Works with serial pytest and xdist.
+
 - **No accumulated instability mask.** `FileBaselineStore` no longer writes
   or reads `stability.png`; `BaselineRecord.stability_mask` is accepted and
   ignored. `capture.stability_sticky` in vistest.yaml loads with one warning

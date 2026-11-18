@@ -237,9 +237,14 @@ takes new baselines for a person to look at.
 `pytest -n auto` works: every write goes through a temporary file and an
 atomic rename, and the report is assembled once at the end.
 
+In the development version, use `pytest --vistest-require-checks` for a job
+that must exercise visual coverage. The job fails if its VisTest report
+contains zero checks, including when everything selected was skipped.
+Use a separate checkout or workspace for each independent CI job.
+
 ## Settings
 
-Five pytest flags:
+Pytest flags:
 
 | Flag | `pyproject.toml` | What it does |
 | --- | --- | --- |
@@ -247,6 +252,7 @@ Five pytest flags:
 | `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | the platform directory, e.g. `linux-chromium-1x-1440x900`; taken from the page when not set |
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
+| `--vistest-require-checks` | | fail if the current run's report has no visual checks (unreleased) |
 | `--vistest-config=PATH` | — | the vistest.yaml to read, when it is not the one found from the working directory up |
 
 A bare `--vistest-update` takes the next argument as its mode, so write paths
