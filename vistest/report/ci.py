@@ -27,7 +27,7 @@ _STATUSES = {
 
 
 def write(out: Path, parts: Parts, *, exit_code: int | None = None,
-          issues: dict[str, int] | None = None) -> None:
+          issues: dict[str, int] | None = None, coverage: dict | None = None) -> None:
     """Write one atomic artifact, including when no snapshot rows survived."""
     counts = dict(issues or {})
     if exit_code is None:
@@ -55,13 +55,17 @@ def write(out: Path, parts: Parts, *, exit_code: int | None = None,
             counts["check_errors"] = counts.get("check_errors", 0) + 1
         failed |= status in ("failed", "missing_baseline")
         nodeid = entry.get("nodeid")
-        snapshots.append({
+        row = {
             "key": key,
             "name": name,
             "platform": platform or None,
             "status": status,
             "tests": parts.collisions.get(key) or ([nodeid] if nodeid else []),
-        })
+        }
+        renderer = entry.get("renderer")
+        if isinstance(renderer, dict) and renderer.get("status") == "changed":
+            row["renderer"] = {"status": "changed", "pixels": renderer.get("pixels")}
+        snapshots.append(row)
 
     if counts:
         status = "incomplete"
@@ -77,4 +81,5 @@ def write(out: Path, parts: Parts, *, exit_code: int | None = None,
         "pytest_exit_code": exit_code,
         "issues": counts,
         "snapshots": sorted(snapshots, key=lambda row: row["key"]),
+        **({"coverage": coverage} if coverage is not None else {}),
     })

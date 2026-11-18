@@ -120,6 +120,8 @@ def pytest_addoption(parser, pluginmanager):
                          "one visual check")
     group.addoption("--vistest-json-report", metavar="PATH",
                     help="Write versioned visual check results as JSON for CI")
+    group.addoption("--vistest-require-snapshots", metavar="PATH",
+                    help="Require snapshot and platform pairs listed in a JSON file")
     group.addoption("--vistest-config", default=None, metavar="PATH",
                     help="Path to vistest.yaml")
 
@@ -256,8 +258,10 @@ def pytest_configure(config):
         config.issue_config_time_warning(VisTestWarning(unread), stacklevel=2)
 
     json_report = config.getoption("--vistest-json-report")
-    if json_report is not None:
-        _configure_json_report(config, ctx, root / json_report)
+    manifest = config.getoption("--vistest-require-snapshots")
+    if json_report is not None or manifest is not None:
+        _configure_ci(config, ctx, root / json_report if json_report is not None else None,
+                      root / manifest if manifest is not None else None)
     elif not _is_worker(config):
         #  Yesterday's rows are not this run's report. Cleared here rather than
         #  at session start because under xdist the controller configures
@@ -277,40 +281,52 @@ def pytest_configure(config):
                 shutil.rmtree(ctx.parts_dir, ignore_errors=True)
 
 
-def _configure_json_report(config, ctx, path: Path) -> None:
+def _configure_ci(config, ctx, path: Path | None, manifest: Path | None) -> None:
     if _is_worker(config):
         ctx.report_parts_dir = Path(config.workerinput["vistest_parts_dir"])
         return
 
     from tempfile import TemporaryDirectory
 
-    from .report import ci
+    from .report import ci, coverage
     from .report.library import Parts
 
+    if manifest is not None:
+        try:
+            if manifest.resolve() == ctx.report.resolve() or (
+                path is not None and manifest.resolve() == path.resolve()
+            ):
+                raise ValueError("the manifest and report files need different paths")
+            config._vistest_required_snapshots = coverage.load(manifest)
+        except (OSError, ValueError) as exc:
+            raise pytest.UsageError(
+                f"vistest: invalid required snapshots file {manifest}: {exc}"
+            ) from exc
     try:
-        if path.resolve() == ctx.report.resolve():
-            raise pytest.UsageError("vistest: the HTML and JSON reports need different paths")
+        if path is not None:
+            if path.resolve() == ctx.report.resolve():
+                raise pytest.UsageError(
+                    "vistest: the HTML and JSON reports need different paths"
+                )
+            ci.write(path, Parts())
         parts = TemporaryDirectory(prefix="vistest-pytest-")
         config.add_cleanup(parts.cleanup)
         ctx.report_parts_dir = Path(parts.name)
-        ci.write(path, Parts())
     except OSError as exc:
-        raise pytest.UsageError(
-            f"vistest: could not initialize JSON report {path}: {exc}"
-        ) from exc
+        raise pytest.UsageError(f"vistest: could not initialize CI reporting: {exc}") from exc
     config._vistest_json_report = path
-    config._vistest_json_issues = {}
+    config._vistest_ci_issues = {}
 
 
 @pytest.hookimpl(optionalhook=True)
 def pytest_configure_node(node):
-    if hasattr(node.config, "_vistest_json_report"):
+    if hasattr(node.config, "_vistest_ci_issues"):
         node.workerinput["vistest_parts_dir"] = str(node.config._vistest_context.parts_dir)
 
 
 @pytest.hookimpl(optionalhook=True)
 def pytest_testnodedown(node, error):
-    issues = getattr(node.config, "_vistest_json_issues", None)
+    issues = getattr(node.config, "_vistest_ci_issues", None)
     if issues is None:
         return
     if error is not None:
@@ -360,7 +376,7 @@ def pytest_sessionfinish(session, exitstatus):
     """
     config = session.config
     if _is_worker(config):
-        if config.getoption("--vistest-json-report") is not None:
+        if "vistest_parts_dir" in config.workerinput:
             config.workeroutput["vistest_report_issues"] = config._vistest_context.report_issues
         return
     with _advisory("the report could not be assembled"):
@@ -370,17 +386,17 @@ def pytest_sessionfinish(session, exitstatus):
         config._vistest_required_checks_missing = True
         if session.exitstatus == pytest.ExitCode.OK:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
-    if hasattr(config, "_vistest_json_report"):
-        _finish_json_report(session, parts)
+    if hasattr(config, "_vistest_ci_issues"):
+        _finish_ci(session, parts)
 
 
-def _finish_json_report(session, parts) -> None:
-    from .report import ci
+def _finish_ci(session, parts) -> None:
+    from .report import ci, coverage
     from .report.library import read_parts
 
     config = session.config
     ctx = config._vistest_context
-    issues = config._vistest_json_issues
+    issues = config._vistest_ci_issues
     for issue, count in ctx.report_issues.items():
         issues[issue] = issues.get(issue, 0) + count
     exit_code = int(session.exitstatus)
@@ -393,9 +409,18 @@ def _finish_json_report(session, parts) -> None:
     try:
         if parts is None:
             parts = read_parts(ctx.parts_dir)
-        ci.write(path, parts, exit_code=exit_code, issues=issues)
+        required = getattr(config, "_vistest_required_snapshots", None)
+        result = None
+        if required is not None:
+            result = coverage.check(required, parts)
+            config._vistest_coverage = result
+            if result["status"] == "failed" and session.exitstatus == pytest.ExitCode.OK:
+                session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        if path is not None:
+            ci.write(path, parts, exit_code=int(session.exitstatus), issues=issues,
+                     coverage=result)
     except OSError as exc:
-        config._vistest_json_error = f"Could not finalize JSON report {path}: {exc}"
+        config._vistest_json_error = f"Could not finalize CI report: {exc}"
         if session.exitstatus == pytest.ExitCode.OK:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
@@ -442,12 +467,32 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         _summary(terminalreporter, exitstatus, config)
 
 
+def _coverage_summary(terminalreporter, coverage: dict) -> None:
+    if coverage["status"] == "passed":
+        terminalreporter.write_line(f'Required snapshot comparisons: {coverage["required"]}')
+        return
+
+    for row in coverage["missing"]:
+        platform = row["platform"] or "flat"
+        alternatives = ", ".join(value or "flat" for value in row["observed_platforms"])
+        observed = f" (observed on {alternatives})" if alternatives else ""
+        terminalreporter.write_line(
+            f'Missing required snapshot: {row["name"]} [{platform}]{observed}', red=True
+        )
+    for row in coverage["unverified"]:
+        terminalreporter.write_line(
+            f'Required snapshot has no comparison: {row["name"]} [{row["platform"] or "flat"}]',
+            red=True,
+        )
+
+
 def _summary(terminalreporter, exitstatus, config) -> None:
     parts = getattr(config, "_vistest_parts", None)
     ctx = getattr(config, "_vistest_context", None)
     missing = getattr(config, "_vistest_required_checks_missing", False)
     json_error = getattr(config, "_vistest_json_error", None)
-    if parts is None and not missing and not json_error:
+    coverage = getattr(config, "_vistest_coverage", None)
+    if parts is None and not missing and not json_error and coverage is None:
         return
 
     terminalreporter.write_sep("-", "vistest")
@@ -458,6 +503,8 @@ def _summary(terminalreporter, exitstatus, config) -> None:
             "--vistest-require-checks: no visual checks recorded in this run's report",
             red=True, bold=True,
         )
+    if coverage is not None:
+        _coverage_summary(terminalreporter, coverage)
 
     if parts is not None:
         for key, tests in sorted(parts.collisions.items()):

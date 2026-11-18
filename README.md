@@ -258,6 +258,7 @@ Pytest flags:
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
 | `--vistest-require-checks` | | fail if the current run's report has no visual checks (unreleased) |
 | `--vistest-json-report=PATH` | | write versioned results for CI (unreleased) |
+| `--vistest-require-snapshots=PATH` | | require the snapshot and platform pairs in a JSON manifest (unreleased) |
 | `--vistest-config=PATH` | — | the vistest.yaml to read, when it is not the one found from the working directory up |
 
 A bare `--vistest-update` takes the next argument as its mode, so write paths

@@ -257,11 +257,19 @@ def test_two_workers_produce_one_complete_report(project: Path):
     body = (project / ".vistest" / "report" / "index.html").read_text("utf-8")
     assert "home.png" in body and "checkout.png" in body
     assert body.count("<details") == 2
-    code, output = run(project, "-n", "2", *report_args)
+    manifest = project / "required.json"
+    expected = [
+        {"name": "home.png", "platform": "linux-chromium"},
+        {"name": "checkout.png", "platform": "windows-chromium"},
+    ]
+    manifest.write_text(json.dumps(expected), "utf-8")
+    gate = ("--vistest-require-snapshots", manifest.name)
+    code, output = run(project, "-n", "2", *report_args, *gate)
     assert code == 0, output
     data = json.loads((project / "ci.json").read_text("utf-8"))
     assert data == {
         "schema_version": 1, "status": "passed", "pytest_exit_code": 0, "issues": {},
+        "coverage": {"status": "passed", "required": 2, "missing": [], "unverified": []},
         "snapshots": [
             {"key": "linux-chromium/home", "name": "home.png",
              "platform": "linux-chromium", "status": "passed",
@@ -272,11 +280,53 @@ def test_two_workers_produce_one_complete_report(project: Path):
         ],
     }
 
+    expected[0]["platform"] = "previous-chromium"
+    expected.append({"name": "settings.png", "platform": None})
+    manifest.write_text(json.dumps(expected), "utf-8")
+    code, output = run(project, "-n", "2", *report_args, *gate)
+    assert code == pytest.ExitCode.TESTS_FAILED, output
+    assert "2 passed" in output
+    assert "Missing required snapshot: home.png [previous-chromium]" in output
+    assert "(observed on linux-chromium)" in output
+    data = json.loads((project / "ci.json").read_text("utf-8"))
+    assert data["status"] == "failed" and data["pytest_exit_code"] == 1
+    assert data["coverage"] == {
+        "status": "failed", "required": 3, "unverified": [],
+        "missing": [
+            {"name": "home.png", "platform": "previous-chromium",
+             "observed_platforms": ["linux-chromium"]},
+            {"name": "settings.png", "platform": None, "observed_platforms": []},
+        ],
+    }
+
     #  And nothing half-written was left behind under any of them.
     for directory in ("tests/__vistest__", ".vistest"):
         leftovers = [p.name for p in (project / directory).rglob("*")
                      if p.name.endswith(".tmp")]
         assert leftovers == []
+
+
+def test_required_snapshot_needs_a_comparison_and_gate_works_without_json(project: Path):
+    manifest = project / "required.json"
+    manifest.write_text('[{"name":"home.png","platform":null}]', "utf-8")
+    gate = ("--vistest-require-snapshots", manifest.name)
+    code, output = run(project, *gate)
+    assert code == pytest.ExitCode.TESTS_FAILED, output
+    assert "Required snapshot has no comparison: home.png [flat]" in output
+
+    plain = project / "tests" / "test_plain.py"
+    plain.write_text("def test_plain():\n    pass\n", "utf-8")
+    code, output = run(project, str(plain), *gate)
+    assert code == pytest.ExitCode.TESTS_FAILED, output
+    assert "Missing required snapshot: home.png [flat]" in output
+
+
+def test_invalid_required_manifest_stops_before_running_tests(project: Path):
+    manifest = project / "required.json"
+    manifest.write_text('[{"name":"home.png","platform":12}]', "utf-8")
+    code, output = run(project, "--vistest-require-snapshots", manifest.name)
+    assert code == pytest.ExitCode.USAGE_ERROR, output
+    assert "entry 1 needs a platform identifier or null" in output
 
 
 def test_parallel_pytest_sessions_write_separate_json_reports(project: Path):

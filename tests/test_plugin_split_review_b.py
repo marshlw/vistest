@@ -24,7 +24,7 @@ from . import _no_server
 
 LIBRARY_FLAGS = ["--vistest-update", "--vistest-baselines", "--vistest-platform",
                  "--vistest-report", "--vistest-config", "--vistest-require-checks",
-                 "--vistest-json-report"]
+                 "--vistest-json-report", "--vistest-require-snapshots"]
 SERVER_FLAGS = ["--vistest-api", "--vistest-perceptual", "--vistest-fail-on"]
 SERVER_FIXTURES = ["visual", "visual_soft", "_vistest_session", "vistest_run_id"]
 

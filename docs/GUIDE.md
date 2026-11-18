@@ -739,7 +739,38 @@ node IDs. Status values are `passed`, `failed`, `error`, `missing_baseline`,
 `baseline_created`, `baseline_updated`, `baseline_unchanged`, and
 `collision`. Repeated checks keep the latest row for the key. A collision
 lists all test owners. This artifact describes the checks that ran. Validating
-a required inventory of keys and platforms needs an expected list.
+a required inventory of snapshots and platforms uses the manifest below.
+When a renderer canary differs from the baseline's, its snapshot row includes
+`renderer.status: changed` and `renderer.pixels`.
+
+### Required snapshots
+
+Commit a JSON manifest for each CI job that owns a set of visual checks.
+Each entry names a snapshot, including the PNG suffix, and the exact platform
+identifier from the JSON report. Use `null` for snapshots with flat baselines.
+
+```json
+[
+  {"name": "shop/checkout.png", "platform": "linux-chromium-1x-1280x720"},
+  {"name": "assets/logo.png", "platform": null}
+]
+```
+
+```bash
+pytest --vistest-require-snapshots=ci/required.json --vistest-json-report=ci/vistest.json
+```
+
+The gate works with or without the JSON report. It requires a comparison for
+each entry. Missing baselines, updates, errors and name collisions cannot
+satisfy a requirement. Additional snapshot comparisons are allowed. Relative
+manifest paths resolve from pytest's project root.
+
+The terminal lists missing or unverified pairs. If the same snapshot ran on
+another platform, the diagnostic shows the platforms observed in that run.
+When JSON output is enabled, the final report adds a `coverage` object with
+`status`, `required` (the number of pairs), `missing` and `unverified`.
+Each missing entry includes `observed_platforms`. Run status continues to
+describe the recorded checks, so it can be `empty` with failed coverage.
 
 ## Commands
 

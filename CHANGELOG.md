@@ -6,6 +6,11 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+- **Require specific snapshot comparisons in CI.** Pass
+  `--vistest-require-snapshots PATH` with a JSON list of snapshot names and
+  platforms. A required pair without a comparison fails the job. Reports
+  show observed alternative platforms and renderer canary changes.
+
 - **JSON results for CI.** `pytest --vistest-json-report PATH` writes a
   versioned summary with the pytest exit code, run status, and snapshot
   statuses by key and platform. A run can report an empty or incomplete result
