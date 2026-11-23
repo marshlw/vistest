@@ -325,15 +325,15 @@ def test_regenerate_refuses_an_unknown_raster(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 #  Engine v2: the ratchet list
 # --------------------------------------------------------------------------- #
-#: The twelve NOISE pages v2 failed when the list was frozen (2026-09-30),
-#: on both rasters. The file may drop names; it may never hold one outside this.
+#: The twelve NOISE families frozen on 2026-09-30, with the same observed
+#: failures on the OpenCV 5.1 raster added on 2026-11-23.
 V2_RATCHET_FROZEN = frozenset(
     name + suffix
     for name in ("sensor noise σ=1.6", "sensor noise σ=3.0", "jpeg q=88",
                  "global shift 1px", "global shift 3px", "combined", "font fallback",
                  "shadow radius", "gradient dither", "caret", "lazy placeholder",
                  "subpixel text")
-    for suffix in ("", ", thin glyphs"))
+    for suffix in ("", ", thin glyphs", ", OpenCV 5.1"))
 
 
 @pytest.fixture(scope="module")
@@ -366,7 +366,7 @@ def test_the_v2_list_only_shrinks_and_says_why(cases):
     assert ratchet["engine"] == "v2"
     listed = ratchet["false_failures"]
     assert set(listed) <= V2_RATCHET_FROZEN, \
-        f"not on the list frozen on 2026-09-30: {sorted(set(listed) - V2_RATCHET_FROZEN)}"
+        f"not on the frozen list: {sorted(set(listed) - V2_RATCHET_FROZEN)}"
     noise = {c.name for c in cases if c.group == "NOISE"}
     assert set(listed) <= noise
     for name, why in listed.items():

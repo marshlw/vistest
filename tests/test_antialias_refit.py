@@ -275,9 +275,9 @@ def test_a_changed_digit_is_no_longer_erased_by_the_per_pixel_filter(raster):
 #: Did the per-pixel filter alone decide the verdict on this raster? On the
 #: thin one it erased the changed price whole and the pair passed — the bug
 #: this file exists for. On the heavier one the same change leaves enough
-#: behind for the old filter to fail anyway. Both are on disk, so both are
-#: named: one raster is a case, two are a statement about stroke thickness.
-_OLD_VETO_PASSES = {"": False, ", thin glyphs": True}
+#: behind for the old filter to fail anyway. The OpenCV 5.1 raster also loses
+#: the entire price with the old filter.
+_OLD_VETO_PASSES = {"": False, ", thin glyphs": True, ", OpenCV 5.1": True}
 
 
 @pytest.mark.parametrize("raster", RASTERS, ids=RASTER_IDS)

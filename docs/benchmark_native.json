@@ -2,12 +2,12 @@
   "source": "native",
   "generator": "scripts/bench_pixelmatch.mjs",
   "corpus": {
-    "sha256": "5a0ee31202108e1caa667e3abb34c1c4b45afdd9ecaaaca21d47c79b26b9777f",
-    "cases": 54
+    "sha256": "6fc52d5d6023896f44c7c19326d728a574b51e9d67772aa016d2a451d3c55603",
+    "cases": 81
   },
   "environment": {
-    "node": "v22.22.2",
-    "platform": "linux x64",
+    "node": "v22.19.0",
+    "platform": "win32 x64",
     "packages": {
       "pixelmatch": "7.2.0",
       "pngjs (used by pixelmatch)": "7.0.0",
@@ -421,6 +421,195 @@
         "diff_pixels": 264,
         "size_changed": false,
         "total_pixels": 1080000
+      },
+      "identical, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=1.6, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=3.0, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "antialias 0.4px, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2424,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=88, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 407,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=75, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 1561,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "global shift 1px, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 19504,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "global shift 3px, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 34527,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "combined, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 10373,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "font fallback, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 3,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "shadow radius, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "gradient dither, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "scrollbar, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2728,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "caret, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 70,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "lazy placeholder, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "subpixel text, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button color, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 13210,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button removed, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 12900,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo removed, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 2881,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "layout +40px, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 148817,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "page taller +160, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 65,
+        "diff_pixels": null,
+        "size_changed": true,
+        "total_pixels": 1080000
+      },
+      "tiny icon 22px, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 377,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "price changed, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 29,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button shrunk, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 6079,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "text overflow, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 635,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "header color, OpenCV 5.1": {
+        "failed": false,
+        "exit_code": 0,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo text, OpenCV 5.1": {
+        "failed": true,
+        "exit_code": 66,
+        "diff_pixels": 281,
+        "size_changed": false,
+        "total_pixels": 1080000
       }
     },
     "playwright": {
@@ -780,6 +969,184 @@
         "diff_pixels": 197,
         "size_changed": false,
         "message": "197 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "identical, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=1.6, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "sensor noise σ=3.0, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "antialias 0.4px, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 620,
+        "size_changed": false,
+        "message": "620 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "jpeg q=88, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "jpeg q=75, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 2,
+        "size_changed": false,
+        "message": "2 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "global shift 1px, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 2831,
+        "size_changed": false,
+        "message": "2831 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "global shift 3px, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 7558,
+        "size_changed": false,
+        "message": "7558 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "combined, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 6462,
+        "size_changed": false,
+        "message": "6462 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "font fallback, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "shadow radius, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "gradient dither, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "scrollbar, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "caret, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 70,
+        "size_changed": false,
+        "message": "70 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "lazy placeholder, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "subpixel text, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "button color, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 13206,
+        "size_changed": false,
+        "message": "13206 pixels (ratio 0.02 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "button removed, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 12897,
+        "size_changed": false,
+        "message": "12897 pixels (ratio 0.02 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "promo removed, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 968,
+        "size_changed": false,
+        "message": "968 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "layout +40px, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 25865,
+        "size_changed": false,
+        "message": "25865 pixels (ratio 0.03 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "page taller +160, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 320,
+        "size_changed": true,
+        "message": "Expected an image 900px by 1200px, received 900px by 1360px. 320 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "tiny icon 22px, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 377,
+        "size_changed": false,
+        "message": "377 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "price changed, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 28,
+        "size_changed": false,
+        "message": "28 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "button shrunk, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 6078,
+        "size_changed": false,
+        "message": "6078 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "text overflow, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 631,
+        "size_changed": false,
+        "message": "631 pixels (ratio 0.01 of all image pixels) are different.",
+        "total_pixels": 1080000
+      },
+      "header color, OpenCV 5.1": {
+        "failed": false,
+        "diff_pixels": 0,
+        "size_changed": false,
+        "total_pixels": 1080000
+      },
+      "promo text, OpenCV 5.1": {
+        "failed": true,
+        "diff_pixels": 222,
+        "size_changed": false,
+        "message": "222 pixels (ratio 0.01 of all image pixels) are different.",
         "total_pixels": 1080000
       }
     }

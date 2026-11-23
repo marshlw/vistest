@@ -461,7 +461,7 @@ def _frozen_answer_paragraph() -> str:
     return (
         "`tests/benchmark_corpus/metrics.json` holds the engine's answer next "
         "to the frozen question, and `tests/test_corpus_frozen.py` replays it "
-        "on every run. Verdicts are strict: not one of the 54 may move, on any "
+        "on every run. Verdicts are strict: every case must agree, on any "
         "machine. Region counts are strict too, and so is every rule the "
         "engine names when it suppresses a difference — the sentence without "
         "its pixel counts, which ride the change mask and move with it. The "
@@ -472,8 +472,7 @@ def _frozen_answer_paragraph() -> str:
         "looks like a new machine or like a changed engine. All "
         f"{envs} environments are x86-64 — the published tolerances are "
         "measured there and nowhere else, and `tests/corpus.py` says what to "
-        "do before widening them. The verdicts above were additionally "
-        "reproduced on Linux and on Windows, under both OpenCV majors."
+        "do before widening them."
     )
 
 
@@ -504,6 +503,13 @@ def browser_corpus_section() -> list[str]:
         "template and per pair in `tests/browser_corpus/manifest.json` "
         "(`split`).",
         "",
+        "**A third half is sealed: held-out-2** (dashboard, settings — the "
+        "«same renderer» group only). The held-out half above is spent for the "
+        "page-shift rule of engine v2: its figures were seen while that rule "
+        "was being made. The sealed half is for the final acceptance of f5 "
+        "and the figures of the README; nothing is run on it before then, "
+        "and `python tests/benchmark.py --corpus browser` prints it only with `--final`.",
+        "",
     ]
 
 
@@ -525,11 +531,10 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
     L.append("The corpus is synthetic and frozen in the repository as PNG files "
              "(`tests/benchmark_corpus/`); it is not drawn at run time, so the "
              "installed OpenCV does not change what is measured — and neither "
-             "does the engine. Every stage that moves a picture by a fraction of "
-             "a pixel goes through `core/warp.py`, which is numpy and not "
-             "`cv2.warpAffine`, so the detailed table is identical under "
-             "opencv-python-headless 4.14.0.94 and 5.0.0.93: not the verdicts "
-             "alone, but every metric of all 54 pairs. Figures "
+             "does the engine. `tests/test_corpus_frozen.py` checks each "
+             "engine verdict, region count and suppression explanation against "
+             "the frozen table and compares continuous metrics with measured "
+             "tolerances. Figures "
              "published before the freeze were tied to the OpenCV version of "
              "whoever ran them and are not comparable with these — see "
              "CHANGELOG.")
@@ -655,10 +660,8 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "and `tests/test_corpus_frozen.py` fails when the code starts "
              "drawing something other than what is on disk.")
     L.append("")
-    L.append("The pages are drawn by OpenCV, and OpenCV 5 rasterises text "
-             "differently from 4.x: every pair differs. So both rasters are "
-             "frozen, as separate cases; keeping one would be choosing the "
-             "convenient picture.")
+    L.append("OpenCV 4.14, 5.0 and 5.1 produce different text rasters. "
+             "The same cases are frozen separately for each raster.")
     L.append("")
     L.append("| Raster | Drawn with | Case names | What differs |")
     L.append("|---|---|---|---|")
@@ -675,11 +678,11 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
              "поэтому цифра говорит о движке, а не о вашем проекте. Про свой "
              "проект отвечает `vistest doctor`.")
     L.append("")
-    L.append("| Кейс | Группа | Ожидание | Почему |")
+    L.append("| Case | Group | Expected | Why |")
     L.append("|---|---|---|---|")
     for c in cases:
         L.append(f"| `{c.name}` | {c.group} | "
-                 f"{'падение' if c.expected_fail else 'проход'} | {c.why} |")
+                 f"{'fail' if c.expected_fail else 'pass'} | {c.why} |")
     L.append("")
 
     L.append("## Кто с чем сравнивается")
@@ -743,19 +746,19 @@ def markdown(scores: list[Score], cases: list[cp.Case], cfg: VisTestConfig,
 
     L += browser_corpus_section()
 
-    L.append("## Кейсы по инструментам")
+    L.append("## Results by case")
     L.append("")
-    head = "| Кейс | Ожидание | " + " | ".join(s.title for s in scores) + " |"
+    head = "| Case | Expected | " + " | ".join(s.title for s in scores) + " |"
     L.append(head)
     L.append("|" + "---|" * (2 + len(scores)))
     for c in cases:
-        row = [f"`{c.name}`", "падение" if c.expected_fail else "проход"]
+        row = [f"`{c.name}`", "fail" if c.expected_fail else "pass"]
         for s in scores:
             got = s.per_case.get(c.name)
             if got is None:
                 row.append("—")
             else:
-                row.append(("падение" if got else "проход")
+                row.append(("fail" if got else "pass")
                            + ("" if got == c.expected_fail else " ❌"))
         L.append("| " + " | ".join(row) + " |")
     L.append("")

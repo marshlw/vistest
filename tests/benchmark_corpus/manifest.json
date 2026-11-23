@@ -9,6 +9,11 @@
       "opencv": "opencv-python-headless==5.0.0.93",
       "suffix": ", thin glyphs",
       "note": "OpenCV 5 raster: the same strings, with thinner, lighter glyph strokes"
+    },
+    "opencv-5.1": {
+      "opencv": "opencv-python-headless==5.1.0.95",
+      "suffix": ", OpenCV 5.1",
+      "note": "OpenCV 5.1 raster: revised glyph rendering"
     }
   },
   "cases": [
@@ -605,6 +610,303 @@
       "actual": "promo_text__thin_glyphs/actual.png",
       "family": "promo text",
       "render": "opencv-5.0"
+    },
+    {
+      "name": "identical, OpenCV 5.1",
+      "slug": "identical__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "byte for byte: any failure here is an engine defect",
+      "expected": "identical__OpenCV_5_1/expected.png",
+      "actual": "identical__OpenCV_5_1/actual.png",
+      "family": "identical",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "sensor noise σ=1.6, OpenCV 5.1",
+      "slug": "sensor_noise_σ_1_6__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "±2 brightness levels, ΔE00 < 1: invisible to a human in principle",
+      "expected": "sensor_noise_σ_1_6__OpenCV_5_1/expected.png",
+      "actual": "sensor_noise_σ_1_6__OpenCV_5_1/actual.png",
+      "family": "sensor noise σ=1.6",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "sensor noise σ=3.0, OpenCV 5.1",
+      "slug": "sensor_noise_σ_3_0__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "the upper bound of codec noise",
+      "expected": "sensor_noise_σ_3_0__OpenCV_5_1/expected.png",
+      "actual": "sensor_noise_σ_3_0__OpenCV_5_1/actual.png",
+      "family": "sensor noise σ=3.0",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "antialias 0.4px, OpenCV 5.1",
+      "slug": "antialias_0_4px__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "different sub-pixel text rendering: a browser upgrade or hinting",
+      "expected": "antialias_0_4px__OpenCV_5_1/expected.png",
+      "actual": "antialias_0_4px__OpenCV_5_1/actual.png",
+      "family": "antialias 0.4px",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "jpeg q=88, OpenCV 5.1",
+      "slug": "jpeg_q_88__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "re-compression in the screenshot pipeline",
+      "expected": "jpeg_q_88__OpenCV_5_1/expected.png",
+      "actual": "jpeg_q_88__OpenCV_5_1/actual.png",
+      "family": "jpeg q=88",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "jpeg q=75, OpenCV 5.1",
+      "slug": "jpeg_q_75__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "aggressive re-compression, still not a layout regression",
+      "expected": "jpeg_q_75__OpenCV_5_1/expected.png",
+      "actual": "jpeg_q_75__OpenCV_5_1/actual.png",
+      "family": "jpeg q=75",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "global shift 1px, OpenCV 5.1",
+      "slug": "global_shift_1px__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "the whole page moved by a pixel: a scroll bar, rounding",
+      "expected": "global_shift_1px__OpenCV_5_1/expected.png",
+      "actual": "global_shift_1px__OpenCV_5_1/actual.png",
+      "family": "global shift 1px",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "global shift 3px, OpenCV 5.1",
+      "slug": "global_shift_3px__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "the same, larger: still a whole-page shift, not a layout change",
+      "expected": "global_shift_3px__OpenCV_5_1/expected.png",
+      "actual": "global_shift_3px__OpenCV_5_1/actual.png",
+      "family": "global shift 3px",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "combined, OpenCV 5.1",
+      "slug": "combined__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "all of it at once: what a real run in somebody else's CI looks like",
+      "expected": "combined__OpenCV_5_1/expected.png",
+      "actual": "combined__OpenCV_5_1/actual.png",
+      "family": "combined",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "font fallback, OpenCV 5.1",
+      "slug": "font_fallback__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "a fallback font: the same letters, heavier strokes",
+      "expected": "font_fallback__OpenCV_5_1/expected.png",
+      "actual": "font_fallback__OpenCV_5_1/actual.png",
+      "family": "font fallback",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "shadow radius, OpenCV 5.1",
+      "slug": "shadow_radius__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "a shadow recomputed with a different blur radius",
+      "expected": "shadow_radius__OpenCV_5_1/expected.png",
+      "actual": "shadow_radius__OpenCV_5_1/actual.png",
+      "family": "shadow radius",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "gradient dither, OpenCV 5.1",
+      "slug": "gradient_dither__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "different gradient dithering: visible to arithmetic, not to the eye",
+      "expected": "gradient_dither__OpenCV_5_1/expected.png",
+      "actual": "gradient_dither__OpenCV_5_1/actual.png",
+      "family": "gradient dither",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "scrollbar, OpenCV 5.1",
+      "slug": "scrollbar__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "a scroll bar appeared: that is the environment, not the layout",
+      "expected": "scrollbar__OpenCV_5_1/expected.png",
+      "actual": "scrollbar__OpenCV_5_1/actual.png",
+      "family": "scrollbar",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "caret, OpenCV 5.1",
+      "slug": "caret__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "a blinking caret in an input field caught in the frame",
+      "expected": "caret__OpenCV_5_1/expected.png",
+      "actual": "caret__OpenCV_5_1/actual.png",
+      "family": "caret",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "lazy placeholder, OpenCV 5.1",
+      "slug": "lazy_placeholder__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "an image had not loaded yet: the shot was early, the page is intact",
+      "expected": "lazy_placeholder__OpenCV_5_1/expected.png",
+      "actual": "lazy_placeholder__OpenCV_5_1/actual.png",
+      "family": "lazy placeholder",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "subpixel text, OpenCV 5.1",
+      "slug": "subpixel_text__OpenCV_5_1",
+      "group": "NOISE",
+      "expected_fail": false,
+      "why": "a sub-pixel shift of text lines, not of the whole page",
+      "expected": "subpixel_text__OpenCV_5_1/expected.png",
+      "actual": "subpixel_text__OpenCV_5_1/actual.png",
+      "family": "subpixel text",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "button color, OpenCV 5.1",
+      "slug": "button_color__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "the buy button turned grey: the colour changed, the structure did not",
+      "expected": "button_color__OpenCV_5_1/expected.png",
+      "actual": "button_color__OpenCV_5_1/actual.png",
+      "family": "button color",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "button removed, OpenCV 5.1",
+      "slug": "button_removed__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "the button is gone: the worst visual bug there is",
+      "expected": "button_removed__OpenCV_5_1/expected.png",
+      "actual": "button_removed__OpenCV_5_1/actual.png",
+      "family": "button removed",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "promo removed, OpenCV 5.1",
+      "slug": "promo_removed__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "a block disappeared: a large change, no excuse for missing it",
+      "expected": "promo_removed__OpenCV_5_1/expected.png",
+      "actual": "promo_removed__OpenCV_5_1/actual.png",
+      "family": "promo removed",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "layout +40px, OpenCV 5.1",
+      "slug": "layout__40px__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "content moved by 40px: the layout broke",
+      "expected": "layout__40px__OpenCV_5_1/expected.png",
+      "actual": "layout__40px__OpenCV_5_1/actual.png",
+      "family": "layout +40px",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "page taller +160, OpenCV 5.1",
+      "slug": "page_taller__160__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "the page grew taller: a common and costly regression",
+      "expected": "page_taller__160__OpenCV_5_1/expected.png",
+      "actual": "page_taller__160__OpenCV_5_1/actual.png",
+      "family": "page taller +160",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "tiny icon 22px, OpenCV 5.1",
+      "slug": "tiny_icon_22px__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "a 22×22 icon: checks that small things do not drown in the filters",
+      "expected": "tiny_icon_22px__OpenCV_5_1/expected.png",
+      "actual": "tiny_icon_22px__OpenCV_5_1/actual.png",
+      "family": "tiny icon 22px",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "price changed, OpenCV 5.1",
+      "slug": "price_changed__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "a different price: a small area, an expensive mistake",
+      "expected": "price_changed__OpenCV_5_1/expected.png",
+      "actual": "price_changed__OpenCV_5_1/actual.png",
+      "family": "price changed",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "button shrunk, OpenCV 5.1",
+      "slug": "button_shrunk__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "the button got narrower: the size changed, not the colour",
+      "expected": "button_shrunk__OpenCV_5_1/expected.png",
+      "actual": "button_shrunk__OpenCV_5_1/actual.png",
+      "family": "button shrunk",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "text overflow, OpenCV 5.1",
+      "slug": "text_overflow__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "text overflows its card: the usual result of a font change",
+      "expected": "text_overflow__OpenCV_5_1/expected.png",
+      "actual": "text_overflow__OpenCV_5_1/actual.png",
+      "family": "text overflow",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "header color, OpenCV 5.1",
+      "slug": "header_color__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "the header changed colour: a flat fill, the same structure",
+      "expected": "header_color__OpenCV_5_1/expected.png",
+      "actual": "header_color__OpenCV_5_1/actual.png",
+      "family": "header color",
+      "render": "opencv-5.1"
+    },
+    {
+      "name": "promo text, OpenCV 5.1",
+      "slug": "promo_text__OpenCV_5_1",
+      "group": "SIGNAL",
+      "expected_fail": true,
+      "why": "a different promo code: one line, but a real content error",
+      "expected": "promo_text__OpenCV_5_1/expected.png",
+      "actual": "promo_text__OpenCV_5_1/actual.png",
+      "family": "promo text",
+      "render": "opencv-5.1"
     }
   ]
 }

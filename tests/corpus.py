@@ -33,10 +33,10 @@ the benchmark figure was tied to whichever OpenCV the person running it had,
 and two figures taken on two machines were not comparable. So the input is
 frozen; OpenCV is not pinned.
 
-Both rasters are frozen, as separate cases — `RENDERS` below. Keeping one of
+The rasters are frozen as separate cases — `RENDERS` below. Keeping one of
 them would be choosing the convenient picture. Cases of the second raster carry
 a suffix that says what differs (`, thin glyphs`); `family` is the same for
-both, because it is one phenomenon drawn twice.
+every raster, because it is one phenomenon drawn several ways.
 
 The generator stays, and redrawing is a deliberate act:
 
@@ -102,6 +102,8 @@ RENDERS: tuple[Render, ...] = (
            "original raster: text as OpenCV 4.x draws it"),
     Render("opencv-5.0", "5.0", "opencv-python-headless==5.0.0.93", ", thin glyphs",
            "OpenCV 5 raster: the same strings, with thinner, lighter glyph strokes"),
+    Render("opencv-5.1", "5.1", "opencv-python-headless==5.1.0.95", ", OpenCV 5.1",
+           "OpenCV 5.1 raster: revised glyph rendering"),
 )
 
 
@@ -492,8 +494,8 @@ def measure(cases: list[Case] | None = None, *, preset: str = METRICS_PRESET) ->
 #  raster that v1 filtered before they became regions (step B of f5 says for
 #  each what the noise is, whether a browser screenshot has it, and which v1
 #  rule took it). The maintainer's decision of 2026-09-30: no miss ever, and
-#  the false failures frozen as a list with a reason each, in a file of its
-#  own next to metrics.json. The list only shrinks.
+#  the false failures frozen as a list with a reason each next to
+#  metrics.json. The list only shrinks for each frozen raster.
 # --------------------------------------------------------------------------- #
 V2_RATCHET_PATH = FROZEN_DIR / "v2_ratchet.json"
 
