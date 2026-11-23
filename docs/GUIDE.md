@@ -142,6 +142,7 @@ threshold: every change no rule explains fails. A threshold is
 | Flag | `pyproject.toml` | What it does |
 | --- | --- | --- |
 | `--vistest-update[=MODE]` | — | accept screenshots as baselines: `missing` — only absent ones; `changed` (default, also the bare flag) — absent and failed; `all` — everything that differs by a byte |
+| `--vistest-update-snapshot=PNG` | — | limit `--vistest-update` to one PNG path relative to the baseline root |
 | `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`, or `__vistest__` without a `tests/` folder) |
 | `--vistest-platform=NAME` | `vistest_platform` | the platform directory, e.g. `linux-chromium-1x-1440x900`; taken from the page when not set |
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes (default `.vistest/report/index.html`) |
@@ -321,6 +322,20 @@ always a command a person types. `missing` writes only what is absent,
 byte. From a script, `VISTEST_UPDATE_BASELINES=1`; under pytest that variable
 is ignored on purpose, so a variable a CI sets cannot accept a run's pictures.
 A picture taken from a page that never held still is written with a warning.
+
+To accept just one baseline, add `--vistest-update-snapshot` with its path
+relative to the baseline root, including the platform directory if present.
+
+```bash
+pytest tests/test_checkout.py --vistest-update=changed --vistest-update-snapshot=linux-chromium-1x-1280x720/shop/checkout.png
+```
+
+Other snapshots still compare normally and can keep the run red. The selected
+baseline is written at the end of the session, after results from local xdist
+workers have arrived. If the snapshot was never reached, two tests claimed
+its path, or the run was interrupted, VisTest blocks the write and reports
+why. Omit `-x` or `--maxfail` when accepting a snapshot in a run expected to
+have other failures, so pytest can finish checking for conflicting owners.
 
 **Moving them.** `vistest baselines export set.tar.gz --baselines
 tests/__vistest__` packs a set; `vistest baselines import` reads it into a

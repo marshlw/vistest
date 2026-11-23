@@ -6,6 +6,10 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+- **Accept one baseline at a time.** Combine `--vistest-update` with
+  `--vistest-update-snapshot=PNG` to select a path relative to the baseline
+  root. VisTest checks for conflicting test owners before writing the baseline.
+
 - **Require specific snapshot comparisons in CI.** Pass
   `--vistest-require-snapshots PATH` with a JSON list of snapshot names and
   platforms. A required pair without a comparison fails the job. Reports

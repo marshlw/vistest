@@ -704,7 +704,7 @@ def render(parts: Parts | list[dict], *, title: str = "VisTest",
 
 
 def build(parts_dir: str | Path, out: str | Path, *,
-          title: str = "VisTest") -> Parts:
+          title: str = "VisTest", parts: Parts | None = None) -> Parts:
     """Read the parts, render, write the file.
 
     Returns what went in — including the collisions and the count of parts that
@@ -712,6 +712,7 @@ def build(parts_dir: str | Path, out: str | Path, *,
     report is one place a person may look; the terminal is the one they cannot
     avoid.
     """
-    parts = read_parts(parts_dir)
+    if parts is None:
+        parts = read_parts(parts_dir)
     parts.report = atomic.write_text(Path(out), render(parts, title=title))
     return parts

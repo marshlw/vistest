@@ -155,6 +155,7 @@ class LibraryContext:
     _config: Any = None
     _store: Any = None
     report_parts_dir: Path | None = None
+    update_target: str | None = None
     report_issues: dict[str, int] = field(default_factory=dict, init=False)
 
     # ------------------------------------------------------------------ #

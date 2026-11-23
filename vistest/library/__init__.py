@@ -29,6 +29,7 @@ what happened in a form the report and the CI log can both use.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections.abc import Sequence
@@ -309,11 +310,12 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
     #  not be read, the comparison raised — used to leave nothing, so it was
     #  neither in the report nor seen as the second writer of its name.
     written: list[str] = []
+    candidate = None
     actual_path: Path | None = None
     captured: dict | None = None
 
     def record(**fields) -> None:
-        _record(ctx, key, **fields)
+        _record(ctx, key, update_candidate=candidate, **fields)
         written.append(fields["verdict"])
 
     try:
@@ -330,6 +332,10 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
         baseline = store.get(key)
 
         mode = ctx.update_mode
+        if ctx.update_target is not None and (
+            os.path.normcase(key.relpath.as_posix()) != os.path.normcase(ctx.update_target)
+        ):
+            mode = None
 
         # ---- nothing to compare against yet ------------------------------- #
         if baseline is None:
@@ -353,8 +359,7 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
             _warn_unsettled_accept(shot, key)
             run_canary = _fingerprint.of_target(target, stable_timeout_ms=wait)
             _canary_row(captured, run_canary)
-            meta = store.put(key, shot.png,
-                             meta=_passport_for(store, key, run_canary, shot))
+            meta, candidate = _save_baseline(ctx, store, key, shot.png, run_canary, shot, None)
             record(verdict="new_baseline", action="created",
                    reason=_with(said, f"baseline created by {ctx.updated_by(mode)}"),
                    lines=[("reason", f"baseline created by {ctx.updated_by(mode)}"),
@@ -490,8 +495,9 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                 this_run()              # writing a baseline: its sha is kept
                 _canary_row(captured, run_canary)
                 run_sha = _fingerprint.keep_run(ctx.artifacts_root, run_canary)
-            meta = store.put(key, final_png,
-                             meta=_passport_for(store, key, run_canary, shot))
+            meta, candidate = _save_baseline(
+                ctx, store, key, final_png, run_canary, shot, baseline
+            )
             accepted = result.verdict is Verdict.FAIL
             record(verdict="new_baseline",
                    action="unchanged" if meta.sha256 == _sha_of(baseline)
@@ -656,14 +662,45 @@ def _canary_row(captured: dict | None, run) -> None:
         captured["canary_ms"] = run.drawn_ms
 
 
-def _passport_for(store, key: SnapshotKey, run, shot) -> SnapshotMeta | None:
+def _save_baseline(ctx, store, key, png, run, shot,
+                   baseline) -> tuple[SnapshotMeta, str | None]:
+    if ctx.update_target is None:
+        return store.put(key, png, meta=_passport_for(store, key, run, shot)), None
+
+    from uuid import uuid4
+
+    from ..storage.file import FileStore
+    from .acceptance import baseline_digest
+
+    if not isinstance(store, FileStore) or store is not ctx.store:
+        raise ValueError("targeted baseline updates require the project's file baseline store")
+
+    token = uuid4().hex
+    candidate = ctx.parts_dir / "updates" / token
+    staged = FileStore(candidate / "baselines")
+    previous = store.meta(key)
+    passport = _passport_for(store, key, run, shot, renderer_store=staged)
+    fields = []
+    if passport is not None:
+        original = previous or SnapshotMeta()
+        fields = [name for name in ("renderer", "capture")
+                  if getattr(passport, name) != getattr(original, name)]
+    meta = staged.put(key, png, meta=passport)
+    atomic.write_json(candidate / "update.json", {
+        "before": baseline_digest(baseline), "passport_fields": fields,
+    })
+    return meta, token
+
+
+def _passport_for(store, key: SnapshotKey, run, shot, *,
+                  renderer_store=None) -> SnapshotMeta | None:
     """The passport to write with a new picture: its renderer's canary, how it was taken.
 
     `None` — the store writes the passport as it always did — when there is
     nothing to add, or the passport already says all of it: an accept that
     changes nothing must not touch the file.
     """
-    rec = _fingerprint.keep(store, run)
+    rec = _fingerprint.keep(store if renderer_store is None else renderer_store, run)
     taken = _capture_record(shot)
     current = store.meta(key)
     base = current or SnapshotMeta()
@@ -1140,7 +1177,8 @@ def _write_diff(ctx, key: SnapshotKey, actual_rgb, result) -> Path | None:
 def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
             images: dict, duration_ms: int, result=None,
             limits: dict | None = None, capture: dict | None = None,
-            renderer=None, run_canary: str = "", lines=None) -> None:
+            renderer=None, run_canary: str = "", lines=None,
+            update_candidate: str | None = None) -> None:
     """One row for the report, written as this process's own file.
 
     `run_canary` is the sha256 of the canary this check drew, kept under
@@ -1160,6 +1198,8 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         "limits": limits or {},
         "nodeid": ctx_nodeid(),
     }
+    if update_candidate is not None:
+        entry["update_candidate"] = update_candidate
     if lines:
         #  The reason the way the message says it: one thing per line, under
         #  its label — `reason` above is the same, joined, for whoever reads

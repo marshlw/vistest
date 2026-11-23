@@ -30,6 +30,7 @@ and each mode is one row of what gets written:
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -166,7 +167,7 @@ def test_the_environment_variable_means_changed(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 #  From the command line, in a project that is not this one
 # --------------------------------------------------------------------------- #
-TEST_FILE = '''
+PICTURE_SOURCE = '''
 import os
 
 import numpy as np
@@ -184,8 +185,10 @@ def picture(kind):
         elif kind == "broken":
             img[40:70, 60:110] = 20
     return pngio.encode(img)
+'''
 
 
+TEST_FILE = PICTURE_SOURCE + '''
 def test_same():
     expect_screenshot(picture("same"), "same.png")
 
@@ -268,3 +271,63 @@ def test_a_path_after_a_bare_flag_is_explained_not_swallowed(project):
 def test_a_path_before_a_bare_flag_works(project):
     code, output = run(project, "tests", "--vistest-update", state="after")
     assert code == 0, output
+
+
+@pytest.mark.parametrize("stop_early", [False, True], ids=["complete", "maxfail"])
+def test_accept_only_one_platform_from_a_test_with_two_changes(tmp_path, stop_early):
+    from vistest.storage.base import SnapshotKey
+    from vistest.storage.file import FileStore
+
+    store = FileStore(tmp_path / "__vistest__")
+    original = picture("broken", "before")
+    for platform in ("desktop", "mobile"):
+        store.put(SnapshotKey("shop/checkout.png", platform), original)
+    mobile_passport = store.meta_path_of(SnapshotKey("shop/checkout.png", "mobile"))
+    before_passport = mobile_passport.read_bytes()
+    (tmp_path / "test_visual.py").write_text(PICTURE_SOURCE + """
+def test_checkout():
+    png = picture("broken")
+    expect_screenshot(png, "shop/checkout.png", platform="desktop")
+    expect_screenshot(png, "shop/checkout.png", platform="mobile")
+""", "utf-8")
+    opts = ["-x"] if stop_early else []
+    code, output = run(tmp_path, *opts, "--vistest-update=changed",
+                       "--vistest-update-snapshot=desktop/shop/checkout.png", state="after")
+    assert code == 1, output
+    desktop = SnapshotKey("shop/checkout.png", "desktop")
+    if stop_early:
+        assert "the run did not collect a complete set" in output, output
+        assert store.get(desktop) == original
+    else:
+        assert "Accepted desktop/shop/checkout.png" in output, output
+        assert store.get(desktop) == picture("broken", "after")
+    assert store.get(SnapshotKey("shop/checkout.png", "mobile")) == original
+    assert mobile_passport.read_bytes() == before_passport
+
+
+@pytest.mark.parametrize("workers", [(), ("-n", "2")], ids=["serial", "xdist"])
+def test_targeted_update_blocks_colliding_owners_before_writing(tmp_path, workers):
+    if workers:
+        pytest.importorskip("xdist")
+    (tmp_path / "test_visual.py").write_text(PICTURE_SOURCE + """
+def test_first():
+    expect_screenshot(picture("same"), "shared.png")
+
+def test_second():
+    expect_screenshot(picture("broken"), "shared.png")
+""", "utf-8")
+    code, output = run(tmp_path, "--vistest-update", "--vistest-update-snapshot=shared.png",
+                       "--vistest-json-report=result.json", *workers, state="after")
+    assert code == 1 and "multiple checks own the selected baseline" in output, output
+    assert not (tmp_path / "__vistest__" / "shared.png").exists()
+    assert not (tmp_path / "__vistest__" / "shared.json").exists()
+    report = json.loads((tmp_path / "result.json").read_text("utf-8"))
+    assert report["status"] == "incomplete"
+    assert report["snapshots"][0]["status"] == "collision"
+
+
+def test_targeted_update_fails_if_no_check_matches(project):
+    before = _stamps(project)
+    code, output = run(project, "--vistest-update=all", "--vistest-update-snapshot=typo.png")
+    assert code == 1 and "the selected snapshot was not checked" in output, output
+    assert _stamps(project) == before

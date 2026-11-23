@@ -100,6 +100,8 @@ def pytest_addoption(parser, pluginmanager):
                     help="Directory with the committed baselines "
                          "(default: tests/__vistest__, or __vistest__ when there is "
                          "no tests/ folder)")
+    group.addoption("--vistest-update-snapshot", metavar="PNG",
+                    help="Limit --vistest-update to one path relative to the baseline root")
     #  `--vistest-platform`, and no `--vistest-profile` alias. A profile in
     #  this package is the rules for reading somebody else's snapshot file
     #  names (`NamingProfile`, `SuiteProfile`); a third meaning for the word,
@@ -259,7 +261,17 @@ def pytest_configure(config):
 
     json_report = config.getoption("--vistest-json-report")
     manifest = config.getoption("--vistest-require-snapshots")
-    if json_report is not None or manifest is not None:
+    selected = config.getoption("--vistest-update-snapshot")
+    if selected is not None:
+        from .library.acceptance import target
+
+        if ctx.update is None:
+            raise pytest.UsageError("--vistest-update-snapshot requires --vistest-update")
+        try:
+            ctx.update_target = target(selected)
+        except ValueError as exc:
+            raise pytest.UsageError(f"--vistest-update-snapshot: {exc}") from exc
+    if json_report is not None or manifest is not None or selected is not None:
         _configure_ci(config, ctx, root / json_report if json_report is not None else None,
                       root / manifest if manifest is not None else None)
     elif not _is_worker(config):
@@ -360,6 +372,15 @@ def pytest_collection_finish(session):
         install_hooks()
 
 
+def pytest_collectreport(report):
+    if report.failed:
+        from .library.context import current
+
+        ctx = current()
+        if ctx.update_target is not None:
+            ctx.count_report_issue("collection_errors")
+
+
 def pytest_unconfigure(config):
     with _advisory("could not release the library context"):
         from .library import context as _context
@@ -379,15 +400,17 @@ def pytest_sessionfinish(session, exitstatus):
         if "vistest_parts_dir" in config.workerinput:
             config.workeroutput["vistest_report_issues"] = config._vistest_context.report_issues
         return
+    ctx = config._vistest_context
+    selected = _finish_selected_update(session, ctx) if ctx.update_target is not None else None
     with _advisory("the report could not be assembled"):
-        _finish(session, exitstatus)
+        _finish(session, exitstatus, selected)
     parts = getattr(config, "_vistest_parts", None)
     if config.getoption("--vistest-require-checks") and (parts is None or not parts.entries):
         config._vistest_required_checks_missing = True
         if session.exitstatus == pytest.ExitCode.OK:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
     if hasattr(config, "_vistest_ci_issues"):
-        _finish_ci(session, parts)
+        _finish_ci(session, parts if parts is not None else selected)
 
 
 def _finish_ci(session, parts) -> None:
@@ -425,7 +448,54 @@ def _finish_ci(session, parts) -> None:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-def _finish(session, exitstatus) -> None:
+def _finish_selected_update(session, ctx):
+    import os
+
+    from .library.acceptance import publish
+    from .report.library import Parts, read_parts
+
+    config = session.config
+    try:
+        parts = read_parts(ctx.parts_dir)
+    except OSError:
+        parts = Parts(unreadable=1)
+    selected_path = os.path.normcase(ctx.update_target)
+    rows = [entry for entry in parts.entries
+            if os.path.normcase(f'{entry.get("key")}.png') == selected_path]
+    if (parts.unreadable or ctx.report_issues or config._vistest_ci_issues
+            or session.shouldstop or session.shouldfail or session.exitstatus not in (
+                pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED,
+                pytest.ExitCode.NO_TESTS_COLLECTED
+            )):
+        error = "the run did not collect a complete set of visual check results"
+    elif not rows:
+        error = "the selected snapshot was not checked"
+    elif len(rows) != 1 or rows[0]["key"] in parts.collisions:
+        error = "multiple checks own the selected baseline"
+    elif not rows[0].get("nodeid") or rows[0].get("verdict") == "error":
+        error = "the selected check did not finish with a usable result"
+    else:
+        try:
+            publish(ctx.parts_dir, ctx.store, rows[0])
+        except (OSError, ValueError) as exc:
+            error = str(exc)
+        else:
+            action = "Accepted" if rows[0].get("update_candidate") else "No update for"
+            config._vistest_update_message = f"{action} {ctx.update_target}"
+            return parts
+
+    config._vistest_update_message = f"Baseline update blocked for {ctx.update_target}: {error}"
+    config._vistest_ci_issues["baseline_update_blocked"] = 1
+    for entry in rows:
+        if entry.get("update_candidate"):
+            entry.update(verdict="error", action="error", reason=error,
+                         lines=[["reason", error]])
+    if session.exitstatus == pytest.ExitCode.OK:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    return parts
+
+
+def _finish(session, exitstatus, prepared=None) -> None:
     config = session.config
     ctx = getattr(config, "_vistest_context", None)
     if ctx is None or _is_worker(config):
@@ -437,8 +507,8 @@ def _finish(session, exitstatus) -> None:
 
     from .report.library import build
 
-    parts = build(ctx.parts_dir, ctx.report,
-                  title=f"VisTest — {ctx.root.name}")
+    options = {"parts": prepared} if prepared is not None else {}
+    parts = build(ctx.parts_dir, ctx.report, title=f"VisTest — {ctx.root.name}", **options)
     config._vistest_parts = parts
 
     if parts.collisions and exitstatus == 0:
@@ -492,7 +562,8 @@ def _summary(terminalreporter, exitstatus, config) -> None:
     missing = getattr(config, "_vistest_required_checks_missing", False)
     json_error = getattr(config, "_vistest_json_error", None)
     coverage = getattr(config, "_vistest_coverage", None)
-    if parts is None and not missing and not json_error and coverage is None:
+    update_message = getattr(config, "_vistest_update_message", None)
+    if parts is None and not (missing or json_error or coverage is not None or update_message):
         return
 
     terminalreporter.write_sep("-", "vistest")
@@ -505,6 +576,8 @@ def _summary(terminalreporter, exitstatus, config) -> None:
         )
     if coverage is not None:
         _coverage_summary(terminalreporter, coverage)
+    if update_message:
+        terminalreporter.write_line(update_message)
 
     if parts is not None:
         for key, tests in sorted(parts.collisions.items()):
@@ -514,8 +587,8 @@ def _summary(terminalreporter, exitstatus, config) -> None:
             terminalreporter.write_line(
                 "  these tests compare against one baseline; only the last to "
                 "finish is in the report"
-                + (", and with --vistest-update they overwrite each other's "
-                   "baseline file" if ctx is not None and ctx.update else "")
+                + (", and with --vistest-update they overwrite each other's baseline file"
+                   if ctx is not None and ctx.update and ctx.update_target is None else "")
                 + ". Give each check its own name.")
 
         #  Differences the engine did not count, said out loud whatever the
@@ -548,7 +621,7 @@ def _summary(terminalreporter, exitstatus, config) -> None:
 
         if parts.report is not None:
             terminalreporter.write_line(f"Report: {parts.report}")
-        if ctx is not None and ctx.update:
+        if ctx is not None and ctx.update and ctx.update_target is None:
             terminalreporter.write_line(
                 f"--vistest-update={ctx.update_mode}: baselines written to "
                 f"{ctx.baselines} — commit them, or CI has nothing to compare "

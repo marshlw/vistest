@@ -215,6 +215,7 @@ VisTest нет ни одной проверки, в том числе когда
 | Флаг | `pyproject.toml` | Что делает |
 | --- | --- | --- |
 | `--vistest-update[=MODE]` | — | принять снимки как эталоны: `missing` — только отсутствующие; `changed` (по умолчанию и для голого флага) — отсутствующие и упавшие; `all` — всё, что отличается хоть на байт |
+| `--vistest-update-snapshot=PNG` | — | ограничить обновление одним PNG по пути относительно каталога эталонов |
 | `--vistest-baselines=PATH` | `vistest_baselines` | где лежат эталоны (по умолчанию `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | каталог платформы, например `linux-chromium-1x-1440x900`; не задан — берётся со страницы |
 | `--vistest-report=PATH` | `vistest_report` | куда писать HTML-отчёт |

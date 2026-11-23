@@ -253,6 +253,7 @@ Pytest flags:
 | Flag | `pyproject.toml` | What it does |
 | --- | --- | --- |
 | `--vistest-update[=MODE]` | — | accept screenshots as baselines: `missing` — only absent ones; `changed` (default, also the bare flag) — absent and failed; `all` — everything that differs by a byte |
+| `--vistest-update-snapshot=PNG` | — | accept only the baseline at this path relative to the baseline root |
 | `--vistest-baselines=PATH` | `vistest_baselines` | where the baselines live (default `tests/__vistest__`) |
 | `--vistest-platform=NAME` | `vistest_platform` | the platform directory, e.g. `linux-chromium-1x-1440x900`; taken from the page when not set |
 | `--vistest-report=PATH` | `vistest_report` | where the HTML report goes |
