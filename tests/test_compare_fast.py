@@ -75,7 +75,8 @@ def test_it_leaves_the_maps_a_renderer_expects():
 
 def test_it_matches_what_the_full_cascade_says_about_the_same_pair():
     """The corpus's own identical pairs: the numbers `metrics.json` records."""
-    for case in ("identical", "identical__thin_glyphs"):
+    for path in sorted(CORPUS.glob("identical*/expected.png")):
+        case = path.parent.name
         expected, actual = pair(case)
         assert np.array_equal(expected, actual), "the corpus pair is identical"
         fast = compare(expected, actual, cfg=CFG, engine="v1").to_dict()["metrics"]
@@ -172,9 +173,10 @@ CASES = sorted(p.parent.name for p in CORPUS.glob("*/expected.png"))
 
 
 @pytest.mark.parametrize("case", CASES[::3])
-def test_the_whole_result_is_unchanged_on_the_corpus(case):
-    """The engine with the selective map against the engine with the full one."""
+def test_the_whole_result_is_unchanged_on_the_corpus(case, monkeypatch):
+    """Compare the two maps through the same cascade path."""
     expected, actual = pair(case)
+    monkeypatch.setattr(comparator_module, "_same_pixels", lambda a, b: False)
     fast = compare(expected, actual, cfg=CFG, engine="v1")
     slow = _full(expected, actual)
     a, b = fast.to_dict(), slow.to_dict()
