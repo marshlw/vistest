@@ -4,7 +4,7 @@ What changed for someone who uses VisTest, release by release, and what to
 change in your tests. Every decision, measurement and test behind it is in the
 development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/blob/main/docs/dev/journal.md).
 
-## Unreleased
+## 0.2.0a4
 
 - **Diagnose unstable visual checks.** Run `vistest diagnose` on several CI
   JSON reports to find mixed verdicts for the same snapshot, platform and
@@ -33,6 +33,9 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
   or reads `stability.png`; `BaselineRecord.stability_mask` is accepted and
   ignored. `capture.stability_sticky` in vistest.yaml loads with one warning
   and does nothing. An old `stability.png` is left in place and not applied.
+
+- **Order report rows when checks share a timestamp.** A later check for
+  the same snapshot now wins when the clock gives both checks the same time.
 
 ## 0.2.0a3
 
