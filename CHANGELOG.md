@@ -4,7 +4,9 @@ What changed for someone who uses VisTest, release by release, and what to
 change in your tests. Every decision, measurement and test behind it is in the
 development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/blob/main/docs/dev/journal.md).
 
-## 0.2.0a4
+## Unreleased
+
+## 0.2.0a5
 
 - **Diagnose unstable visual checks.** Run `vistest diagnose` on several CI
   JSON reports to find mixed verdicts for the same snapshot, platform and
