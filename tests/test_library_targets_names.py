@@ -70,7 +70,10 @@ def test_a_screenshot_that_returns_a_coroutine_is_refused_and_closed(ctx):
     w = Wrapper()
     with pytest.raises(TypeError, match="async API"):
         expect_screenshot(w, "home.png")
-    assert w.coroutine.cr_frame is None          # closed: no «never awaited» warning
+    # A closed coroutine cannot be resumed, even when Python 3.12.0 still
+    # exposes its frame.
+    with pytest.raises(RuntimeError):
+        w.coroutine.send(None)
 
 
 ASYNC_CASE = textwrap.dedent('''

@@ -304,7 +304,9 @@ def test_library_mode_with_plugins_disabled_is_complete_and_deterministic(
 
 
 def _strip_paths(parts: list[dict], root: Path) -> str:
-    return json.dumps(parts, sort_keys=True).replace(str(root), "<root>")
+    # Match the serialized path so Windows backslashes are escaped on both sides.
+    encoded_root = json.dumps(str(root))[1:-1]
+    return json.dumps(parts, sort_keys=True).replace(encoded_root, "<root>")
 
 
 def test_library_mode_with_broken_plugins_behaves_as_without_them(

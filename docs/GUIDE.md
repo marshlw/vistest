@@ -807,6 +807,8 @@ Older reports without a checksum are grouped under an unrecorded baseline.
 Empty and incomplete reports appear in the input list. Only pass and fail
 snapshot comparisons from finished reports count toward mixed verdicts.
 Missing checks do not count as passes or failures.
+Renderer fingerprints are sampled when a comparison needs the canary. In a
+mixed group, the fingerprint may therefore appear only in the failing runs.
 
 Add `--json` for all observed snapshot groups, including stable comparisons.
 The command exits 0 when it can read and summarize the inputs and 2 for
