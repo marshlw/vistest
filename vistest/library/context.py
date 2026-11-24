@@ -156,6 +156,7 @@ class LibraryContext:
     _store: Any = None
     report_parts_dir: Path | None = None
     update_target: str | None = None
+    report_baseline_digest: bool = False
     report_issues: dict[str, int] = field(default_factory=dict, init=False)
 
     # ------------------------------------------------------------------ #

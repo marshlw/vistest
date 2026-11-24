@@ -294,6 +294,7 @@ def pytest_configure(config):
 
 
 def _configure_ci(config, ctx, path: Path | None, manifest: Path | None) -> None:
+    ctx.report_baseline_digest = path is not None
     if _is_worker(config):
         ctx.report_parts_dir = Path(config.workerinput["vistest_parts_dir"])
         return

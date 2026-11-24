@@ -755,8 +755,11 @@ node IDs. Status values are `passed`, `failed`, `error`, `missing_baseline`,
 `collision`. Repeated checks keep the latest row for the key. A collision
 lists all test owners. This artifact describes the checks that ran. Validating
 a required inventory of snapshots and platforms uses the manifest below.
-When a renderer canary differs from the baseline's, its snapshot row includes
-`renderer.status: changed` and `renderer.pixels`.
+Compared snapshots include the SHA-256 of the baseline bytes in
+`baseline_sha256`. If the engine suppresses detected regions, their
+counts by reason appear in `suppressed_by_reason`. When measured,
+`renderer.run_sha256` identifies the renderer's canary. A canary that differs
+from the baseline includes `renderer.status: changed` and `renderer.pixels`.
 
 ### Required snapshots
 
@@ -786,6 +789,29 @@ When JSON output is enabled, the final report adds a `coverage` object with
 `status`, `required` (the number of pairs), `missing` and `unverified`.
 Each missing entry includes `observed_platforms`. Run status continues to
 describe the recorded checks, so it can be `empty` with failed coverage.
+
+### Diagnose a series of runs
+
+Save each repeat to its own `--vistest-json-report` file and give the files
+to `vistest diagnose`. Use the same revision, test selection, configuration
+and baseline set so a change in verdict can be investigated as instability.
+
+```bash
+vistest diagnose ci/run-1.json ci/run-2.json ci/run-3.json
+```
+
+The summary numbers files in the order supplied and lists snapshots with
+mixed pass and fail verdicts, suppression reasons, or renderer differences.
+Comparisons are grouped by snapshot key, platform, and baseline checksum.
+Older reports without a checksum are grouped under an unrecorded baseline.
+Empty and incomplete reports appear in the input list. Only pass and fail
+snapshot comparisons from finished reports count toward mixed verdicts.
+Missing checks do not count as passes or failures.
+
+Add `--json` for all observed snapshot groups, including stable comparisons.
+The command exits 0 when it can read and summarize the inputs and 2 for
+invalid input. A mixed verdict is evidence to investigate on the supplied
+runs. It does not establish the cause of the change.
 
 ## Commands
 

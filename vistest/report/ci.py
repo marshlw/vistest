@@ -62,9 +62,17 @@ def write(out: Path, parts: Parts, *, exit_code: int | None = None,
             "status": status,
             "tests": parts.collisions.get(key) or ([nodeid] if nodeid else []),
         }
+        if entry.get("baseline_sha256"):
+            row["baseline_sha256"] = entry["baseline_sha256"]
+        if entry.get("suppressed_by_reason"):
+            row["suppressed_by_reason"] = entry["suppressed_by_reason"]
         renderer = entry.get("renderer")
-        if isinstance(renderer, dict) and renderer.get("status") == "changed":
-            row["renderer"] = {"status": "changed", "pixels": renderer.get("pixels")}
+        if isinstance(renderer, dict):
+            if renderer.get("status") == "changed":
+                row["renderer"] = {"status": "changed", "pixels": renderer.get("pixels")}
+            if renderer.get("run_sha256"):
+                row.setdefault("renderer", {"status": renderer["status"]})
+                row["renderer"]["run_sha256"] = renderer["run_sha256"]
         snapshots.append(row)
 
     if counts:

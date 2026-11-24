@@ -27,7 +27,7 @@ from vistest._extras import NOT_INSTALLED
 
 from . import _no_server
 
-LIBRARY = ["compare", "check", "bench", "doctor", "baselines"]
+LIBRARY = ["compare", "check", "bench", "doctor", "baselines", "diagnose"]
 
 #: Every server command, with the least it parses with.
 SERVER = {

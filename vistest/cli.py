@@ -10,7 +10,7 @@
 
 `vistest --help` lists them in two groups (review v1, R6, 3.1): what a project
 using `expect_screenshot` needs — `compare`, `check`, `bench`, `doctor`,
-`baselines` — and the server's, which another package offers through the
+`baselines`, `diagnose` — and the server's, which another package offers through the
 `vistest.commands` entry point (the `vistest-server` package; o1). Without
 it, a command that is not the library's says so in one line and exits 2 — it
 used to die on `ModuleNotFoundError: No module named 'fastapi'`.
@@ -30,7 +30,7 @@ from .config import VisTestConfig
 
 #: The library's commands, in the order `--help` lists them. Every other
 #: command is the server's.
-LIBRARY_COMMANDS = ("compare", "check", "bench", "doctor", "baselines")
+LIBRARY_COMMANDS = ("compare", "check", "bench", "doctor", "baselines", "diagnose")
 
 #: The server's commands, as `vistest.commands` registered them in `main`.
 _SERVER = None
@@ -191,6 +191,11 @@ def main(argv: list[str] | None = None) -> int:
                             "snapshot, as a project using vistest as a library "
                             "keeps them")
 
+    diag = sub.add_parser("diagnose", help="find mixed verdicts across VisTest CI reports")
+    diag.add_argument("reports", metavar="REPORT", nargs="+", type=Path,
+                      help="JSON reports from repeats of the same test suite")
+    diag.add_argument("--json", action="store_true", help="print the diagnosis as JSON")
+
     global _SERVER
     _SERVER = _server_commands(sub)
 
@@ -289,6 +294,16 @@ def _run(args) -> int:
         return run_bench(args)
     if args.cmd == "baselines":
         return _baselines_transfer(args)
+    if args.cmd == "diagnose":
+        from .report.diagnostics import format_summary, summarize
+
+        try:
+            data = summarize(args.reports)
+        except ValueError as exc:
+            print(f"vistest diagnose: {_one_line(exc)}", file=sys.stderr)
+            return 2
+        print(json.dumps(data, indent=2) if args.json else format_summary(data))
+        return 0
     #  Every other command is the server's (`vistest.commands`).
     return _SERVER.run(args)
 

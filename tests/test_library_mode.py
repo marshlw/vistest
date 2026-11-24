@@ -30,6 +30,7 @@ kinds and the only one that makes this test runnable anywhere.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -267,15 +268,22 @@ def test_two_workers_produce_one_complete_report(project: Path):
     code, output = run(project, "-n", "2", *report_args, *gate)
     assert code == 0, output
     data = json.loads((project / "ci.json").read_text("utf-8"))
+    baselines = project / "tests" / "__vistest__"
     assert data == {
         "schema_version": 1, "status": "passed", "pytest_exit_code": 0, "issues": {},
         "coverage": {"status": "passed", "required": 2, "missing": [], "unverified": []},
         "snapshots": [
             {"key": "linux-chromium/home", "name": "home.png",
              "platform": "linux-chromium", "status": "passed",
+             "baseline_sha256": hashlib.sha256(
+                 (baselines / "linux-chromium/home.png").read_bytes()
+             ).hexdigest(),
              "tests": ["tests/test_visual.py::test_home"]},
             {"key": "windows-chromium/checkout", "name": "checkout.png",
              "platform": "windows-chromium", "status": "passed",
+             "baseline_sha256": hashlib.sha256(
+                 (baselines / "windows-chromium/checkout.png").read_bytes()
+             ).hexdigest(),
              "tests": ["tests/test_second.py::test_checkout"]},
         ],
     }

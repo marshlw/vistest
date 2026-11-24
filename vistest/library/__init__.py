@@ -516,7 +516,8 @@ def _check(ctx, target: Any, name: str, *, started: float, call_patch: dict,
                action="compared", reason=reason, lines=[("reason", what), *notes],
                result=result, limits=limits, images=images,
                duration_ms=_ms(started), capture=captured,
-               renderer=rend, run_canary=run_sha)
+               renderer=rend, run_canary=run_sha,
+               baseline_sha256=_sha_of(baseline) if ctx.report_baseline_digest else None)
 
         if result.verdict is Verdict.FAIL:
             #  The renderer only for a picture of a page: two files handed in
@@ -1178,7 +1179,7 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
             images: dict, duration_ms: int, result=None,
             limits: dict | None = None, capture: dict | None = None,
             renderer=None, run_canary: str = "", lines=None,
-            update_candidate: str | None = None) -> None:
+            update_candidate: str | None = None, baseline_sha256: str | None = None) -> None:
     """One row for the report, written as this process's own file.
 
     `run_canary` is the sha256 of the canary this check drew, kept under
@@ -1200,6 +1201,8 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
     }
     if update_candidate is not None:
         entry["update_candidate"] = update_candidate
+    if baseline_sha256 is not None:
+        entry["baseline_sha256"] = baseline_sha256
     if lines:
         #  The reason the way the message says it: one thing per line, under
         #  its label — `reason` above is the same, joined, for whoever reads

@@ -10,7 +10,7 @@ complements the [development journal](journal.md).
 | P0 · implemented | Machine-readable CI results | Versioned JSON includes the run outcome and status by snapshot key and platform. Parallel jobs can upload separate results. Empty and incomplete results are distinguishable. The maintainer verified this workflow in a real project. |
 | P0 · implemented | Require specific snapshots and environments | CI flags a missing required key or platform even when other checks pass. Diagnostics show observed platforms and report renderer canary changes when detected. |
 | P1 · implemented | Accept individual baselines | `--vistest-update-snapshot` selects one baseline path. The controller checks ownership across local xdist workers before writing the baseline. |
-| P1 · next | Diagnose unstable snapshots | Repeated runs expose unstable snapshot keys, suppression reasons, and renderer profiles. Verify usefulness on unchanged runs and controlled changes to the real application. |
+| P1 · implemented, pilot pending | Diagnose unstable snapshots | `vistest diagnose` summarizes mixed verdicts, suppression reasons and observed renderer fingerprints across CI reports, grouped by snapshot, platform and baseline. Verify usefulness on unchanged runs and controlled changes to the real application. |
 
 Engine quality remains a release criterion. Changes to the comparison cascade
 are evaluated on the frozen and held-out corpora and on the real application.

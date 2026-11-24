@@ -6,6 +6,11 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+- **Diagnose unstable visual checks.** Run `vistest diagnose` on several CI
+  JSON reports to find mixed verdicts for the same snapshot, platform and
+  baseline. CI reports now also record suppression reasons and available
+  renderer fingerprints.
+
 - **Accept one baseline at a time.** Combine `--vistest-update` with
   `--vistest-update-snapshot=PNG` to select a path relative to the baseline
   root. VisTest checks for conflicting test owners before writing the baseline.
