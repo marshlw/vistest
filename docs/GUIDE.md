@@ -792,6 +792,37 @@ When JSON output is enabled, the final report adds a `coverage` object with
 Each missing entry includes `observed_platforms`. Run status continues to
 describe the recorded checks, so it can be `empty` with failed coverage.
 
+### GitHub Actions example
+
+Pin the runner and Playwright. Commit the baselines for that environment,
+start your application before pytest, and upload artifacts even on failure.
+
+```yaml
+# .github/workflows/visual.yml
+name: visual
+on: [push, pull_request]
+jobs:
+  visual:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with: { lfs: true }
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - run: pip install "vistest[browser]" "playwright==1.56.0" pytest-xdist --pre
+      - run: playwright install --with-deps chromium
+      # Start your application here.
+      - run: >-
+          pytest tests/test_visual.py -n auto --vistest-require-checks
+          --vistest-json-report=.vistest/results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: vistest, path: .vistest/, include-hidden-files: true }
+```
+
+For GitLab, the repository has a pipeline example using a pinned Playwright
+image. [GitLab CI example](../.gitlab-ci.example.yml)
+
 ### Diagnose a series of runs
 
 Save each repeat to its own `--vistest-json-report` file and give the files

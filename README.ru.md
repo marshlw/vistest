@@ -61,7 +61,7 @@ python -m pytest tests/test_visual.py -n auto --vistest-require-checks \
   --vistest-json-report=.vistest/results.json
 ```
 
-Выгружайте `.vistest/` в артефакты даже при падении pytest. Если в задании CI должны сравниваться конкретные пары снимков и платформ, добавьте `--vistest-require-snapshots=ci/required.json`. [JSON-отчёт и формат манифеста](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#ci-json-report)
+Выгружайте `.vistest/` в артефакты даже при падении pytest. Если в задании CI должны сравниваться конкретные пары снимков и платформ, добавьте `--vistest-require-snapshots=ci/required.json`. [JSON-отчёт и формат манифеста](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#ci-json-report) · [Пример для GitHub Actions](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#github-actions-example)
 
 После ревью намеренного изменения возьмите из сообщения об ошибке путь к эталону относительно `tests/__vistest__/`.
 

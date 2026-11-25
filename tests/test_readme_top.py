@@ -6,21 +6,12 @@
 # You may not use it except in compliance with the License. See LICENSE for
 # the terms and NOTICE for attribution and the trademark.
 
-"""The top of the README: what it is, the install, a six-line test, a failure (o4).
+"""Verify the README's CLI demo and the six-line Playwright quickstart.
 
-A person who opens the repository reads the top and nothing else, so what is
-there has to be true as written:
-
-* the six-line test is the same in README.md and README.ru.md, has no fixture
-  and no mask, and runs: red without a baseline, `--vistest-update` writes
-  one, green after — against a page served on localhost, its address put
-  where the README has `http://localhost:8000`, nothing else changed;
-* the failure under it is a real run's: the picture is `docs/img/failure.png`
-  and the message is `docs/img/failure.txt`, both written by
-  `scripts/docs_picture.py`, and both READMEs quote that message word for word;
-* the picture is small enough for a README (at most 200 KB, at most 1280 px
-  wide) and is linked by an absolute address, because PyPI shows the README
-  too.
+Both languages link to the same preview and demonstrate the same comparison.
+The downloadable screenshots are exercised from the local browser corpus.
+The Playwright test runs against a temporary localhost site and goes through
+a missing baseline, baseline creation, and a successful comparison.
 """
 
 from __future__ import annotations
@@ -29,6 +20,8 @@ import http.server
 import importlib.util
 import os
 import re
+import shlex
+import shutil
 import struct
 import subprocess
 import sys
@@ -39,9 +32,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 READMES = ("README.md", "README.ru.md")
-PICTURE = ROOT / "docs" / "img" / "failure.png"
-MESSAGE = ROOT / "docs" / "img" / "failure.txt"
-PICTURE_URL = "https://raw.githubusercontent.com/marshlw/vistest/main/docs/img/failure.png"
+PICTURE = ROOT / "docs" / "img" / "underline-demo.png"
+RAW_URL = "https://raw.githubusercontent.com/marshlw/vistest/"
+PICTURE_URL = f"{RAW_URL}main/docs/img/{PICTURE.name}"
 ADDRESS = "http://localhost:8000"
 
 
@@ -53,21 +46,22 @@ def _top_test(doc: str) -> str:
     return re.search(r"```python\n(.*?)```", _read(doc), re.S).group(1)
 
 
-def _before_the_first_section(doc: str) -> str:
-    return _read(doc).split("\n## ", 1)[0]
-
-
 # --------------------------------------------------------------------------- #
 #  What the top says
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("doc", READMES)
-def test_the_top_has_the_install_the_test_and_the_failure(doc):
-    top = _before_the_first_section(doc)
-    assert 'pip install "vistest[browser]"\nplaywright install chromium\n' in top
-    assert _top_test(doc) in top
-    assert "`pytest --vistest-update`" in top
-    assert PICTURE_URL in top
-    assert MESSAGE.read_text("utf-8") in top
+def test_the_demo_is_the_first_action(doc):
+    text = _read(doc)
+    top, first_section = text.split("\n## ", 1)
+    heading = first_section.splitlines()[0]
+    anchor = "#" + heading.lower().replace(" ", "-")
+    assert f"]({PICTURE_URL})" in top
+    assert re.search(rf"\*\*\[[^\]]+\]\({re.escape(anchor)}\)\*\*", top)
+    assert "vistest compare " in first_section.split("\n## ", 1)[0]
+    assert text.index("vistest compare ") < text.index(_top_test(doc))
+    assert 'pip install --pre "vistest[browser]"' in text
+    assert "python -m playwright install chromium" in text
+    assert "--vistest-update=missing" in text
 
 
 def test_the_six_line_test_is_one_in_both_readmes():
@@ -84,12 +78,29 @@ def test_the_six_line_test_is_one_in_both_readmes():
 
 
 @pytest.mark.parametrize("doc", READMES)
-def test_the_readme_quotes_the_run_of_its_picture(doc):
-    """The message under the picture is the one `docs_picture.py` wrote, in a block."""
-    message = MESSAGE.read_text("utf-8")
-    assert message.startswith("vistest: 'landing.png' differs from the baseline")
-    assert f"```\n{message}```\n" in _read(doc)
-    assert f"]({PICTURE_URL})" in _read(doc)
+def test_the_demo_reproduces_the_line_in_the_preview(doc, tmp_path, monkeypatch, capsys):
+    from vistest import cli
+
+    text = _read(doc)
+    block = re.search(r"```bash\n(.*?)```", text, re.S).group(1)
+    install, *downloads, compare = map(shlex.split, block.splitlines())
+    assert install == ["python", "-m", "pip", "install", "vistest==0.2.0a5"]
+    assert compare[:2] == ["vistest", "compare"]
+    assert len(downloads) == 2
+    for command, flags, url in downloads:
+        assert (command, flags) == ("curl", "-fLO")
+        assert url.startswith(RAW_URL)
+        revision, file = url.removeprefix(RAW_URL).split("/", 1)
+        assert re.fullmatch(r"[0-9a-f]{40}", revision)
+        source = ROOT / file
+        assert source.parent == ROOT / "tests/browser_corpus/frames/table"
+        shutil.copyfile(source, tmp_path / source.name)
+
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(compare[1:]) == 1
+    assert "line added: 57×1 px, #2563eb" in capsys.readouterr().out
+    assert "57×1 px" in text and "#2563eb" in text
+    assert (tmp_path / "vistest-diff/boxes.png").is_file()
 
 
 def test_the_picture_fits_a_readme():
@@ -106,8 +117,9 @@ def test_the_picture_is_left_out_of_the_wheel():
         "audit_dist_under_test", ROOT / "scripts" / "audit_dist.py")
     audit = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(audit)
-    assert audit.IMAGE.search("docs/img/failure.png")
-    assert audit.WHEEL_OUTSIDE.match("docs/img/failure.png")
+    path = PICTURE.relative_to(ROOT).as_posix()
+    assert audit.IMAGE.search(path)
+    assert audit.WHEEL_OUTSIDE.match(path)
 
 
 # --------------------------------------------------------------------------- #
@@ -195,7 +207,7 @@ def test_the_six_lines_run_red_then_update_then_green(tmp_path, served):
         [("failed", "BaselineMissing")], said[-1500:]
     assert written() == []
 
-    cases, said = run("--vistest-update")
+    cases, said = run("--vistest-update=missing")
     assert [o for _, o, _ in cases] == ["passed"], said[-1500:]
     assert len(written()) == 1 and written()[0].endswith("/home.png"), written()
 

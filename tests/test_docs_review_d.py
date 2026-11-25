@@ -22,7 +22,7 @@ examples/vistest.yaml:
 * every `vistest COMMAND` and `python -m vistest.cli COMMAND` exists in the
   library's CLI;
 * every key the library reads (`LIBRARY_READS`) is described in the guide;
-* the fuller example the README shows is `examples/test_library.py`, line for line;
+* both READMEs link to the runnable Playwright example;
 * `engine=` of `vistest.compare` is not documented (phase 6 takes it away);
 * the CI examples pin Playwright to the version of their image.
 
@@ -168,7 +168,8 @@ def test_every_key_in_a_yaml_block_exists(doc):
         for section, body in data.items():
             if section in sections and isinstance(body, dict):
                 missing |= {f"{section}.{key}" for key in body} - known
-    assert parsed, f"{doc}: no yaml block was read — the test would prove nothing"
+    if doc == "docs/GUIDE.md":
+        assert parsed, f"{doc}: no YAML example was read"
     assert not missing, (f"{doc}: yaml blocks set keys the config does not know: "
                          f"{sorted(missing)}")
 
@@ -231,29 +232,10 @@ def test_every_key_the_library_reads_is_in_the_guide():
 
 
 @pytest.mark.parametrize("doc", ["README.md", "README.ru.md"])
-def test_the_readme_test_is_the_example(doc):
-    """Its fuller example — the first Python block with a fixture in it — is
-    examples/test_library.py, in order, nothing added. (The first block of all
-    is the six-line test at the top: `tests/test_readme_top.py` runs it.)"""
-    blocks = [b for b in re.findall(r"```python\n(.*?)```", _read(doc), re.S)
-              if "@pytest.fixture" in b]
-    assert blocks, f"{doc}: no Python block with a fixture — the example is gone"
-    block = blocks[0]
-
-    def lines(text):
-        return [re.sub(r"\s+# noqa: \w+$", "", ln.rstrip())
-                for ln in text.splitlines() if ln.strip()]
-
-    example = lines(_read("examples/test_library.py"))
-    shown = lines(block)
-    at = 0
-    for line in shown:
-        try:
-            at = example.index(line, at) + 1
-        except ValueError:
-            pytest.fail(f"{doc}: {line!r} is not in examples/test_library.py "
-                        "(or not in this order)")
-    assert "expect_screenshot" in block
+def test_the_readme_links_to_the_runnable_example(doc):
+    example = "examples/test_library.py"
+    assert f"]({REPO_URL}{example})" in _read(doc)
+    assert "expect_screenshot" in _read(example)
 
 
 @pytest.mark.parametrize("doc", [*DOCS, "CHANGELOG.md", ".gitlab-ci.example.yml"])
@@ -268,9 +250,11 @@ def test_the_ci_examples_pin_playwright_to_their_image():
     assert image == pin
     assert '"playwright==$PLAYWRIGHT_VERSION"' in gitlab
     assert 'PIP_BREAK_SYSTEM_PACKAGES: "1"' in gitlab
-    readme = _read("README.md")
-    assert re.search(r"runs-on: ubuntu-\d\d\.\d\d\n", readme), "the runner's system is pinned"
-    assert re.search(r'pip install "vistest\[browser\]" "playwright==\d+\.\d+\.\d+"', readme)
+    guide = _read("docs/GUIDE.md")
+    assert re.search(r"runs-on: ubuntu-\d\d\.\d\d\n", guide), "the runner's system is pinned"
+    assert re.search(r'pip install "vistest\[browser\]" "playwright==\d+\.\d+\.\d+"', guide)
+    for doc in ("README.md", "README.ru.md"):
+        assert f"]({REPO_URL}docs/GUIDE.md#github-actions-example)" in _read(doc)
 
 
 # --------------------------------------------------------------------------- #

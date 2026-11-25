@@ -61,7 +61,7 @@ python -m pytest tests/test_visual.py -n auto --vistest-require-checks \
   --vistest-json-report=.vistest/results.json
 ```
 
-Upload `.vistest/` after the job even if pytest fails. Use `--vistest-require-snapshots=ci/required.json` when a job must compare specific snapshot and platform pairs. [CI JSON and manifest format](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#ci-json-report)
+Upload `.vistest/` after the job even if pytest fails. Use `--vistest-require-snapshots=ci/required.json` when a job must compare specific snapshot and platform pairs. [CI JSON and manifest format](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#ci-json-report) · [GitHub Actions example](https://github.com/marshlw/vistest/blob/main/docs/GUIDE.md#github-actions-example)
 
 After reviewing an intentional change, use the baseline path from the failure, relative to `tests/__vistest__/`.
 
