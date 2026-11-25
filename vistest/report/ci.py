@@ -64,8 +64,9 @@ def write(out: Path, parts: Parts, *, exit_code: int | None = None,
         }
         if entry.get("baseline_sha256"):
             row["baseline_sha256"] = entry["baseline_sha256"]
-        if entry.get("suppressed_by_reason"):
-            row["suppressed_by_reason"] = entry["suppressed_by_reason"]
+        for field in ("suppressed_by_reason", "suppressed_by_rule"):
+            if entry.get(field):
+                row[field] = entry[field]
         renderer = entry.get("renderer")
         if isinstance(renderer, dict):
             if renderer.get("status") == "changed":

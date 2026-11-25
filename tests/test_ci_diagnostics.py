@@ -22,12 +22,15 @@ def test_diagnose_reports_mixed_verdicts_per_platform_and_baseline(tmp_path, cap
     }
     first, second, third, partial = [tmp_path / f"run-{i}.json" for i in range(1, 5)]
     ci.write(first, Parts(entries=[
-        {**checkout, "verdict": "pass", "suppressed_by_reason": {"subpixel shift": 2},
+        {**checkout, "verdict": "pass",
+         "suppressed_by_reason": {"suppressed as rendering noise": 2},
+         "suppressed_by_rule": {"scrollbar": 2},
          "renderer": {"status": "same", "run_sha256": "e" * 64}},
         {**checkout, "key": "mobile/shop/checkout", "platform": "mobile", "verdict": "pass"},
     ]), exit_code=0)
     ci.write(second, Parts(entries=[
-        {**checkout, "verdict": "fail", "suppressed_by_reason": {"subpixel shift": 1},
+        {**checkout, "verdict": "fail",
+         "suppressed_by_reason": {"suppressed as rendering noise": 1},
          "renderer": {"status": "changed", "pixels": 12, "run_sha256": "f" * 64}},
     ]), exit_code=1)
     ci.write(third, Parts(entries=[
@@ -45,7 +48,8 @@ def test_diagnose_reports_mixed_verdicts_per_platform_and_baseline(tmp_path, cap
     assert mixed[0] == {
         "key": "desktop/shop/checkout", "platform": "desktop", "baseline_sha256": "a" * 64,
         "passed_in": [1], "failed_in": [2], "mixed_verdicts": True,
-        "suppressed_by_reason": {"subpixel shift": 3},
+        "suppressed_by_reason": {"suppressed as rendering noise": 3},
+        "suppressed_by_rule": {"scrollbar": 2},
         "renderer_profiles": {"e" * 64: 1, "f" * 64: 1},
         "renderer_changed_in": [2],
     }
@@ -54,7 +58,8 @@ def test_diagnose_reports_mixed_verdicts_per_platform_and_baseline(tmp_path, cap
     output = capsys.readouterr().out
     assert "1 snapshot/baseline groups with mixed verdicts out of 3" in output
     assert "renderer differs from baseline in reports 2" in output
-    assert "subpixel shift (3)" in output
+    assert "suppressed as rendering noise (3)" in output
+    assert "suppression rules: scrollbar (2)" in output
 
 
 def test_diagnose_reads_v1_reports_without_optional_identity_fields(tmp_path, capsys):

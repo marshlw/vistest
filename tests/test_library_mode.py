@@ -124,6 +124,35 @@ def run(project: Path, *args: str, state: str = "before"):
     return completed.returncode, completed.stdout + completed.stderr
 
 
+def test_json_report_records_the_rule_for_a_suppressed_change(project: Path):
+    (project / "tests" / "test_visual.py").write_text('''
+import os
+
+import numpy as np
+
+from vistest import expect_screenshot
+
+
+def test_scrollbar():
+    frame = np.full((300, 240, 3), 250, np.uint8)
+    frame[10:50, 10:90] = 40
+    if os.environ.get("DEMO_STATE") == "after":
+        frame[:, -12:] = (238, 240, 244)
+        frame[80:180, -10:-2] = (196, 200, 208)
+    expect_screenshot(frame, "home.png")
+''', encoding="utf-8")
+
+    code, output = run(project, "--vistest-update=missing")
+    assert code == pytest.ExitCode.OK, output
+    code, output = run(project, "--vistest-json-report=ci.json", state="after")
+    assert code == pytest.ExitCode.OK, output
+    report = json.loads((project / "ci.json").read_text(encoding="utf-8"))
+    assert report["status"] == "passed"
+    row, = report["snapshots"]
+    assert row["suppressed_by_reason"] == {"suppressed as rendering noise": 1}
+    assert row["suppressed_by_rule"] == {"scrollbar": 1}
+
+
 @pytest.mark.parametrize("workers", [(), ("-n", "2")], ids=["serial", "xdist"])
 def test_required_checks_rejects_a_green_run_with_only_stale_results(project, workers):
     if workers:

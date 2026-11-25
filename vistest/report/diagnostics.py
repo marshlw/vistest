@@ -65,9 +65,11 @@ def summarize(paths: list[Path]) -> dict:
             seen.add((key, platform))
 
             reasons = row.get("suppressed_by_reason", {})
+            rules = row.get("suppressed_by_rule", {})
             renderer = row.get("renderer", {})
-            if (not isinstance(reasons, dict)
-                    or any(type(count) is not int or count < 0 for count in reasons.values())
+            if (any(not isinstance(counts, dict)
+                    or any(type(count) is not int or count < 0 for count in counts.values())
+                    for counts in (reasons, rules))
                     or not isinstance(renderer, dict)):
                 raise ValueError(f"{path}: invalid diagnostic fields for {key!r}")
             profile = renderer.get("run_sha256")
@@ -81,6 +83,8 @@ def summarize(paths: list[Path]) -> dict:
             })
             group[f'{row["status"]}_in'].append(number)
             group["suppressed_by_reason"].update(reasons)
+            if rules:
+                group.setdefault("suppressed_by_rule", Counter()).update(rules)
             if profile:
                 group["renderer_profiles"][profile] += 1
             if renderer.get("status") == "changed":
@@ -106,9 +110,10 @@ def format_summary(data: dict) -> str:
     lines.append(f"{mixed} snapshot/baseline groups with mixed verdicts out of {len(rows)}")
     for row in rows:
         reasons = row["suppressed_by_reason"]
+        rules = row.get("suppressed_by_rule", {})
         profiles = row["renderer_profiles"]
         changed = row["renderer_changed_in"]
-        if not (row["mixed_verdicts"] or reasons or len(profiles) > 1 or changed):
+        if not (row["mixed_verdicts"] or reasons or rules or len(profiles) > 1 or changed):
             continue
         baseline = row["baseline_sha256"]
         head = f'{row["key"]} [{row["platform"] or "flat"}, baseline '
@@ -120,6 +125,10 @@ def format_summary(data: dict) -> str:
         if reasons:
             lines.append("  suppressed regions: " + ", ".join(
                 f"{reason} ({count})" for reason, count in sorted(reasons.items())
+            ))
+        if rules:
+            lines.append("  suppression rules: " + ", ".join(
+                f"{rule} ({count})" for rule, count in sorted(rules.items())
             ))
         if profiles:
             lines.append("  observed renderer fingerprints: " + ", ".join(

@@ -64,8 +64,8 @@ dependencies = [
 # to a Playwright they may already have, and an exact pin would refuse every
 # version but ours. The pin that matters for reproducible pictures — the
 # browser build, the fonts — belongs to the project's CI, next to its runner
-# image: the README's workflow and `.gitlab-ci.example.yml` pin Playwright to
-# the version of the image they run in.
+# image. The README describes that setup and `.gitlab-ci.example.yml` pins
+# Playwright to the version of the image it runs in.
 # pytest-playwright is here because the README and the examples take Playwright's
 # `page` from its fixture, and the install command in the README has to give a
 # working example. Unpinned for the same reason as Playwright: other people's

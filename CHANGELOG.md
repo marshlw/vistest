@@ -6,6 +6,10 @@ development journal, [docs/dev/journal.md](https://github.com/marshlw/vistest/bl
 
 ## Unreleased
 
+- **Show the suppression rule in CI diagnostics.** CI JSON reports and
+  `vistest diagnose` include counts by built-in rule such as `scrollbar`,
+  including when the visual check passed.
+
 ## 0.2.0a5
 
 - **Diagnose unstable visual checks.** Run `vistest diagnose` on several CI

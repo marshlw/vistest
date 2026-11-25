@@ -1235,6 +1235,15 @@ def _record(ctx, key: SnapshotKey, *, verdict: str, action: str, reason: str,
         suppressed = list(result.suppressed)
         entry["suppressed_count"] = len(suppressed)
         entry["suppressed_by_reason"] = count_suppressed(suppressed)
+        if suppressed:
+            from collections import Counter
+
+            from ..render.artifacts import set_aside_reason
+
+            rules = Counter(map(set_aside_reason, suppressed))
+            entry["suppressed_by_rule"] = {
+                rule: count for rule, count in rules.items() if rule in _words.SET_ASIDE
+            }
         entry["suppressed"] = [_region_row(r) for r in suppressed[:MAX_LISTED]]
         #  What a threshold a person set let through (engine v2): listed, with
         #  the sentence the failure message and the API carry.

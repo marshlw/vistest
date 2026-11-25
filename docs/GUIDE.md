@@ -757,7 +757,9 @@ lists all test owners. This artifact describes the checks that ran. Validating
 a required inventory of snapshots and platforms uses the manifest below.
 Compared snapshots include the SHA-256 of the baseline bytes in
 `baseline_sha256`. If the engine suppresses detected regions, their
-counts by reason appear in `suppressed_by_reason`. When measured,
+counts by category appear in `suppressed_by_reason`. When a built-in rule
+set a region aside, `suppressed_by_rule` also includes its count under an
+identifier such as `scrollbar` or `jpeg`. When measured,
 `renderer.run_sha256` identifies the renderer's canary. A canary that differs
 from the baseline includes `renderer.status: changed` and `renderer.pixels`.
 
@@ -801,7 +803,9 @@ vistest diagnose ci/run-1.json ci/run-2.json ci/run-3.json
 ```
 
 The summary numbers files in the order supplied and lists snapshots with
-mixed pass and fail verdicts, suppression reasons, or renderer differences.
+mixed pass and fail verdicts, suppression counts, or renderer differences.
+Rule counts are aggregated from reports that include them. Open the HTML
+report for the changed region and the measurements used to suppress it.
 Comparisons are grouped by snapshot key, platform, and baseline checksum.
 Older reports without a checksum are grouped under an unrecorded baseline.
 Empty and incomplete reports appear in the input list. Only pass and fail
